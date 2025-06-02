@@ -15,7 +15,6 @@
 var processingSheet = null;
 
 function processRankedChoiceVotes() {
-
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var responseSheet = ss.getSheetByName("Candidate Responses");
   var candidateSheet = ss.getSheetByName("Candidates");
@@ -36,7 +35,7 @@ function processRankedChoiceVotes() {
     .getValues()
     .flat();
 
-    // Raw response sheet is TimeStamp, Voter Name, Candidate 1 rank, Candidate 2 rank, ...
+  // Raw response sheet is TimeStamp, Voter Name, Candidate 1 rank, Candidate 2 rank, ...
   if (candidateNames.length === 0) {
     Logger.log("Error: No candidates found in the Candidates sheet.");
     return;
@@ -90,8 +89,8 @@ function processRankedChoiceVotes() {
     return { voterName, ranks: compressedRanks };
   });
 
-// ranks are now compressed, e.g. [1, 2, 3, "", 5] becomes [1, 2, 3, "", 4]
-// with positions of candidates preserved, but ranks compressed
+  // ranks are now compressed, e.g. [1, 2, 3, "", 5] becomes [1, 2, 3, "", 4]
+  // with positions of candidates preserved, but ranks compressed
 
   // Initialize candidate status
   // allCandidates is an array of objects, each object has the following properties:
@@ -134,12 +133,54 @@ function processRankedChoiceVotes() {
         }
       }
     });
-    allCandidates.forEach((c) => {
-      logProcess(["", c.name, c.votes, c.eliminated 
-        ? `Eliminated in ${c.eliminated.round} by ${c.eliminated.reason}` 
-        : "Active", ]);
+  }
+  /**
+   * Returns a table (array of arrays) summarizing candidate status.
+   * Columns: Candidate, Status, Votes, Elimination Round, Elimination Reason
+   * @param {Array<Object>} allCandidates - Array of candidate status objects.
+   * @returns {Array<Array>} Table with header and one row per candidate.
+   */
+  function getCandidateSummaryTable(allCandidates, allBallots) {
+
+    const table = [
+      [
+        "Candidate",
+        "Status",
+        "Votes",
+        "Elimination Round",
+        "Elimination Reason",
+      ],
+    ];
+    // Sort: active first by votes desc, then eliminated by round asc
+    const sorted = allCandidates.slice().sort((a, b) => {
+      if (a.eliminated && b.eliminated) {
+        return a.eliminated.round - b.eliminated.round;
+      }
+      if (a.eliminated) return 1;
+      if (b.eliminated) return -1;
+      return b.votes - a.votes;
     });
-}
+    sorted.forEach((c) => {
+      let status;
+      if (c.eliminated) {
+        status = "Eliminated";
+      } else if (c.votes > (allBallots.length / 2)) {
+        status = "Winner";
+      } else if (c.votes === 0) {
+        status = "No Votes";
+      } else {
+        status = "Active";
+      }
+      table.push([
+        c.name,
+        status,
+        c.eliminated ? c.eliminated.votes : c.votes,
+        c.eliminated ? c.eliminated.round : "",
+        c.eliminated ? c.eliminated.reason : "",
+      ]);
+    });
+    return table;
+  }
 
   function getEffectiveBallots() {
     return allBallots.map((response) => {
@@ -165,7 +206,7 @@ function processRankedChoiceVotes() {
     logProcess(["", title]);
     var activeCandidates = allCandidates
       .filter((r) => !r.eliminated)
-      .map((r) => r.name); 
+      .map((r) => r.name);
 
     var header = ["Voter"].concat(activeCandidates);
     logProcess(header);
@@ -180,8 +221,7 @@ function processRankedChoiceVotes() {
     });
   }
 
-  function logProgress(roundNumber, candidate ) {
-
+  function logProgress(roundNumber, candidate) {
     var explanation = candidate.eliminated
       ? `Eliminated - ${candidate.eliminated.reason}, votes are redistributed`
       : `Wins with more than 50% of the votes`;
@@ -193,12 +233,18 @@ function processRankedChoiceVotes() {
   while (true) {
     logBallots(
       roundNumber === 1
-      ? "Initial ballots"
-      : `Redistributed ballots in round ${roundNumber}`, 
+        ? "Initial ballots"
+        : `Redistributed ballots in round ${roundNumber}`,
       getEffectiveBallots()
     );
-    
+
     countVotes(allBallots);
+  
+    // Log the candidate summary table to the processing sheet
+    logProcess(["", "Candidate Summary"]);
+    getCandidateSummaryTable( allCandidates, allBallots ).forEach((row) => {
+      logProcess(row);
+    });
 
     // Count only non-exhausted ballots
     var activeBallots = allBallots.filter((ballot) => {
@@ -213,10 +259,14 @@ function processRankedChoiceVotes() {
     );
 
     if (winner) {
-      logProgress( roundNumber, winner );
+      logProgress(roundNumber, winner);
       Logger.log(`Winner: ${winner.name}`);
-      return [winner.name];
-    }
+      return {
+        winner: winner.name,
+        tie: null,
+        summary: getCandidateSummaryTable(allCandidates, allBallots),
+      };
+     }
 
     var remaining = allCandidates.filter((r) => !r.eliminated);
     var minVotes = Math.min(...remaining.map((r) => r.votes));
@@ -225,27 +275,45 @@ function processRankedChoiceVotes() {
     if (toEliminate.length === 1) {
       // Only one candidate has the fewest votes, eliminate them
       eliminated = toEliminate[0];
-      eliminated.eliminated = { round: roundNumber, reason: "fewest votes" };
-      logProgress(roundNumber, eliminated );
+      eliminated.eliminated = {
+        round: roundNumber,
+        reason: "fewest votes",
+        votes: minVotes,
+      };
+      logProgress(roundNumber, eliminated);
       roundNumber++;
       continue;
-    } 
+    }
     // More than one candidate has the fewest votes, we have a tie
     // eliminate one of the candidates with the fewest first place votes (standard in RCV)
-    var { eliminate, reason } = breakTie( toEliminate, allBallots, allCandidates,);
-    
+    var { eliminate, reason } = breakTie(
+      toEliminate,
+      allBallots,
+      allCandidates
+    );
+
     if (!eliminate) {
       // Announce tie and stop processing - tieNames is an array of names
       var tieNames = toEliminate.map((c) => c.name);
       logProcess([
         "",
         "",
-        `Tie remains after all tie-breakers: ${tieNames.join(", ")}. Manual review required for runoff.`,
+        `Tie remains after all tie-breakers: ${tieNames.join(
+          ", "
+        )}. Manual review required for runoff.`,
       ]);
-      return tieNames;
-    }
+      return {
+        winner: null,
+        tie: tieNames,
+        summary: getCandidateSummaryTable(allCandidates, allBallots),
+      };
+     }
 
-    eliminate.eliminated = { round: roundNumber, reason: reason };
+    eliminate.eliminated = {
+      round: roundNumber,
+      reason: reason,
+      votes: minVotes,
+    };
     logProgress(roundNumber, eliminate, getEffectiveBallots());
     roundNumber++;
   }
@@ -275,7 +343,7 @@ function breakTie(candidates, ballots, allCandidates) {
     allCandidates
   );
   if (leastSecondElim.length === 1) {
-    return { eliminate: leastSecondElim[0], reason: "second choice" };
+    return { eliminate: leastSecondElim[0], reason: "fewest second choice votes" };
   } else {
     // not broken by second choice, logprocess the leastSecondwinners
     tieMsg = "Second choice failed, tie remains: " + leastSecondElim.map((c) => c.name).join(", ");
@@ -300,7 +368,7 @@ function breakTie(candidates, ballots, allCandidates) {
 
   // 3. Still tied: report tie for manual resolution
   logProcess3("", "", "Manual review required");
-  return { eliminate: null, reason: "unable to eliminate: " + tiedCandidates.map((c) => c.name).join(", ")};
+  return { eliminate: null, reason: "unable to eliminate a last place tie between: " + tiedCandidates.map((c) => c.name).join(", ")};
 }
 /**
  * Determines which candidates remain tied after applying a tie-breaker criterion.
@@ -381,5 +449,5 @@ function logProcess3(a,b,message) {
   if (processingSheet) {
     processingSheet.appendRow([a, b, message]);
   }
-} 
+}
 
