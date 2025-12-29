@@ -154,7 +154,7 @@ function processRankedChoiceVotes() {
     // Sort: active first by votes desc, then eliminated by round asc
     const sorted = allCandidates.slice().sort((a, b) => {
       if (a.eliminated && b.eliminated) {
-        return a.eliminated.round - b.eliminated.round;
+        return b.eliminated.round - a.eliminated.round;
       }
       if (a.eliminated) return 1;
       if (b.eliminated) return -1;
