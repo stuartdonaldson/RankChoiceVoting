@@ -25,6 +25,8 @@ function processCondorcetVoting() {
   }
   Logger.log("Pairwise matrix:");
   Logger.log(result.matrix);
+  Logger.log("Ranked candidates:");
+  Logger.log(result.rankedCandidates);
 
   // Schulze Method
   var schulze = findSchulzeWinner(ballots, candidateNames);
@@ -38,6 +40,8 @@ function processCondorcetVoting() {
   Logger.log(schulze.matrix);
   Logger.log("Strongest paths:");
   Logger.log(schulze.paths);
+  Logger.log("Ranked candidates:");
+  Logger.log(schulze.rankedCandidates);
 
   // Ranked Pairs
   var rankedPairs = findRankedPairsWinner(ballots, candidateNames);
@@ -51,6 +55,8 @@ function processCondorcetVoting() {
   Logger.log(rankedPairs.matrix);
   Logger.log("Locked pairs:");
   Logger.log(rankedPairs.locked);
+  Logger.log("Ranked candidates:");
+  Logger.log(rankedPairs.rankedCandidates);
 
   // Minimax
   var minimax = findMinimaxWinner(ballots, candidateNames);
@@ -64,6 +70,8 @@ function processCondorcetVoting() {
   Logger.log(minimax.matrix);
   Logger.log("Minimax scores:");
   Logger.log(minimax.scores);
+  Logger.log("Ranked candidates:");
+  Logger.log(minimax.rankedCandidates);
 
   // return array describing all results
   return {
@@ -113,6 +121,23 @@ function buildPairwiseMatrix(ballots, candidateNames) {
 function findCondorcetWinner(ballots, candidateNames) {
   const matrix = buildPairwiseMatrix(ballots, candidateNames);
   const n = candidateNames.length;
+  
+  // Calculate win count for each candidate (number of head-to-head victories)
+  const winCounts = [];
+  for (let i = 0; i < n; i++) {
+    let wins = 0;
+    for (let j = 0; j < n; j++) {
+      if (i !== j && matrix[i][j] > matrix[j][i]) {
+        wins++;
+      }
+    }
+    winCounts.push({ candidate: candidateNames[i], score: wins });
+  }
+  
+  // Sort by win count (descending)
+  const rankedCandidates = winCounts.sort((a, b) => b.score - a.score);
+  
+  // Check for Condorcet winner
   for (let i = 0; i < n; i++) {
     let isWinner = true;
     for (let j = 0; j < n; j++) {
@@ -122,10 +147,10 @@ function findCondorcetWinner(ballots, candidateNames) {
       }
     }
     if (isWinner) {
-      return { winner: candidateNames[i], matrix };
+      return { winner: candidateNames[i], matrix, rankedCandidates };
     }
   }
-  return { winner: null, matrix };
+  return { winner: null, matrix, rankedCandidates };
 }
 
 /**
@@ -148,6 +173,21 @@ function findSchulzeWinner(ballots, candidateNames) {
           if (i !== k && j !== k)
             p[j][k] = Math.max(p[j][k], Math.min(p[j][i], p[i][k]));
 
+  // Calculate strength for each candidate (sum of strongest paths over all opponents)
+  const strengths = [];
+  for (let i = 0; i < n; i++) {
+    let totalStrength = 0;
+    for (let j = 0; j < n; j++) {
+      if (i !== j) {
+        totalStrength += p[i][j];
+      }
+    }
+    strengths.push({ candidate: candidateNames[i], score: totalStrength });
+  }
+  
+  // Sort by total strength (descending)
+  const rankedCandidates = strengths.sort((a, b) => b.score - a.score);
+  
   // Find winner
   for (let i = 0; i < n; i++) {
     let wins = true;
@@ -157,9 +197,9 @@ function findSchulzeWinner(ballots, candidateNames) {
         break;
       }
     }
-    if (wins) return { winner: candidateNames[i], matrix: d, paths: p };
+    if (wins) return { winner: candidateNames[i], matrix: d, paths: p, rankedCandidates };
   }
-  return { winner: null, matrix: d, paths: p };
+  return { winner: null, matrix: d, paths: p, rankedCandidates };
 }
 
 /**
@@ -193,6 +233,30 @@ function findRankedPairsWinner(ballots, candidateNames) {
     if (!createsCycle(winner, loser)) locked[winner][loser] = true;
   });
 
+  // Calculate ranking based on topological sort depth (fewer incoming edges = higher rank)
+  const incomingEdges = Array(n).fill(0);
+  const outgoingEdges = Array(n).fill(0);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      if (locked[i][j]) {
+        outgoingEdges[i]++;
+        incomingEdges[j]++;
+      }
+    }
+  }
+  
+  // Score = outgoing edges - incoming edges (higher is better)
+  const rankings = [];
+  for (let i = 0; i < n; i++) {
+    rankings.push({ 
+      candidate: candidateNames[i], 
+      score: outgoingEdges[i] - incomingEdges[i] 
+    });
+  }
+  
+  // Sort by score (descending)
+  const rankedCandidates = rankings.sort((a, b) => b.score - a.score);
+  
   // Find source of the graph (no arrows pointing to them)
   for (let i = 0; i < n; i++) {
     let isSource = true;
@@ -202,9 +266,9 @@ function findRankedPairsWinner(ballots, candidateNames) {
         break;
       }
     }
-    if (isSource) return { winner: candidateNames[i], matrix: d, locked: locked };
+    if (isSource) return { winner: candidateNames[i], matrix: d, locked: locked, rankedCandidates };
   }
-  return { winner: null, matrix: d, locked: locked };
+  return { winner: null, matrix: d, locked: locked, rankedCandidates };
 }
 
 /**
@@ -226,11 +290,20 @@ function findMinimaxWinner(ballots, candidateNames) {
     scores.push(worst);
   }
 
+  // Create ranked list (lower minimax score is better, so we sort ascending)
+  const rankings = [];
+  for (let i = 0; i < n; i++) {
+    rankings.push({ candidate: candidateNames[i], score: scores[i] });
+  }
+  
+  // Sort by minimax score (ascending - lower is better)
+  const rankedCandidates = rankings.sort((a, b) => a.score - b.score);
+  
   // Winner is candidate with the smallest worst defeat
   let minScore = Math.min(...scores);
   let winnerIdx = scores.indexOf(minScore);
   if (scores.filter(s => s === minScore).length > 1) {
-    return { winner: null, matrix: d, scores: scores };
+    return { winner: null, matrix: d, scores: scores, rankedCandidates };
   }
-  return { winner: candidateNames[winnerIdx], matrix: d, scores: scores };
+  return { winner: candidateNames[winnerIdx], matrix: d, scores: scores, rankedCandidates };
 }

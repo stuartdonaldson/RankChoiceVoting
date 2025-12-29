@@ -62,7 +62,7 @@ function showCondorcetAnalysisDialog() {
     // add style for font to be a sans-serif font
     '<style>body { font-family: Arial, sans-serif; }</style>' +
     generateCondorcetResultsHtml(results)
-  ).setWidth(500).setHeight(400);
+  ).setWidth(600).setHeight(600);
   SpreadsheetApp.getUi().showModalDialog(html, 'Condorcet Analysis Results');
 }
 
@@ -75,6 +75,9 @@ function generateCondorcetResultsHtml(results) {
   } else {
     html += '<p>No Condorcet winner (cycle detected).</p>';
   }
+  html += '<p><strong>Ranked Results:</strong></p>';
+  html += '<p style="font-size: 0.9em; margin-top: 5px; margin-bottom: 5px;"><em>Score = Number of head-to-head victories</em></p>';
+  html += formatRankedCandidates(results.condorcet.rankedCandidates);
  // html += '<pre>' + JSON.stringify(results.condorcet.matrix, null, 2) + '</pre>';
 
   // Schulze Method
@@ -84,6 +87,9 @@ function generateCondorcetResultsHtml(results) {
   } else {
     html += '<p>No Schulze winner (cycle detected).</p>';
   }
+  html += '<p><strong>Ranked Results:</strong></p>';
+  html += '<p style="font-size: 0.9em; margin-top: 5px; margin-bottom: 5px;"><em>Score = Sum of strongest path strengths over all opponents</em></p>';
+  html += formatRankedCandidates(results.schulze.rankedCandidates);
 //  html += '<pre>' + JSON.stringify(results.schulze.matrix, null, 2) + '</pre>';
 //  html += '<pre>' + JSON.stringify(results.schulze.paths, null, 2) + '</pre>';
 
@@ -94,6 +100,9 @@ function generateCondorcetResultsHtml(results) {
   } else {
     html += '<p>No Ranked Pairs winner (cycle detected).</p>';
   }
+  html += '<p><strong>Ranked Results:</strong></p>';
+  html += '<p style="font-size: 0.9em; margin-top: 5px; margin-bottom: 5px;"><em>Score = Net locked edges (outgoing minus incoming)</em></p>';
+  html += formatRankedCandidates(results.rankedPairs.rankedCandidates);
 //  html += '<pre>' + JSON.stringify(results.rankedPairs.matrix, null, 2) + '</pre>';
 //  html += '<pre>' + JSON.stringify(results.rankedPairs.locked, null, 2) + '</pre>';
 
@@ -104,6 +113,24 @@ function generateCondorcetResultsHtml(results) {
   } else {
     html += '<p>No Minimax winner (tie or cycle detected).</p>';
   }
+  html += '<p><strong>Ranked Results:</strong></p>';
+  html += '<p style="font-size: 0.9em; margin-top: 5px; margin-bottom: 5px;"><em>Score = Worst pairwise defeat (lower is better)</em></p>';
+  html += formatRankedCandidates(results.minimax.rankedCandidates);
 //  html += '<pre>' + JSON.stringify(results.minimax.matrix, null, 2) + '</pre>';
+  return html;
+}
+
+// Helper function to format ranked candidates as an HTML table
+function formatRankedCandidates(rankedCandidates) {
+  var html = '<table border="1" style="border-collapse: collapse; margin-bottom: 15px;">';
+  html += '<tr><th style="padding: 5px;">Rank</th><th style="padding: 5px;">Candidate</th><th style="padding: 5px;">Score</th></tr>';
+  for (var i = 0; i < rankedCandidates.length; i++) {
+    html += '<tr>';
+    html += '<td style="text-align: center; padding: 5px;">' + (i + 1) + '</td>';
+    html += '<td style="text-align: left; padding: 5px;">' + rankedCandidates[i].candidate + '</td>';
+    html += '<td style="text-align: center; padding: 5px;">' + rankedCandidates[i].score + '</td>';
+    html += '</tr>';
+  }
+  html += '</table>';
   return html;
 }
