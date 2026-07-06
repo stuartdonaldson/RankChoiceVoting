@@ -71,9 +71,31 @@ function processRankedChoiceVotes() {
   var allBallots = rawResponses.map((response) => ({
     voterName: response[0],
     ranks: response.slice(1),
+    weight: 1,
   }));
+
+  return runRankedChoiceVoting(candidateNames, allBallots, processingSheet);
+}
+
+/**
+ * Core RCV algorithm, factored out of processRankedChoiceVotes() so
+ * survey-driven analysis (webAdmin.js) can run it against a Survey-<name>
+ * sheet's own Responses section instead of the fixed "Candidate
+ * Responses"/"Candidates" sheets.
+ *
+ * @param {Array<string>} candidateNames
+ * @param {Array<{voterName:string, ranks:Array, weight:number}>} allBallots
+ *   ranks[i] corresponds to candidateNames[i]; weight defaults to 1 and lets
+ *   one ballot count for more than one vote (e.g. a survey response with an
+ *   admin-assigned weight).
+ * @param {Sheet=} sheet optional sheet to log elimination rounds to.
+ * @returns {{winner:?string, tie:?Array<string>, summary:Array<Array>}}
+ */
+function runRankedChoiceVoting(candidateNames, allBallots, sheet) {
+  processingSheet = sheet || null;
+
   // Compress the rankings for each response
-  allBallots = allBallots.map(({ voterName, ranks }) => {
+  allBallots = allBallots.map(({ voterName, ranks, weight }) => {
     // Remove blanks, sort, and reassign compressed ranks
     let ranked = [];
     for (let i = 0; i < ranks.length; i++) {
@@ -86,7 +108,7 @@ function processRankedChoiceVotes() {
     ranked.forEach((entry, i) => {
       compressedRanks[entry.idx] = i + 1;
     });
-    return { voterName, ranks: compressedRanks };
+    return { voterName, ranks: compressedRanks, weight: weight || 1 };
   });
 
   // ranks are now compressed, e.g. [1, 2, 3, "", 5] becomes [1, 2, 3, "", 4]
@@ -128,7 +150,7 @@ function processRankedChoiceVotes() {
       for (var j = 0; j < ranked.length; j++) {
         var r = ranked[j].candidate;
         if (r && !r.eliminated) {
-          r.votes++;
+          r.votes += ballot.weight || 1;
           break;
         }
       }
@@ -164,7 +186,7 @@ function processRankedChoiceVotes() {
       let status;
       if (c.eliminated) {
         status = "Eliminated";
-      } else if (c.votes > (allBallots.length / 2)) {
+      } else if (c.votes > (_sumBallotWeights(allBallots) / 2)) {
         status = "Winner";
       } else if (c.votes === 0) {
         status = "No Votes";
@@ -253,7 +275,7 @@ function processRankedChoiceVotes() {
         (rank, i) => !isNaN(rank) && !allCandidates[i].eliminated
       );
     });
-    var totalVotes = activeBallots.length;
+    var totalVotes = _sumBallotWeights(activeBallots);
     var winner = allCandidates.find(
       (r) => !r.eliminated && r.votes > totalVotes / 2
     );
@@ -449,5 +471,13 @@ function logProcess3(a,b,message) {
   if (processingSheet) {
     processingSheet.appendRow([a, b, message]);
   }
+}
+
+/**
+ * @param {Array<{weight:number}>} ballots
+ * @returns {number} sum of weights, treating a missing weight as 1.
+ */
+function _sumBallotWeights(ballots) {
+  return ballots.reduce((sum, b) => sum + (b.weight || 1), 0);
 }
 

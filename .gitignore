@@ -4,6 +4,9 @@ node_modules/
 .claspignore
 *.log
 .env
+
+# local machine config (holds scriptIds + clasp cred path)
+local.settings.json
 dist/
 build/
 .vscode/

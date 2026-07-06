@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>RankChoiceVoting Survey</title>
+  <style>
+    /* Without this, an element's own padding/border ADDS to any min-width/width set
+       on it (content-box sizing) — that's what was silently squeezing .topic-text
+       narrower than intended once .info-toggle's fixed min-width + padding were both
+       counted against the row's available space, causing short labels like "book 2"
+       to wrap onto two lines even though there was visually enough room. */
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 480px;
+      margin: 24px auto;
+      padding: 0 16px;
+      color: #202124;
+    }
+    h1 { font-size: 1.2rem; margin-bottom: 4px; }
+    p.sub { color: #5f6368; margin-top: 0; }
+    label { display: block; font-weight: bold; margin-bottom: 6px; }
+    input[type="text"], textarea {
+      width: 100%;
+      font-size: 1rem;
+      padding: 10px;
+      border: 1px solid #dadce0;
+      border-radius: 6px;
+      font-family: inherit;
+    }
+    textarea { margin-top: 16px; resize: vertical; }
+    button {
+      font-size: 1rem;
+      padding: 10px 16px;
+      min-height: 44px; /* WCAG 2.5.5 touch-target minimum — this page has no hover fallback */
+      width: 100%;
+      border: none;
+      border-radius: 6px;
+      background: #1a73e8;
+      color: white;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    button:disabled { background: #c7c7c7; cursor: default; }
+    button.secondary { background: #f1f3f4; color: #202124; }
+    #step-noSurvey, #step-name, #step-rank, #step-done { display: none; }
+    .visible { display: block !important; }
+    .add-panel {
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid #dadce0;
+      border-radius: 6px;
+      background: #f8f9fa;
+    }
+    .add-panel textarea { margin-top: 10px; }
+    .add-panel-actions { display: flex; gap: 8px; }
+    .add-panel-actions button { flex: 1; }
+    ul#topicList {
+      list-style: none;
+      padding: 0;
+      margin: 12px 0;
+      /* touch-action was previously "none" here too, which blocks ALL vertical
+         scrolling anywhere over the list, not just during an active drag — with more
+         than a screenful of items this made the page unusable (no way to scroll to
+         the rest). touch-action is resolved once, at the start of a touch gesture,
+         based on the element the finger first lands on — so scoping "none" to just
+         .handle below is sufficient to protect an actual drag (dragging still works
+         even once the finger moves off the handle mid-drag), while leaving normal
+         scrolling free everywhere else in the list. */
+    }
+    ul#topicList li {
+      display: flex;
+      flex-direction: column;
+      background: #f8f9fa;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-bottom: 6px;
+      user-select: none;
+    }
+    ul#topicList li.dragging {
+      position: relative;
+      z-index: 10;
+      background: #e8f0fe;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+    }
+    /* CSS Grid rather than flex here: a flexbox "auto | flex:1 | auto" row kept failing
+       in practice — the text column measured to ~0 computed width in devtools instead
+       of growing to fill remaining space, leaving the info icon stranded short of the
+       right edge instead of flush. Grid's "auto 1fr auto" template is a much more
+       predictable, well-supported way to express "fixed | fill-and-truncate | fixed"
+       and doesn't depend on flex-grow distribution behaving as expected across
+       whatever's in the middle column. Works identically with only 2 children (no
+       icon) — the unused third track just collapses to 0 width. */
+    .topic-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
+    .handle {
+      cursor: grab;
+      font-size: 1.1rem;
+      color: #5f6368;
+      touch-action: none;
+      padding: 10px 4px;
+      min-height: 44px; /* total touch-target size under border-box, was ~44px incidentally before */
+      display: flex;
+      align-items: center;
+    }
+    /* min-width:0 overrides Grid's default min-width:auto on a track item, which
+       otherwise refuses to shrink the item below its content's natural width — the
+       same rule that applied under flexbox, still needed here so overflow truncation
+       can actually engage. white-space:nowrap + ellipsis forces a single line
+       outright; long names truncate with "…" instead of wrapping — full text is
+       still available via the details toggle/expanded content below. */
+    .topic-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .topic-text.has-details { cursor: pointer; }
+    /* manipulation (not the default "auto") skips the ~300ms tap-delay some mobile
+       browsers use to disambiguate a tap from a double-tap-to-zoom gesture, so these
+       toggle faster/more reliably on touch — unrelated to .handle's touch-action:none
+       above, since these elements aren't descendants of .handle. */
+    .topic-text.has-details, .info-toggle, .topic-info-content { touch-action: manipulation; }
+    .info-toggle {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 6px 8px;
+      min-width: 44px;
+      min-height: 44px;
+    }
+    .topic-info-content { margin-top: 4px; padding-left: 34px; color: #3c4043; font-size: 0.85em; white-space: pre-wrap; }
+    #status { color: #5f6368; min-height: 1.2em; margin-top: 8px; }
+    #status.error { color: #d93025; }
+    footer.survey-footer { color: #5f6368; font-size: 0.85em; margin-top: 24px; }
+    footer.app-version-footer { color: #9aa0a6; font-size: 0.75em; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1 id="pageTitle">RankChoiceVoting Survey</h1>
+  <p class="sub" id="pageDescription"></p>
+
+  <div id="step-noSurvey">
+    <p>No survey is currently available at this link. If you were given a link with a survey name in it (e.g. <code>?cmd=survey&amp;id=my-survey</code>), double check it's correct.</p>
+  </div>
+
+  <div id="step-name">
+    <p class="sub">Enter your name to start or resume ranking.</p>
+    <p class="sub">If you've already been here, your previous answers will be loaded so you can review or change them.</p>
+    <label for="nameInput">Your name</label>
+    <input type="text" id="nameInput" autocomplete="name">
+    <button id="startBtn">Continue</button>
+    <div id="status"></div>
+  </div>
+
+  <div id="step-rank">
+    <p class="sub">Drag items to order them, most preferred on top.</p>
+    <ul id="topicList"></ul>
+
+    <div id="addSection">
+      <button id="addNewBtn" type="button" class="secondary">+ Add New</button>
+      <div id="addPanel" class="add-panel" hidden>
+        <label for="newItemInput">Name</label>
+        <input type="text" id="newItemInput">
+        <label for="newItemDetailsInput">Details (optional)</label>
+        <textarea id="newItemDetailsInput" rows="2" placeholder="Anything voters should know about this item"></textarea>
+        <div class="add-panel-actions">
+          <button id="addBtn" type="button">Add</button>
+          <button id="addCancelBtn" type="button" class="secondary">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <label for="commentInput">Feedback (optional)</label>
+    <textarea id="commentInput" rows="4" placeholder="Any feedback you'd like to add?"></textarea>
+
+    <button id="submitBtn">Submit</button>
+    <button id="backBtn" class="secondary">Back</button>
+    <div id="status2"></div>
+  </div>
+
+  <div id="step-done">
+    <p>Thanks, <span id="doneName"></span>! Your ranking has been saved.</p>
+    <button id="editAgainBtn" class="secondary">Re-rank</button>
+  </div>
+
+  <footer class="survey-footer" id="pageFooter"></footer>
+  <footer class="app-version-footer" id="appVersionFooter"></footer>
+
+  <script>
+    var surveyId = '';
+    var currentName = '';
+    var acceptNew = true;
+    var itemDetailsByName = {}; // set from config.itemDetails — admin-only notes per item
+    var _SURVEY_NAME_STORAGE_KEY_PREFIX = 'rcvSurveyName:';
+
+    function loadSavedName() {
+      try { return localStorage.getItem(_SURVEY_NAME_STORAGE_KEY_PREFIX + surveyId) || ''; } catch (err) { return ''; }
+    }
+
+    function saveName(name) {
+      try { localStorage.setItem(_SURVEY_NAME_STORAGE_KEY_PREFIX + surveyId, name); } catch (err) {}
+    }
+
+    var pageTitle = document.getElementById('pageTitle');
+    var pageDescription = document.getElementById('pageDescription');
+    var pageFooter = document.getElementById('pageFooter');
+    var appVersionFooter = document.getElementById('appVersionFooter');
+    var stepNoSurvey = document.getElementById('step-noSurvey');
+    var stepName = document.getElementById('step-name');
+    var stepRank = document.getElementById('step-rank');
+    var stepDone = document.getElementById('step-done');
+    var nameInput = document.getElementById('nameInput');
+    var startBtn = document.getElementById('startBtn');
+    var status = document.getElementById('status');
+    var status2 = document.getElementById('status2');
+    var topicList = document.getElementById('topicList');
+    var addSection = document.getElementById('addSection');
+    var addNewBtn = document.getElementById('addNewBtn');
+    var addPanel = document.getElementById('addPanel');
+    var newItemInput = document.getElementById('newItemInput');
+    var newItemDetailsInput = document.getElementById('newItemDetailsInput');
+    var commentInput = document.getElementById('commentInput');
+    var addBtn = document.getElementById('addBtn');
+    var addCancelBtn = document.getElementById('addCancelBtn');
+    var submitBtn = document.getElementById('submitBtn');
+    var backBtn = document.getElementById('backBtn');
+    var editAgainBtn = document.getElementById('editAgainBtn');
+    var doneName = document.getElementById('doneName');
+
+    function showStep(el) {
+      [stepNoSurvey, stepName, stepRank, stepDone].forEach(function (s) { s.classList.remove('visible'); });
+      el.classList.add('visible');
+    }
+
+    function setStatus(el, msg, isError) {
+      el.textContent = msg || '';
+      el.className = isError ? 'error' : '';
+    }
+
+    function renderTopics(topics) {
+      topicList.innerHTML = '';
+      topics.forEach(function (topic) {
+        topicList.appendChild(buildItem(topic));
+      });
+    }
+
+    function buildItem(topic) {
+      var li = document.createElement('li');
+      li.dataset.topic = topic;
+
+      var row = document.createElement('div');
+      row.className = 'topic-row';
+
+      var handle = document.createElement('span');
+      handle.className = 'handle';
+      handle.textContent = '☰';
+
+      var text = document.createElement('span');
+      text.className = 'topic-text';
+      text.textContent = topic;
+
+      row.appendChild(handle);
+      row.appendChild(text);
+
+      // Details toggle — not a title="" tooltip, since tooltips have no reliable
+      // trigger on touch devices — but kept compact: a small icon inline in the same
+      // row (not an always-visible extra summary line per item), and the item name
+      // itself is also tappable/clickable as a bigger, easier target on mobile. The
+      // expanded content only takes up space once actually opened. Omitted entirely
+      // when this item has no details (e.g. one a respondent added themselves, since
+      // Accept-New doesn't collect details).
+      var details = itemDetailsByName[topic];
+      if (details) {
+        text.classList.add('has-details');
+
+        var infoContent = document.createElement('div');
+        infoContent.className = 'topic-info-content';
+        infoContent.textContent = details;
+        infoContent.hidden = true;
+
+        var infoBtn = document.createElement('button');
+        infoBtn.type = 'button';
+        infoBtn.className = 'info-toggle';
+        infoBtn.textContent = 'ℹ️';
+        infoBtn.setAttribute('aria-label', 'Show details for ' + topic);
+        infoBtn.setAttribute('aria-expanded', 'false');
+
+        var toggleInfo = function () {
+          infoContent.hidden = !infoContent.hidden;
+          infoBtn.setAttribute('aria-expanded', String(!infoContent.hidden));
+        };
+        infoBtn.addEventListener('click', toggleInfo);
+        text.addEventListener('click', toggleInfo);
+
+        row.appendChild(infoBtn);
+        li.appendChild(row);
+        li.appendChild(infoContent);
+      } else {
+        li.appendChild(row);
+      }
+
+      attachDrag(li, handle);
+      return li;
+    }
+
+    function attachDrag(li, handle) {
+      var startY = 0;
+
+      function onMove(e) {
+        var clientY = e.clientY;
+        var dy = clientY - startY;
+        li.style.transform = 'translateY(' + dy + 'px)';
+
+        var items = Array.prototype.slice.call(topicList.children);
+        var draggedIndex = items.indexOf(li);
+
+        for (var i = 0; i < items.length; i++) {
+          var sib = items[i];
+          if (sib === li) continue;
+          var rect = sib.getBoundingClientRect();
+          var sibCenter = rect.top + rect.height / 2;
+          var sibIndex = items.indexOf(sib);
+
+          if (clientY < sibCenter && sibIndex < draggedIndex) {
+            topicList.insertBefore(li, sib);
+            startY = clientY;
+            li.style.transform = 'translateY(0px)';
+            return;
+          }
+          if (clientY > sibCenter && sibIndex > draggedIndex) {
+            topicList.insertBefore(li, sib.nextSibling);
+            startY = clientY;
+            li.style.transform = 'translateY(0px)';
+            return;
+          }
+        }
+      }
+
+      function onUp(e) {
+        li.style.transform = '';
+        li.classList.remove('dragging');
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        try { handle.releasePointerCapture(e.pointerId); } catch (err) {}
+        autosaveRanking();
+      }
+
+      handle.addEventListener('pointerdown', function (e) {
+        startY = e.clientY;
+        li.classList.add('dragging');
+        try { handle.setPointerCapture(e.pointerId); } catch (err) {}
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+        e.preventDefault();
+      });
+    }
+
+    function applyBranding(config) {
+      pageTitle.textContent = config.title || 'RankChoiceVoting Survey';
+      document.title = config.title || 'RankChoiceVoting Survey';
+      pageDescription.textContent = config.description || '';
+      pageFooter.textContent = config.footer || '';
+      appVersionFooter.textContent = config.appVersion
+        ? 'v' + config.appVersion + (config.appDeployTarget ? ' (' + config.appDeployTarget + ')' : '')
+        : '';
+      itemDetailsByName = config.itemDetails || {};
+      acceptNew = !!config.acceptNew;
+      addSection.style.display = acceptNew ? 'block' : 'none';
+    }
+
+    function loadSurvey(name) {
+      setStatus(status, 'Loading…', false);
+      startBtn.disabled = true;
+      google.script.run
+        .withSuccessHandler(function (result) {
+          startBtn.disabled = false;
+          setStatus(status, '', false);
+          applyBranding(result);
+          currentName = name;
+          saveName(name);
+          renderTopics(result.candidates);
+          commentInput.value = result.comment || '';
+          showStep(stepRank);
+        })
+        .withFailureHandler(function (err) {
+          startBtn.disabled = false;
+          setStatus(status, 'Could not load survey: ' + (err && err.message ? err.message : err), true);
+        })
+        .getSurveyForName(surveyId, name);
+    }
+
+    startBtn.addEventListener('click', function () {
+      var name = nameInput.value.trim();
+      if (!name) {
+        setStatus(status, 'Please enter your name.', true);
+        return;
+      }
+      loadSurvey(name);
+    });
+
+    nameInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') startBtn.click();
+    });
+
+    function openAddPanel() {
+      addPanel.hidden = false;
+      addNewBtn.hidden = true;
+      newItemInput.focus();
+    }
+
+    function closeAddPanel() {
+      newItemInput.value = '';
+      newItemDetailsInput.value = '';
+      addPanel.hidden = true;
+      addNewBtn.hidden = false;
+    }
+
+    function addTopic() {
+      var phrase = newItemInput.value.trim();
+      if (!phrase) return;
+      var details = newItemDetailsInput.value.trim();
+      addBtn.disabled = true;
+      google.script.run
+        .withSuccessHandler(function (result) {
+          addBtn.disabled = false;
+          if (details) itemDetailsByName[result.candidate] = details;
+          // New items go to the top of the ranking (most preferred) rather than the
+          // bottom — someone adding an option is presumably adding it because they
+          // want it considered seriously, not as an afterthought.
+          topicList.insertBefore(buildItem(result.candidate), topicList.firstChild);
+          closeAddPanel();
+        })
+        .withFailureHandler(function (err) {
+          addBtn.disabled = false;
+          setStatus(status2, 'Could not add item: ' + (err && err.message ? err.message : err), true);
+        })
+        .addSurveyTopic(surveyId, phrase, details);
+    }
+
+    addNewBtn.addEventListener('click', openAddPanel);
+    addCancelBtn.addEventListener('click', closeAddPanel);
+    addBtn.addEventListener('click', addTopic);
+    newItemInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addTopic();
+      }
+    });
+
+    function getOrderedTopics() {
+      return Array.prototype.map.call(topicList.children, function (li) {
+        return li.dataset.topic;
+      });
+    }
+
+    function autosaveRanking() {
+      if (!currentName) return;
+      setStatus(status2, 'Saving…', false);
+      google.script.run
+        .withSuccessHandler(function () {
+          setStatus(status2, 'Saved', false);
+        })
+        .withFailureHandler(function (err) {
+          setStatus(status2, 'Could not save: ' + (err && err.message ? err.message : err), true);
+        })
+        .submitSurveyRanking(surveyId, currentName, getOrderedTopics(), commentInput.value.trim());
+    }
+
+    submitBtn.addEventListener('click', function () {
+      submitBtn.disabled = true;
+      setStatus(status2, 'Saving…', false);
+      google.script.run
+        .withSuccessHandler(function () {
+          submitBtn.disabled = false;
+          setStatus(status2, '', false);
+          doneName.textContent = currentName;
+          showStep(stepDone);
+        })
+        .withFailureHandler(function (err) {
+          submitBtn.disabled = false;
+          setStatus(status2, 'Could not save: ' + (err && err.message ? err.message : err), true);
+        })
+        .submitSurveyRanking(surveyId, currentName, getOrderedTopics(), commentInput.value.trim());
+    });
+
+    backBtn.addEventListener('click', function () {
+      showStep(stepName);
+    });
+
+    editAgainBtn.addEventListener('click', function () {
+      loadSurvey(currentName);
+    });
+
+    function init(id) {
+      surveyId = id || '';
+      if (!surveyId) {
+        showStep(stepNoSurvey);
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(function (config) {
+          if (!config || config.error) {
+            showStep(stepNoSurvey);
+            return;
+          }
+          applyBranding(config);
+          nameInput.value = loadSavedName();
+          showStep(stepName);
+        })
+        .withFailureHandler(function () {
+          showStep(stepNoSurvey);
+        })
+        .getSurveyConfig(surveyId);
+    }
+
+    google.script.url.getLocation(function (location) {
+      init(location.parameters.id ? location.parameters.id[0] : '');
+    });
+  </script>
+</body>
+</html>
