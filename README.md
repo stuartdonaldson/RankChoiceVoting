@@ -99,4 +99,4 @@ MIT License
 
 **Questions or issues?** Open an issue or submit a pull request!
 
-&copy; Stuart Donaldson (F3 Little John - Puget Sound region)
+&copy; Stuart Donaldson
