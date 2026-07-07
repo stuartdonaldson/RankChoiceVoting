@@ -21,8 +21,8 @@
  *   node tools/callWebapp.js setWebappUrl --env prod
  *   node tools/callWebapp.js bootstrapSecret --env sit
  *   node tools/callWebapp.js listSheets --env sit
- *   node tools/callWebapp.js getSheet --body '{"sheetName":"Survey-Test123"}'
- *   node tools/callWebapp.js createSurvey --body '{"id":"SmokeTest1"}'
+ *   node tools/callWebapp.js getSheet --body '{"sheetName":"Ballot-Test123"}'
+ *   node tools/callWebapp.js createBallot --body '{"id":"SmokeTest1"}'
  */
 
 'use strict';

@@ -211,7 +211,7 @@ var GasLogger = {
 
   /**
    * Accumulate a structured log entry. Also writes to Logger.log().
-   * @param {string}  tag    - Entry type (e.g. 'webapp.survey', 'handleAdminPost_.error').
+   * @param {string}  tag    - Entry type (e.g. 'webapp.ballot', 'handleAdminPost_.error').
    * @param {Object}  data   - Payload. Must not contain email addresses or voter names.
    * @param {boolean} flush  - If true, flush accumulated entries to Drive/Axiom immediately.
    * @param {boolean} newLog - If true, reset the file reference after flushing so the

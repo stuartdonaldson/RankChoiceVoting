@@ -1,26 +1,26 @@
 /**
  * webAdmin.js
  *
- * doGet ?cmd=admin — lists every Survey-<name> sheet in the spreadsheet and
+ * doGet ?cmd=admin — lists every Ballot-<name> sheet in the spreadsheet and
  * lets you run RCV + Condorcet analysis against any of them, viewing the
  * results in the browser. Each run also writes a summary back into that
- * survey's own Results section (see SurveyModel.js for the sheet layout).
+ * ballot's own Results section (see BallotModel.js for the sheet layout).
  *
  * Reachable both from the web app URL directly and from the spreadsheet's
- * "Voting and Ballot Tools > Open Survey Admin Page" menu (onOpen.js).
+ * "Voting and Ballot Tools > Open Ballot Admin Page" menu (onOpen.js).
  *
  * Entry point: _handleAdmin(e), wired from WebApp.js doGet (cmd === 'admin').
  */
 
 /**
- * ?cmd=admin                          — list all surveys, with a create-new-survey form
- * ?cmd=admin&action=create&id=<id>    — create a new Survey-<id> sheet, then open its edit page
- * ?cmd=admin&action=edit&id=<id>      — edit a survey: a live ballot preview (webAdminEditPage.html)
+ * ?cmd=admin                          — list all ballots, with a create-new-ballot form
+ * ?cmd=admin&action=create&id=<id>    — create a new Ballot-<id> sheet, then open its edit page
+ * ?cmd=admin&action=edit&id=<id>      — edit a ballot: a live ballot preview (webAdminEditPage.html)
  *                                        with a pencil icon per editable field. Each field saves
  *                                        itself immediately via google.script.run (see the
  *                                        adminSave... / adminAddCandidate RPCs below) — there
  *                                        is no page-wide Save, only Back.
- * ?cmd=admin&action=analyze&id=<id>   — run analysis on one survey and show results
+ * ?cmd=admin&action=analyze&id=<id>   — run analysis on one ballot and show results
  *
  * @param {Object} e doGet event.
  * @return {HtmlOutput}
@@ -35,10 +35,10 @@ function _handleAdmin(e) {
   if (action === 'create') {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     try {
-      createNewSurvey_(ss, params.id);
+      createNewBallot_(ss, params.id);
     } catch (err) {
       return HtmlService.createHtmlOutput(_ADMIN_STYLE_ + _renderAdminList_(err.message, params.id) + _versionFooterHtml_())
-        .setTitle('Survey Admin')
+        .setTitle('Ballot Admin')
         .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1');
     }
     return _renderAdminEditPage_();
@@ -58,26 +58,26 @@ function _handleAdmin(e) {
   }
 
   return HtmlService.createHtmlOutput(_ADMIN_STYLE_ + body + _versionFooterHtml_())
-    .setTitle('Survey Admin')
+    .setTitle('Ballot Admin')
     // GAS wraps webapp output in an outer frame that only reliably honors a mobile
     // viewport when set via addMetaTag — a plain <meta viewport> tag inside the page's
-    // own HTML is not enough (same reason webSurvey.js's _handleSurvey sets it this way).
+    // own HTML is not enough (same reason webBallot.js's _handleBallot sets it this way).
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1');
 }
 
 /**
  * @return {HtmlOutput} the webAdminEditPage.html template — it reads id (and, right after
  *   a create, action=create for a one-time banner) from google.script.url.getLocation()
- *   client-side, same pattern as webSurveyPage.html, then fetches data via getAdminEditData.
+ *   client-side, same pattern as webBallotPage.html, then fetches data via getAdminEditData.
  */
 function _renderAdminEditPage_() {
   return HtmlService.createHtmlOutputFromFile('webAdminEditPage')
-    .setTitle('Edit Survey')
+    .setTitle('Edit Ballot')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1');
 }
 
 // Mobile-first: no table layout (tables force horizontal scrolling on narrow screens).
-// Each survey is a "card" — a flex column that stacks its own action buttons and, on a
+// Each ballot is a "card" — a flex column that stacks its own action buttons and, on a
 // narrow viewport, stacks the buttons themselves too (flex-wrap). Buttons/inputs use a
 // minimum touch-target height (44px, per WCAG 2.5.5) since this page has no hover state
 // to fall back on for a touch device.
@@ -95,16 +95,16 @@ var _ADMIN_STYLE_ =
     'background:#1a73e8;color:#fff;cursor:pointer;text-decoration:none;text-align:center;' +
     'display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;}' +
   'button{width:100%;margin-top:12px;}' +
-  '.survey-list{display:flex;flex-direction:column;gap:12px;margin-bottom:16px;}' +
-  '.survey-card{border:1px solid #dadce0;border-radius:8px;padding:12px 16px;}' +
-  '.survey-card h3{margin:0 0 2px;font-size:1.05rem;}' +
-  '.survey-card .survey-id{color:#5f6368;font-size:0.85em;margin-bottom:6px;}' +
-  '.survey-card .survey-meta{color:#5f6368;font-size:0.9em;margin-bottom:10px;}' +
-  '.survey-actions{display:flex;flex-wrap:wrap;gap:8px;}' +
-  '.survey-actions a.btn{flex:1 1 auto;min-width:100px;}' +
-  '.survey-info{margin-top:10px;}' +
-  '.survey-info summary{cursor:pointer;color:#1a73e8;font-size:0.9em;padding:6px 0;min-height:44px;display:flex;align-items:center;}' +
-  '.survey-info p{margin:4px 0 0;color:#3c4043;font-size:0.9em;white-space:pre-wrap;}' +
+  '.ballot-list{display:flex;flex-direction:column;gap:12px;margin-bottom:16px;}' +
+  '.ballot-card{border:1px solid #dadce0;border-radius:8px;padding:12px 16px;}' +
+  '.ballot-card h3{margin:0 0 2px;font-size:1.05rem;}' +
+  '.ballot-card .ballot-id{color:#5f6368;font-size:0.85em;margin-bottom:6px;}' +
+  '.ballot-card .ballot-meta{color:#5f6368;font-size:0.9em;margin-bottom:10px;}' +
+  '.ballot-actions{display:flex;flex-wrap:wrap;gap:8px;}' +
+  '.ballot-actions a.btn{flex:1 1 auto;min-width:100px;}' +
+  '.ballot-info{margin-top:10px;}' +
+  '.ballot-info summary{cursor:pointer;color:#1a73e8;font-size:0.9em;padding:6px 0;min-height:44px;display:flex;align-items:center;}' +
+  '.ballot-info p{margin:4px 0 0;color:#3c4043;font-size:0.9em;white-space:pre-wrap;}' +
   '.app-version-footer{color:#9aa0a6;font-size:0.75em;margin-top:24px;}' +
   '@media (max-width:420px){button,a.btn{width:100%;}}' +
   '</style>';
@@ -127,39 +127,39 @@ function _versionFooterHtml_() {
  * @param {string=} createError shown above the create form if the last
  *   creation attempt failed (e.g. duplicate/invalid id).
  * @param {string=} prefillId re-populates the id field after a failed create.
- * @return {string} HTML listing every Survey-<name> sheet.
+ * @return {string} HTML listing every Ballot-<name> sheet.
  */
 function _renderAdminList_(createError, prefillId) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var ids = listSurveyIds_(ss);
+  var ids = listBallotIds_(ss);
   var baseUrl = _getWebAppUrl_();
 
-  var html = '<h1>Survey Admin</h1>';
+  var html = '<h1>Ballot Admin</h1>';
   html += _renderCreateForm_(createError, prefillId);
 
   if (!ids.length) {
-    return html + '<p>No survey sheets found yet — create one above.</p>';
+    return html + '<p>No ballot sheets found yet — create one above.</p>';
   }
 
-  html += '<div class="survey-list">';
+  html += '<div class="ballot-list">';
   ids.forEach(function (id) {
-    var sheet = findSurveySheet_(ss, id);
-    var config = readSurveyConfig_(sheet);
-    var candidateCount = readSurveyCandidates_(sheet).length;
-    var responseCount = readSurveyResponseRows_(sheet).length;
-    var uniqueRespondentCount = countUniqueSurveyRespondents_(sheet);
+    var sheet = findBallotSheet_(ss, id);
+    var config = readBallotConfig_(sheet);
+    var candidateCount = readBallotCandidates_(sheet).length;
+    var responseCount = readBallotResponseRows_(sheet).length;
+    var uniqueRespondentCount = countUniqueBallotRespondents_(sheet);
     var staleRespondents = findRespondentsWithNewCandidates_(sheet);
-    var surveyUrl = baseUrl + '?cmd=survey&id=' + encodeURIComponent(id);
+    var ballotUrl = baseUrl + '?cmd=ballot&id=' + encodeURIComponent(id);
     var adminNotes = String(config['Admin-Only-Notes'] || '').trim();
 
-    html += '<div class="survey-card">' +
+    html += '<div class="ballot-card">' +
       '<h3>' + _escapeHtml_(config.Title || id) + '</h3>' +
-      '<div class="survey-id">' + _escapeHtml_(id) + '</div>' +
-      '<div class="survey-meta">' + candidateCount + ' candidate' + (candidateCount === 1 ? '' : 's') +
+      '<div class="ballot-id">' + _escapeHtml_(id) + '</div>' +
+      '<div class="ballot-meta">' + candidateCount + ' candidate' + (candidateCount === 1 ? '' : 's') +
       ' &middot; ' + responseCount + ' response' + (responseCount === 1 ? '' : 's') +
       ' (' + uniqueRespondentCount + ' unique respondent' + (uniqueRespondentCount === 1 ? '' : 's') + ')' + '</div>' +
-      '<div class="survey-actions">' +
-      '<a class="btn" target="_blank" href="' + _escapeHtml_(surveyUrl) + '">View Survey</a>' +
+      '<div class="ballot-actions">' +
+      '<a class="btn" target="_blank" href="' + _escapeHtml_(ballotUrl) + '">View Ballot</a>' +
       '<a class="btn" target="_top" href="' + _escapeHtml_(baseUrl) + '?cmd=admin&action=edit&id=' + encodeURIComponent(id) + '">Edit</a>' +
       '<a class="btn" target="_top" href="' + _escapeHtml_(baseUrl) + '?cmd=admin&action=analyze&id=' + encodeURIComponent(id) + '">Run Analysis</a>' +
       '</div>';
@@ -170,14 +170,14 @@ function _renderAdminList_(createError, prefillId) {
     // entirely when there's no Admin-Only-Notes text, so the list stays uncluttered
     // by default.
     if (adminNotes) {
-      html += '<details class="survey-info"><summary>ℹ️ More info</summary><p>' + _escapeHtml_(adminNotes) + '</p></details>';
+      html += '<details class="ballot-info"><summary>ℹ️ More info</summary><p>' + _escapeHtml_(adminNotes) + '</p></details>';
     }
 
     // Flags respondents whose last submission predates a since-added candidate — see
     // findRespondentsWithNewCandidates_ for how "stale" is detected. Omitted when
     // empty for the same reason as the Admin-Only-Notes disclosure above.
     if (staleRespondents.length) {
-      html += '<details class="survey-info"><summary>⚠️ ' + staleRespondents.length +
+      html += '<details class="ballot-info"><summary>⚠️ ' + staleRespondents.length +
         ' respondent' + (staleRespondents.length === 1 ? '' : 's') +
         ' may want to review (candidates added since they responded)</summary><p>' +
         _escapeHtml_(staleRespondents.join(', ')) + '</p></details>';
@@ -195,7 +195,7 @@ function _renderAdminList_(createError, prefillId) {
  * @return {string}
  */
 function _renderCreateForm_(error, prefillId) {
-  var html = '<h2>Create New Survey</h2>';
+  var html = '<h2>Create New Ballot</h2>';
   if (error) html += '<p style="color:#d93025;">' + _escapeHtml_(error) + '</p>';
   // Forms/links that navigate to a NEW doGet-rendered page must use both target="_top"
   // (to escape HtmlService's sandboxed iframe) AND an ABSOLUTE action/href built from the
@@ -206,34 +206,34 @@ function _renderCreateForm_(error, prefillId) {
   html += '<form method="get" target="_top" action="' + _escapeHtml_(_getWebAppUrl_()) + '">' +
     '<input type="hidden" name="cmd" value="admin">' +
     '<input type="hidden" name="action" value="create">' +
-    '<label for="newSurveyId">Survey ID (used in the survey link and sheet name — letters, numbers, "-", "_" only)</label>' +
-    '<input type="text" id="newSurveyId" name="id" value="' + _escapeHtml_(prefillId || '') + '" required>' +
-    '<button type="submit">Create Survey</button>' +
+    '<label for="newBallotId">Ballot ID (used in the ballot link and sheet name — letters, numbers, "-", "_" only)</label>' +
+    '<input type="text" id="newBallotId" name="id" value="' + _escapeHtml_(prefillId || '') + '" required>' +
+    '<button type="submit">Create Ballot</button>' +
     '</form>';
   return html;
 }
 
 /**
- * RPC: called once by webAdminEditPage.html on load (after reading the survey id from
+ * RPC: called once by webAdminEditPage.html on load (after reading the ballot id from
  * google.script.url.getLocation) to fetch everything the edit-mode ballot preview needs
  * to render. Field names match what the client displays/edits, not the sheet's config
- * key spelling — see SurveyModel.js for the underlying "Title"/"Accept-New"/etc. keys.
+ * key spelling — see BallotModel.js for the underlying "Title"/"Accept-New"/etc. keys.
  *
  * @param {string} id
- * @return {Object} or {error:'no_survey'} if the id doesn't match a survey sheet.
+ * @return {Object} or {error:'no_ballot'} if the id doesn't match a ballot sheet.
  */
 function getAdminEditData(id) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = findSurveySheet_(ss, id);
-  if (!sheet) return { error: 'no_survey' };
+  var sheet = findBallotSheet_(ss, id);
+  if (!sheet) return { error: 'no_ballot' };
 
   // Self-heals older sheets: adds the section-marker highlighting and the Candidates
-  // section (if missing) the first time an admin opens this survey to edit it.
+  // section (if missing) the first time an admin opens this ballot to edit it.
   _highlightSectionMarkers_(sheet);
 
-  var config = readSurveyConfig_(sheet);
-  var candidates = readSurveyCandidates_(sheet);
-  var candidateRows = readSurveyCandidateDetails_(sheet);
+  var config = readBallotConfig_(sheet);
+  var candidates = readBallotCandidates_(sheet);
+  var candidateRows = readBallotCandidateDetails_(sheet);
   // Backfill any candidate that predates the Candidates table (or predates having its
   // own row yet) so every candidate always has a name/details pair to edit.
   while (candidateRows.length < candidates.length) {
@@ -248,11 +248,11 @@ function getAdminEditData(id) {
     instructions: config.Instructions || '',
     footer: config.Footer || '',
     contact: config.Contact || '',
-    acceptNew: _surveyAcceptsNew_(config),
+    acceptNew: _ballotAcceptsNew_(config),
     addInstructions: config['Add-Instructions'] || '',
     adminOnlyNotes: config['Admin-Only-Notes'] || '',
     candidates: candidateRows,
-    surveyUrl: baseUrl + '?cmd=survey&id=' + encodeURIComponent(id),
+    ballotUrl: baseUrl + '?cmd=ballot&id=' + encodeURIComponent(id),
     adminListUrl: baseUrl + '?cmd=admin',
     appVersion: (typeof APP_VERSION !== 'undefined' && APP_VERSION) || '',
     appDeployTarget: (typeof APP_DEPLOY_TARGET !== 'undefined' && APP_DEPLOY_TARGET) || ''
@@ -261,14 +261,14 @@ function getAdminEditData(id) {
 
 /**
  * @param {string} id
- * @param {Object} updates passed straight through to writeSurveyConfig_
+ * @param {Object} updates passed straight through to writeBallotConfig_
  * @return {{ok:boolean}}
  */
 function _adminWriteConfig_(id, updates) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = findSurveySheet_(ss, id);
-  if (!sheet) throw new Error('No survey found for id "' + id + '".');
-  writeSurveyConfig_(sheet, updates);
+  var sheet = findBallotSheet_(ss, id);
+  if (!sheet) throw new Error('No ballot found for id "' + id + '".');
+  writeBallotConfig_(sheet, updates);
   return { ok: true };
 }
 
@@ -308,7 +308,7 @@ function adminSaveAddSettings(id, acceptNew, addInstructions) {
 
 /**
  * RPC: saves one existing candidate's name/details from its pencil-icon editor.
- * saveSurveyCandidatesForId_ requires the full candidate list (it throws if the count
+ * saveBallotCandidatesForId_ requires the full candidate list (it throws if the count
  * changed since the page loaded), so this re-reads the current rows and replaces just
  * the edited one, position-aligned by index — matching how the old combined form saved
  * candidate edits.
@@ -321,18 +321,18 @@ function adminSaveAddSettings(id, acceptNew, addInstructions) {
  */
 function adminSaveCandidate(id, index, name, details) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = findSurveySheet_(ss, id);
-  if (!sheet) throw new Error('No survey found for id "' + id + '".');
+  var sheet = findBallotSheet_(ss, id);
+  if (!sheet) throw new Error('No ballot found for id "' + id + '".');
 
-  var candidates = readSurveyCandidates_(sheet);
-  var rows = readSurveyCandidateDetails_(sheet);
+  var candidates = readBallotCandidates_(sheet);
+  var rows = readBallotCandidateDetails_(sheet);
   while (rows.length < candidates.length) {
     rows.push({ name: candidates[rows.length], details: '' });
   }
   if (index < 0 || index >= rows.length) throw new Error('Invalid candidate index.');
 
   rows[index] = { name: String(name || '').trim(), details: String(details || '') };
-  saveSurveyCandidatesForId_(id, rows);
+  saveBallotCandidatesForId_(id, rows);
   return { ok: true, name: rows[index].name, details: rows[index].details };
 }
 
@@ -345,23 +345,23 @@ function adminSaveCandidate(id, index, name, details) {
  * @return {{candidate:string}}
  */
 function adminAddCandidate(id, name, details) {
-  return addSurveyCandidateForAdmin_(id, name, details);
+  return addBallotCandidateForAdmin_(id, name, details);
 }
 
 /**
- * @param {string} id survey id
- * @return {string} HTML with RCV + Condorcet results for one survey.
+ * @param {string} id ballot id
+ * @return {string} HTML with RCV + Condorcet results for one ballot.
  */
 function _renderAdminAnalysis_(id) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = findSurveySheet_(ss, id);
-  var back = '<p><a target="_top" href="' + _escapeHtml_(_getWebAppUrl_()) + '?cmd=admin">&larr; Back to survey list</a></p>';
+  var sheet = findBallotSheet_(ss, id);
+  var back = '<p><a target="_top" href="' + _escapeHtml_(_getWebAppUrl_()) + '?cmd=admin">&larr; Back to ballot list</a></p>';
 
   if (!sheet) {
-    return back + '<p>No survey found for id "' + _escapeHtml_(id) + '".</p>';
+    return back + '<p>No ballot found for id "' + _escapeHtml_(id) + '".</p>';
   }
 
-  var results = runSurveyAnalysis_(sheet);
+  var results = runBallotAnalysis_(sheet);
   var html = back + '<h1>' + _escapeHtml_(id) + ' — Analysis Results</h1>';
 
   if (results.error) {
@@ -379,30 +379,30 @@ function _renderAdminAnalysis_(id) {
   html += generateCondorcetResultsHtml(results.condorcet);
 
   html += '<p><em>Results have been written to the Results section of the ' +
-    _escapeHtml_(getSurveySheetName_(id)) + ' sheet.</em></p>';
+    _escapeHtml_(getBallotSheetName_(id)) + ' sheet.</em></p>';
 
   return html;
 }
 
 /**
- * Runs RCV + all four Condorcet methods against a survey's current
+ * Runs RCV + all four Condorcet methods against a ballot's current
  * candidates/responses, writes a summary into the sheet's Results section,
  * and returns the raw results for HTML rendering.
  *
- * @param {Sheet} sheet a Survey-<name> sheet
+ * @param {Sheet} sheet a Ballot-<name> sheet
  * @return {{rcv:Object, condorcet:Object}|{error:string}}
  */
-function runSurveyAnalysis_(sheet) {
-  var candidateNames = readSurveyCandidates_(sheet);
+function runBallotAnalysis_(sheet) {
+  var candidateNames = readBallotCandidates_(sheet);
   // Deduped to one ballot per respondent (case-insensitive name, latest wins) — a
   // respondent who re-voted must only count once, using their most recent ranking.
-  var responseRows = _latestResponseByRespondent_(readSurveyResponseRows_(sheet));
+  var responseRows = _latestResponseByRespondent_(readBallotResponseRows_(sheet));
 
   if (candidateNames.length < 2) {
-    return { error: 'Survey needs at least two candidates before it can be analyzed.' };
+    return { error: 'Ballot needs at least two candidates before it can be analyzed.' };
   }
   if (responseRows.length === 0) {
-    return { error: 'Survey has no responses yet.' };
+    return { error: 'Ballot has no responses yet.' };
   }
 
   var ballots = responseRows.map(function (r) {
@@ -419,7 +419,7 @@ function runSurveyAnalysis_(sheet) {
     minimax: findMinimaxWinner(ballots, candidateNames)
   };
 
-  writeSurveyResults_(sheet, _buildResultsRows_(rcv, condorcet));
+  writeBallotResults_(sheet, _buildResultsRows_(rcv, condorcet));
 
   return { rcv: rcv, condorcet: condorcet };
 }

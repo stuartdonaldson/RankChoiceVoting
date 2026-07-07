@@ -3,7 +3,7 @@
 /**
  * fakeGas.js — reusable in-memory shim for the small slice of the Google Apps
  * Script API this project's script/*.js files depend on (SpreadsheetApp,
- * PropertiesService, Logger, Utilities, LockService). Lets script/SurveyModel.js
+ * PropertiesService, Logger, Utilities, LockService). Lets script/BallotModel.js
  * (and friends) run unmodified under plain Node via vm.runInContext.
  *
  * A FakeSheet stores cell values in a flat `row_col` map plus tracked

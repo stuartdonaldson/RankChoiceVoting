@@ -2,11 +2,11 @@
 /**
  * smokeTest.js — integration smoke test against a live SIT deployment.
  *
- * Proves the create-survey flow works end to end through the real web app
- * (not just the pure SurveyModel logic under test/test_survey_model.js):
+ * Proves the create-ballot flow works end to end through the real web app
+ * (not just the pure BallotModel logic under test/test_ballot_model.js):
  *   1. Bootstrap sitAdminSecret if not already saved locally.
- *   2. createSurvey a uniquely-named test survey.
- *   3. listSheets / getSheet — assert the Survey-<id> sheet exists with the
+ *   2. createBallot a uniquely-named test ballot.
+ *   3. listSheets / getSheet — assert the Ballot-<id> sheet exists with the
  *      expected config skeleton (Title/Description/Instructions/Footer/Contact/
  *      Accept-New/Add-Instructions, Results marker, Responses header).
  *   4. setSheet — seed one response row.
@@ -89,15 +89,15 @@ async function main() {
   }
 
   const id = 'SmokeTest' + Date.now();
-  const sheetName = 'Survey-' + id;
+  const sheetName = 'Ballot-' + id;
 
   try {
-    // 1. createSurvey
-    const createResult = await post(url_(deploymentId), payload_('createSurvey', { id }, adminSecret));
-    record_('createSurvey', !!(createResult && createResult.ok && createResult.sheetName === sheetName),
+    // 1. createBallot
+    const createResult = await post(url_(deploymentId), payload_('createBallot', { id }, adminSecret));
+    record_('createBallot', !!(createResult && createResult.ok && createResult.sheetName === sheetName),
       JSON.stringify(createResult));
     if (!createResult || !createResult.ok) {
-      throw new Error('createSurvey failed: ' + JSON.stringify(createResult));
+      throw new Error('createBallot failed: ' + JSON.stringify(createResult));
     }
 
     // 2. listSheets — assert the new sheet is present

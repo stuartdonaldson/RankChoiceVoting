@@ -10,7 +10,7 @@ const {
 } = require('../script/GasLogger.js');
 
 const entries = [
-  { ts: '2026-06-20T09:03:18.000Z', tag: 'handleAdminPost_.createSurvey', data: { id: 'Test123' }, execId: 'exec-1' },
+  { ts: '2026-06-20T09:03:18.000Z', tag: 'handleAdminPost_.createBallot', data: { id: 'Test123' }, execId: 'exec-1' },
   { ts: '2026-06-20T09:05:18.000Z', tag: 'handleAdminPost_.error', data: { warning: 'sheet not found' }, execId: 'exec-2', runId: 'gaslogger-test' },
 ];
 
@@ -19,7 +19,7 @@ const rows = buildAxiomRows_(entries, '0.0.1');
 assert.equal(rows.length, 2);
 
 assert.equal(rows[0]._time, '2026-06-20T09:03:18.000Z');
-assert.equal(rows[0].name, 'handleAdminPost_.createSurvey');
+assert.equal(rows[0].name, 'handleAdminPost_.createBallot');
 assert.equal(rows[0].side, 'gas');
 assert.equal(rows[0].version, '0.0.1');
 assert.equal(rows[0].id, 'Test123');
@@ -70,7 +70,7 @@ assert.equal(maskRecipientListForLog_(''), '');
 assert.equal(maskRecipientListForLog_(null), '');
 
 // maskNameForLog_ — per-word first/last letter, middle collapsed to '..'; used where a
-// masked-but-recognizable hint (e.g. in survey action logs) is more useful than a single blob.
+// masked-but-recognizable hint (e.g. in ballot action logs) is more useful than a single blob.
 assert.equal(maskNameForLog_('Stuart Donaldson'), 'S..t D..n');
 assert.equal(maskNameForLog_('Jo'), 'Jo');
 assert.equal(maskNameForLog_('J'), 'J');

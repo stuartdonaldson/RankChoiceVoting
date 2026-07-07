@@ -254,7 +254,7 @@ function deploy(targetKey, options = {}) {
   console.log(`💾 ${TARGETS[targetKey].deploymentIdKey} saved to local.settings.json`);
 
   // Stamp WEBAPP_URL on every deploy (not just PROD) — SIT and PROD are separate script
-  // projects, each with their own WEBAPP_URL script property. onOpen.js's "Open Survey Admin
+  // projects, each with their own WEBAPP_URL script property. onOpen.js's "Open Ballot Admin
   // Page" menu item and showAbout() read this property; without it (e.g. right after a SIT
   // deploy that's never been stamped), _getWebAppUrl_() falls back to
   // ScriptApp.getService().getUrl(), which only resolves correctly from inside an actual

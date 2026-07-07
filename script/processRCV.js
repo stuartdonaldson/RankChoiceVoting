@@ -10,13 +10,13 @@
 var processingSheet = null;
 
 /**
- * Core RCV algorithm, run against survey-driven data sourced by webAdmin.js
- * from a Survey-<name> sheet's own Responses section.
+ * Core RCV algorithm, run against ballot-driven data sourced by webAdmin.js
+ * from a Ballot-<name> sheet's own Responses section.
  *
  * @param {Array<string>} candidateNames
  * @param {Array<{voterName:string, ranks:Array, weight:number}>} allBallots
  *   ranks[i] corresponds to candidateNames[i]; weight defaults to 1 and lets
- *   one ballot count for more than one vote (e.g. a survey response with an
+ *   one ballot count for more than one vote (e.g. a ballot response with an
  *   admin-assigned weight).
  * @param {Sheet=} sheet optional sheet to log elimination rounds to.
  * @returns {{winner:?string, tie:?Array<string>, summary:Array<Array>}}

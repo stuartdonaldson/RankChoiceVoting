@@ -4,11 +4,11 @@
  * doGet/doPost router for the RankChoiceVoting web app. Modeled on F3Go30's
  * WebApp.js, trimmed to this project's needs.
  *
- *   (no cmd)               — home page: list all surveys, with links to view
- *                            results/edit each, plus a create-new-survey form
+ *   (no cmd)               — home page: list all ballots, with links to view
+ *                            results/edit each, plus a create-new-ballot form
  *                            (same content as ?cmd=admin — see webAdmin.js)
- *   ?cmd=survey&id=<name>  — survey page + RPCs (see webSurvey.js)
- *   ?cmd=admin             — survey list/create/edit/analyze (see webAdmin.js)
+ *   ?cmd=ballot&id=<name>  — ballot page + RPCs (see webBallot.js)
+ *   ?cmd=admin             — ballot list/create/edit/analyze (see webAdmin.js)
  *
  * doPost ?cmd=admin dispatches a minimal, best-practice set of administrative/
  * diagnostic JSON actions (see handleAdminPost_ below), gated by
@@ -43,16 +43,16 @@ function doGet(e) {
     GasLogger.log('doGet', buildWebAppRequestLog_(e));
     var cmd = (e && e.parameter && e.parameter.cmd) || '';
 
-    if (cmd === 'survey') {
-      return _handleSurvey(e);
+    if (cmd === 'ballot') {
+      return _handleBallot(e);
     }
     if (cmd === 'admin' || !cmd) {
       return _handleAdmin(e);
     }
 
     return HtmlService.createHtmlOutput(
-      '<p>Unknown cmd "' + cmd + '". Append <code>?cmd=survey&amp;id=&lt;name&gt;</code> to open a survey, ' +
-      'or <code>?cmd=admin</code> (or no cmd at all) for the survey list.</p>'
+      '<p>Unknown cmd "' + cmd + '". Append <code>?cmd=ballot&amp;id=&lt;name&gt;</code> to open a ballot, ' +
+      'or <code>?cmd=admin</code> (or no cmd at all) for the ballot list.</p>'
     );
   });
 }
@@ -95,7 +95,7 @@ function bootstrapAdminSecret_(secret) {
  * lands in access logs / curl history).
  *
  * This is deliberately a minimal set — config, URL stamping, sheet diagnostics/data I/O, one
- * domain action (createSurvey), and one cleanup action (deleteSheet) — rather than growing an
+ * domain action (createBallot), and one cleanup action (deleteSheet) — rather than growing an
  * action per feature. Add to this list only when a genuinely new capability is needed.
  */
 function handleAdminPost_(e) {
@@ -186,7 +186,7 @@ function handleAdminPost_(e) {
 
       case 'getSheet': {
         // Downloads a sheet's full data range as CSV — used by integration tests to
-        // verify state written by the app (e.g. that createSurvey actually produced a sheet).
+        // verify state written by the app (e.g. that createBallot actually produced a sheet).
         if (!payload.sheetName) {
           return jsonOutput_({ ok: false, error: 'sheetName is required' });
         }
@@ -210,7 +210,7 @@ function handleAdminPost_(e) {
       case 'setSheet': {
         // Writes a 2D array of values starting at (row, col) (default 1,1) into a sheet —
         // creating the sheet if it doesn't exist. Used by integration tests to seed/overwrite
-        // state (e.g. a survey's Responses rows) without going through the UI.
+        // state (e.g. a ballot's Responses rows) without going through the UI.
         if (!payload.sheetName || !payload.rows) {
           return jsonOutput_({ ok: false, error: 'sheetName and rows are required' });
         }
@@ -233,7 +233,7 @@ function handleAdminPost_(e) {
       }
 
       case 'deleteSheet': {
-        // Cleanup for integration tests (e.g. remove a survey created by createSurvey).
+        // Cleanup for integration tests (e.g. remove a ballot created by createBallot).
         if (!payload.sheetName) {
           return jsonOutput_({ ok: false, error: 'sheetName is required' });
         }
@@ -247,15 +247,15 @@ function handleAdminPost_(e) {
         return jsonOutput_({ ok: true });
       }
 
-      case 'createSurvey': {
-        // Headless equivalent of the admin page's "Create New Survey" form — lets
-        // integration tests exercise/verify survey creation without a browser.
+      case 'createBallot': {
+        // Headless equivalent of the admin page's "Create New Ballot" form — lets
+        // integration tests exercise/verify ballot creation without a browser.
         if (!payload.id) {
           return jsonOutput_({ ok: false, error: 'id is required' });
         }
         var createSs = SpreadsheetApp.getActiveSpreadsheet();
-        var createdSheet = createNewSurvey_(createSs, payload.id);
-        GasLogger.log('handleAdminPost_.createSurvey', { id: payload.id });
+        var createdSheet = createNewBallot_(createSs, payload.id);
+        GasLogger.log('handleAdminPost_.createBallot', { id: payload.id });
         return jsonOutput_({ ok: true, sheetName: createdSheet.getName() });
       }
 

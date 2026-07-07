@@ -16,7 +16,7 @@
  *   node tools/query-axiom.js                          # last 200 events, last 24h
  *   node tools/query-axiom.js --limit 50 --since 2h
  *   node tools/query-axiom.js --name handleAdminPost
- *   node tools/query-axiom.js --where "data.action == 'createSurvey'"
+ *   node tools/query-axiom.js --where "data.action == 'createBallot'"
  *   node tools/query-axiom.js --raw /tmp/axiom_dump.json
  *
  * DURATION accepts <N>s / <N>m / <N>h / <N>d (e.g. 30m, 2h, 1d). Default: 24h.
@@ -167,7 +167,7 @@ Options:
   --limit, -n N   Max events to return (default: 200)
   --since D       How far back to look, e.g. 30m, 2h, 1d (default: 24h)
   --name SUBSTR   Filter to event names containing this substring
-  --where EXPR    Raw APL 'where' expression, e.g. "data.action == 'createSurvey'"
+  --where EXPR    Raw APL 'where' expression, e.g. "data.action == 'createBallot'"
   --raw [PATH]    Dump full JSON response (to PATH, or stdout if no PATH given)
   --help, -h      Show this help
 `);

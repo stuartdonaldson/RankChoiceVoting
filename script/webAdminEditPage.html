@@ -4,9 +4,9 @@
   <base target="_top">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-  <title>Edit Survey</title>
+  <title>Edit Ballot</title>
   <style>
-    /* Deliberately mirrors webSurveyPage.html's look (font, spacing, button/textarea
+    /* Deliberately mirrors webBallotPage.html's look (font, spacing, button/textarea
        styling, .topic-row/.handle/.topic-text/.topic-info-content) so this reads as an
        editable version of the real ballot, not a separate admin form. */
     *, *::before, *::after { box-sizing: border-box; }
@@ -176,15 +176,15 @@
   </style>
 </head>
 <body>
-  <p><a id="backLink" target="_top" href="#">&larr; Back to survey list</a></p>
-  <div id="createdBanner" hidden>Survey created — fill in the fields below using the pencil icons.</div>
+  <p><a id="backLink" target="_top" href="#">&larr; Back to ballot list</a></p>
+  <div id="createdBanner" hidden>Ballot created — fill in the fields below using the pencil icons.</div>
   <p id="loadStatus">Loading…</p>
 
   <div id="editRoot" hidden>
     <div class="edit-instructions">
-      <p><strong>Editing this survey:</strong> below is the landing page immediately followed by the ballot page, laid out and styled exactly as respondents see them.</p>
+      <p><strong>Editing this ballot:</strong> below is the landing page immediately followed by the ballot page, laid out and styled exactly as respondents see them.</p>
       <p>Fields with a pencil (✏️) are editable — tap it, make your change, and Save; it applies immediately, so there's nothing else to save. Text with a dashed border is fixed page copy shown for context only — it's already there, so there's no need to add it again.</p>
-      <p>When you're done, use "&larr; Back to survey list" below.</p>
+      <p>When you're done, use "&larr; Back to ballot list" below.</p>
     </div>
 
     <p class="section-divider">Landing Page</p>
@@ -361,7 +361,7 @@
           <button type="button" class="pencil-btn" id="adminOnlyNotesEditBtn" aria-label="Edit Admin-Only Notes">✏️</button>
         </div>
         <div class="field-panel" id="adminOnlyNotesPanel" hidden>
-          <p class="field-help">Never shown to respondents — shown as a "More info" disclosure in the survey list.</p>
+          <p class="field-help">Never shown to respondents — shown as a "More info" disclosure in the ballot list.</p>
           <label for="adminOnlyNotesInput">Admin-Only Notes</label>
           <textarea id="adminOnlyNotesInput" rows="3"></textarea>
           <div class="field-panel-actions">
@@ -373,13 +373,13 @@
       </div>
     </div>
 
-    <p style="margin-top:24px;"><a id="backLinkBottom" target="_top" href="#">&larr; Back to survey list</a></p>
+    <p style="margin-top:24px;"><a id="backLinkBottom" target="_top" href="#">&larr; Back to ballot list</a></p>
   </div>
 
   <footer class="app-version-footer" id="appVersionFooter"></footer>
 
   <script>
-    var surveyId = '';
+    var ballotId = '';
     var fieldData = {};
 
     var loadStatus = document.getElementById('loadStatus');
@@ -412,7 +412,7 @@
      * multi-value groups and are wired individually below instead.
      *
      * @param {string} key matches the id prefix of ${key}Display/${key}EditBtn/etc.
-     * @param {string} rpcName name of the google.script.run function, called as (surveyId, value)
+     * @param {string} rpcName name of the google.script.run function, called as (ballotId, value)
      */
     function wireSimpleField(key, rpcName) {
       var display = document.getElementById(key + 'Display');
@@ -449,7 +449,7 @@
             saveBtn.disabled = false;
             setStatus(status, 'Could not save: ' + (err && err.message ? err.message : err), true);
           })
-          [rpcName](surveyId, value);
+          [rpcName](ballotId, value);
       });
     }
 
@@ -556,7 +556,7 @@
             saveBtn.disabled = false;
             setStatus(statusEl, 'Could not save: ' + (err && err.message ? err.message : err), true);
           })
-          .adminSaveCandidate(surveyId, index, newName, newDetails);
+          .adminSaveCandidate(ballotId, index, newName, newDetails);
       });
 
       return li;
@@ -605,7 +605,7 @@
           addCandidateSaveBtn.disabled = false;
           setStatus(addCandidateStatus, 'Could not add: ' + (err && err.message ? err.message : err), true);
         })
-        .adminAddCandidate(surveyId, name, details);
+        .adminAddCandidate(ballotId, name, details);
     });
 
     // --- Adding New Candidates (Accept-New + Add-Instructions, saved together) ---
@@ -662,7 +662,7 @@
           addSettingsSaveBtn.disabled = false;
           setStatus(addSettingsStatus, 'Could not save: ' + (err && err.message ? err.message : err), true);
         })
-        .adminSaveAddSettings(surveyId, accept, instructions);
+        .adminSaveAddSettings(ballotId, accept, instructions);
     });
 
     wireSimpleField('title', 'adminSaveTitle');
@@ -673,12 +673,12 @@
     wireSimpleField('adminOnlyNotes', 'adminSaveAdminOnlyNotes');
 
     function init(id, justCreated) {
-      surveyId = id;
+      ballotId = id;
       createdBanner.hidden = !justCreated;
       google.script.run
         .withSuccessHandler(function (data) {
           if (!data || data.error) {
-            loadStatus.textContent = 'No survey found for id "' + id + '".';
+            loadStatus.textContent = 'No ballot found for id "' + id + '".';
             return;
           }
           fieldData = data;
@@ -699,7 +699,7 @@
           editRoot.hidden = false;
         })
         .withFailureHandler(function (err) {
-          loadStatus.textContent = 'Could not load survey: ' + (err && err.message ? err.message : err);
+          loadStatus.textContent = 'Could not load ballot: ' + (err && err.message ? err.message : err);
         })
         .getAdminEditData(id);
     }
@@ -708,7 +708,7 @@
       var id = location.parameters.id ? location.parameters.id[0] : '';
       var justCreated = location.parameters.action && location.parameters.action[0] === 'create';
       if (!id) {
-        loadStatus.textContent = 'No survey id given.';
+        loadStatus.textContent = 'No ballot id given.';
         return;
       }
       init(id, justCreated);

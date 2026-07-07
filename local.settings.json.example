@@ -8,7 +8,7 @@
   "sitDeploymentId":  "<SIT web app deployment ID — filled in automatically by tools/manage-deployments.js after the first SIT deploy>",
   "prodDeploymentId": "<PROD web app deployment ID — filled in automatically by tools/manage-deployments.js after the first PROD deploy>",
   "nuucDeploymentId": "<NUUC web app deployment ID — filled in automatically by tools/manage-deployments.js after the first NUUC deploy>",
-  "axiomDataset":    "<Axiom dataset name, e.g. survey — used by tools/query-axiom.js and GasLogger.flush()>",
+  "axiomDataset":    "<Axiom dataset name, e.g. ballots — used by tools/query-axiom.js and GasLogger.flush()>",
   "axiomToken":      "<Axiom ingest token — also set as the GAS script property AXIOM_TOKEN via the admin setScriptProperties action>",
   "axiomQueryToken": "<Axiom query token — used only by tools/query-axiom.js; may be the same token as axiomToken>",
   "sitAdminSecret":  "<SIT ADMIN_SHARED_SECRET — leave as empty string \"\" and let tools/callWebapp.js bootstrapSecret fill it in>",

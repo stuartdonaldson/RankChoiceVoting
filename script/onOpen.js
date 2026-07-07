@@ -1,7 +1,7 @@
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Voting and Ballot Tools')
-    .addItem('Open Survey Admin Page', 'showAdminPage')
+    .addItem('Open Ballot Admin Page', 'showAdminPage')
     .addSeparator()
     .addItem('About', 'showAbout')
     .addToUi();
@@ -9,27 +9,27 @@ function onOpen() {
 
 /**
  * Displays an About dialog with version info, the deployed web app URL, the
- * admin page link, and a link to every current Survey-<name> sheet — so
- * anyone opening the spreadsheet can find survey/admin URLs without digging
+ * admin page link, and a link to every current Ballot-<name> sheet — so
+ * anyone opening the spreadsheet can find ballot/admin URLs without digging
  * through Script Properties.
  */
 function showAbout() {
   var url = _getWebAppUrl_();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var surveyIds = (typeof listSurveyIds_ === 'function') ? listSurveyIds_(ss) : [];
+  var ballotIds = (typeof listBallotIds_ === 'function') ? listBallotIds_(ss) : [];
 
-  var surveyLinksHtml;
+  var ballotLinksHtml;
   if (!url) {
-    surveyLinksHtml = '<p><em>WEBAPP_URL is not set yet — deploy this project as a web app ' +
+    ballotLinksHtml = '<p><em>WEBAPP_URL is not set yet — deploy this project as a web app ' +
       '(tools/manage-deployments.js sets it automatically after a PROD deploy).</em></p>';
-  } else if (!surveyIds.length) {
-    surveyLinksHtml = '<p><em>No surveys yet — use the admin page to create one.</em></p>';
+  } else if (!ballotIds.length) {
+    ballotLinksHtml = '<p><em>No ballots yet — use the admin page to create one.</em></p>';
   } else {
-    surveyLinksHtml = '<ul style="padding-left:18px;">' + surveyIds.map(function (id) {
-      var surveyUrl = url + '?cmd=survey&id=' + encodeURIComponent(id);
+    ballotLinksHtml = '<ul style="padding-left:18px;">' + ballotIds.map(function (id) {
+      var ballotUrl = url + '?cmd=ballot&id=' + encodeURIComponent(id);
       var editUrl = url + '?cmd=admin&action=edit&id=' + encodeURIComponent(id);
       return '<li><b>' + id + '</b> — ' +
-        '<a href="' + surveyUrl + '" target="_blank">view</a> | ' +
+        '<a href="' + ballotUrl + '" target="_blank">view</a> | ' +
         '<a href="' + editUrl + '" target="_blank">edit</a></li>';
     }).join('') + '</ul>';
   }
@@ -45,7 +45,7 @@ function showAbout() {
     '  a { color: #1a73e8; }' +
     '</style>' +
     '<h2>RankChoiceVoting</h2>' +
-    '<p>Multi-survey ranked-choice/Condorcet voting web app bound to this spreadsheet.</p>' +
+    '<p>Multi-ballot ranked-choice/Condorcet voting web app bound to this spreadsheet.</p>' +
     '<hr>' +
     '<p><span class="label">Version:</span> ' + APP_VERSION + ' (' + APP_VERSION_DATE + ', ' + APP_DEPLOY_TARGET + ')</p>' +
     '<p><span class="label">Author:</span> ' + APP_AUTHOR + '</p>' +
@@ -55,8 +55,8 @@ function showAbout() {
     '<p class="code">' + (url || 'unknown') + '</p>' +
     (url ? '<p><span class="label">Admin page:</span> <a href="' + url + '?cmd=admin" target="_blank">' + url + '?cmd=admin</a></p>' : '') +
     '<hr>' +
-    '<p><span class="label">Surveys:</span></p>' +
-    surveyLinksHtml
+    '<p><span class="label">Ballots:</span></p>' +
+    ballotLinksHtml
   ).setWidth(480).setHeight(420);
 
   SpreadsheetApp.getUi().showModalDialog(html, 'About RankChoiceVoting');
@@ -80,7 +80,7 @@ function _getWebAppUrl_() {
   }
 }
 
-// Show a dialog with a link to the survey admin web page.
+// Show a dialog with a link to the ballot admin web page.
 function showAdminPage() {
   var url = _getWebAppUrl_();
   var html;
@@ -92,13 +92,13 @@ function showAdminPage() {
   } else {
     var adminUrl = url + '?cmd=admin';
     html = HtmlService.createHtmlOutput(
-      '<p>Survey admin page: <a href="' + adminUrl + '" target="_blank">' + adminUrl + '</a></p>'
+      '<p>Ballot admin page: <a href="' + adminUrl + '" target="_blank">' + adminUrl + '</a></p>'
     ).setWidth(420).setHeight(150);
   }
-  SpreadsheetApp.getUi().showModalDialog(html, 'Survey Admin');
+  SpreadsheetApp.getUi().showModalDialog(html, 'Ballot Admin');
 }
 
-// generate html output for the results of runSurveyAnalysis_() (webAdmin.js)
+// generate html output for the results of runBallotAnalysis_() (webAdmin.js)
 function generateCondorcetResultsHtml(results) {
   // Basic Condorcet
   var html = '<h3>Basic Condorcet</h3>';

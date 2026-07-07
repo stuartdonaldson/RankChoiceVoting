@@ -303,3 +303,15 @@ None.
 ### Key Learnings:
 - `submitSurveyResponse_` already overwrites a respondent's existing row by case-insensitive name match, so duplicate response rows can't occur through normal use — they can only appear via a hand-edited sheet or legacy/imported data. Tests that need a duplicate row must write it directly via `sheet.getRange(...).setValues(...)`, bypassing the model's own submit path.
 - READMEs need to be swept for staleness after an architecture removal (Google Forms era) even when other docs (SurveyModel.js header comments, CLAUDE.md) stay current — nothing enforces README accuracy automatically, unlike code-adjacent comments.
+
+## 2026-07-06 21:21:13
+
+### Summary:
+Renamed the "Survey" terminology to "Ballot" throughout the codebase and docs: the poll/entity concept (`Survey-<id>` sheet, admin survey list, `cmd=survey`) is now "Ballot" (`Ballot-<id>` sheet, `cmd=ballot`). Renamed `script/SurveyModel.js`→`script/BallotModel.js`, `script/webSurvey.js`→`script/webBallot.js`, `script/webSurveyPage.html`→`script/webBallotPage.html`, `test/test_survey_model.js`→`test/test_ballot_model.js`. Updated all identifiers, RPC action names (`createSurvey`→`createBallot`), menu labels ("Voting and Ballot Tools"), README, and `local.settings.json.example`. Deliberately left `work-log.md`'s historical entries untouched (they describe past state) and left `script/processRCV.js`'s existing "ballot" usage (a single voter's ranked submission — standard election-science terminology, unrelated to the entity rename) alone, per explicit user decision to accept that pre-existing double meaning rather than rename it to "ranking". `npm test` passes all 4 suites after the rename.
+
+### Key Learnings:
+- Before a blanket terminology rename, grep for the target word's existing usage first — this repo already used "ballot" in two other senses (the respondent-facing voting page in prose, and a single voter's ranked submission in `processRCV.js`), and a blind rename would have created real ambiguity. Surfacing the collision to the user before touching code avoided a rename-and-redo.
+- Mechanical case-preserving sed (`Survey`→`Ballot`, `survey`→`ballot`, `SURVEY`→`BALLOT`) is safe and sufficient for this kind of identifier+prose rename across camelCase, PascalCase, and plain text, as long as the excluded files/usages are decided first.
+
+### Deferred / Manual:
+- The real Axiom dataset name in `local.settings.json` (`axiomDataset: "surveys"`) was left unchanged — it's an external resource name, not code; only the `.example` file's comment was updated to say "ballots".

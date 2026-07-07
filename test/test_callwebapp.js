@@ -17,11 +17,11 @@ function testParseArgsDefaults() {
 
 function testParseArgsAllFlags() {
   const r = parseArgs_([
-    'node', 'callWebapp.js', 'createSurvey',
+    'node', 'callWebapp.js', 'createBallot',
     '--env', 'prod',
     '--body', '{"id":"SmokeTest1"}',
   ]);
-  assert.equal(r.action, 'createSurvey');
+  assert.equal(r.action, 'createBallot');
   assert.equal(r.env, 'prod');
   assert.deepEqual(r.extraBody, { id: 'SmokeTest1' });
 }
@@ -29,9 +29,9 @@ function testParseArgsAllFlags() {
 function testParseArgsBodyMerged() {
   const r = parseArgs_([
     'node', 'callWebapp.js', 'setScriptProperties',
-    '--body', '{"properties":{"AXIOM_DATASET":"survey"}}',
+    '--body', '{"properties":{"AXIOM_DATASET":"ballot"}}',
   ]);
-  assert.deepEqual(r.extraBody, { properties: { AXIOM_DATASET: 'survey' } });
+  assert.deepEqual(r.extraBody, { properties: { AXIOM_DATASET: 'ballot' } });
 }
 
 function testParseArgsFlagsBeforeAction() {
@@ -39,10 +39,10 @@ function testParseArgsFlagsBeforeAction() {
   const r = parseArgs_([
     'node', 'callWebapp.js',
     '--env', 'sit',
-    'createSurvey',
+    'createBallot',
     '--body', '{"id":"SmokeTest1"}',
   ]);
-  assert.equal(r.action, 'createSurvey');
+  assert.equal(r.action, 'createBallot');
   assert.equal(r.env, 'sit');
   assert.deepEqual(r.extraBody, { id: 'SmokeTest1' });
 }
@@ -55,8 +55,8 @@ function testBuildPayloadInjectsSecret() {
 }
 
 function testBuildPayloadMergesExtraBody() {
-  const p = buildPayload_('createSurvey', { id: 'SmokeTest1' }, 's3cr3t');
-  assert.deepEqual(p, { action: 'createSurvey', adminSecret: 's3cr3t', id: 'SmokeTest1' });
+  const p = buildPayload_('createBallot', { id: 'SmokeTest1' }, 's3cr3t');
+  assert.deepEqual(p, { action: 'createBallot', adminSecret: 's3cr3t', id: 'SmokeTest1' });
 }
 
 function testBuildPayloadBootstrapSecretNoSecretField() {
@@ -79,7 +79,7 @@ function testEnvMapShape() {
 function testUngatedActionsSet() {
   assert.ok(UNGATED_ACTIONS.has('bootstrapSecret'));
   assert.ok(UNGATED_ACTIONS.has('setWebappUrl'));
-  assert.ok(!UNGATED_ACTIONS.has('createSurvey'));
+  assert.ok(!UNGATED_ACTIONS.has('createBallot'));
 }
 
 function run() {

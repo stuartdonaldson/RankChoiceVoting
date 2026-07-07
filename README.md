@@ -1,10 +1,10 @@
 # Rank Choice Voting (RCV) Google Apps Script Web App
 
-A multi-survey Ranked Choice Voting (RCV) and Condorcet analysis tool built on Google Sheets and Google Apps Script. Everything — creating a survey, collecting votes, and running analysis — happens through one deployed web app; there is no separate Google Form.
+A multi-ballot Ranked Choice Voting (RCV) and Condorcet analysis tool built on Google Sheets and Google Apps Script. Everything — creating a ballot, collecting votes, and running analysis — happens through one deployed web app; there is no separate Google Form.
 
 ## How it works, in one picture
 
-One Google Spreadsheet holds any number of surveys. Each survey is its own sheet, named `Survey-<id>`, laid out top to bottom in four sections:
+One Google Spreadsheet holds any number of ballots. Each ballot is its own sheet, named `Ballot-<id>`, laid out top to bottom in four sections:
 
 ```
 Row 1..8   Config          Title, Description, Instructions, Footer, Contact,
@@ -20,8 +20,8 @@ Row N+2+                     one row per respondent
 ```
 
 - **Candidates** is the source of truth for who's running. The Responses section's candidate columns are a derived, position-aligned mirror that vote rows key their ranks off of — it's kept in sync automatically whenever candidates are read.
-- **Responses** holds one row per respondent, keyed by name (case-insensitive). **Voting again with the same name overwrites that respondent's existing row** rather than adding a second one — only their most recent ranking ever counts. This is also why the admin survey list shows both a raw response-row count and a smaller (or equal) unique-respondent count: they only diverge if someone's name was typed inconsistently, or a sheet was hand-edited to include a genuine duplicate. Analysis always dedupes the same way before computing results.
-- **Results** is overwritten every time you run analysis on that survey — it's a snapshot of the last run, not a log.
+- **Responses** holds one row per respondent, keyed by name (case-insensitive). **Voting again with the same name overwrites that respondent's existing row** rather than adding a second one — only their most recent ranking ever counts. This is also why the admin ballot list shows both a raw response-row count and a smaller (or equal) unique-respondent count: they only diverge if someone's name was typed inconsistently, or a sheet was hand-edited to include a genuine duplicate. Analysis always dedupes the same way before computing results.
+- **Results** is overwritten every time you run analysis on that ballot — it's a snapshot of the last run, not a log.
 - Column A is reserved for section markers/config keys only — it is never used for candidate names or respondent data, so a candidate can safely be named anything (including "Responses" or "Results") without corrupting the sheet layout.
 
 ## The web app
@@ -30,15 +30,15 @@ Deployed once as a Google Apps Script Web App, the same URL serves three views:
 
 | URL | Purpose |
 |---|---|
-| `<url>` or `<url>?cmd=admin` | Survey list — create a survey, and for each existing one: view it, edit it, or run analysis |
-| `<url>?cmd=admin&action=edit&id=<id>` | Edit a survey: a live preview styled exactly like the real ballot, with a pencil icon on every editable field. Each field saves immediately (no page-wide Save) |
-| `<url>?cmd=survey&id=<id>` | The respondent-facing ballot — what you share with voters |
+| `<url>` or `<url>?cmd=admin` | Ballot list — create a ballot, and for each existing one: view it, edit it, or run analysis |
+| `<url>?cmd=admin&action=edit&id=<id>` | Edit a ballot: a live preview styled exactly like the page voters see, with a pencil icon on every editable field. Each field saves immediately (no page-wide Save) |
+| `<url>?cmd=ballot&id=<id>` | The respondent-facing ballot — what you share with voters |
 
-From the spreadsheet itself, **Voting and Ballot Tools > Open Survey Admin Page** opens the admin list, and **About** shows the deployed web app URL plus a direct link to every survey.
+From the spreadsheet itself, **Voting and Ballot Tools > Open Ballot Admin Page** opens the admin list, and **About** shows the deployed web app URL plus a direct link to every ballot.
 
-### Creating and configuring a survey
+### Creating and configuring a ballot
 
-1. From the admin page, create a new survey with an id (used in the URL and the `Survey-<id>` sheet name).
+1. From the admin page, create a new ballot with an id (used in the URL and the `Ballot-<id>` sheet name).
 2. Open its edit page and use the pencil icons to set:
    - **Title / Description** — shown on the landing page before a respondent enters their name.
    - **Instructions** — shown above the ranking list on the ballot page itself (replaces Description there).
@@ -46,13 +46,13 @@ From the spreadsheet itself, **Voting and Ballot Tools > Open Survey Admin Page*
    - **Candidates** — add candidates and an optional admin-only "Details" note shown to respondents.
    - **Accept new candidates from respondents** — if on, respondents can add a candidate themselves from the ballot page; **Add-Instructions** is the text shown above that button.
    - **Admin-Only Notes** — free-text notes for your own reference (purpose, audience, scheduling); never shown to respondents.
-3. Share the `?cmd=survey&id=<id>` link with voters.
+3. Share the `?cmd=ballot&id=<id>` link with voters.
 
 ### Voting
 
 A respondent enters their name, drag-reorders the candidate list (most preferred on top), optionally adds a candidate (if enabled) or leaves feedback, and submits. Returning with the same name loads their previous ranking for review or change — submitting again replaces it.
 
-If a candidate is added after someone has already voted, the admin survey list flags that respondent (they may want to come back and rank the addition) — their existing ranking is otherwise left as-is.
+If a candidate is added after someone has already voted, the admin ballot list flags that respondent (they may want to come back and rank the addition) — their existing ranking is otherwise left as-is.
 
 ### Running analysis
 
@@ -61,15 +61,15 @@ From the admin list, **Run Analysis** computes and displays:
 - **Ranked Choice Voting (RCV)** — multi-round elimination with vote redistribution, automatic tie-breakers, and a full candidate status/round summary.
 - **Condorcet methods** — Basic Condorcet (pairwise), Schulze (strongest path), Ranked Pairs (Tideman), and Minimax (Simpson), for comparing outcomes across methods when there's no unambiguous pairwise winner.
 
-Each run also overwrites the survey sheet's own `[Results]` section with the same summary, so the sheet always reflects the last analysis you ran.
+Each run also overwrites the ballot sheet's own `[Results]` section with the same summary, so the sheet always reflects the last analysis you ran.
 
 ## Files
 
-- `script/WebApp.js` — `doGet`/`doPost` router (`cmd=survey`, `cmd=admin`).
-- `script/SurveyModel.js` — the sheet-layout model described above; every other file reads/writes surveys through this module.
-- `script/webAdmin.js` — admin survey list, create-survey form, and analysis view.
-- `script/webAdminEditPage.html` — the live-preview survey editor.
-- `script/webSurvey.js` / `script/webSurveyPage.html` — the respondent-facing ballot page and its RPCs.
+- `script/WebApp.js` — `doGet`/`doPost` router (`cmd=ballot`, `cmd=admin`).
+- `script/BallotModel.js` — the sheet-layout model described above; every other file reads/writes ballots through this module.
+- `script/webAdmin.js` — admin ballot list, create-ballot form, and analysis view.
+- `script/webAdminEditPage.html` — the live-preview ballot editor.
+- `script/webBallot.js` / `script/webBallotPage.html` — the respondent-facing ballot page and its RPCs.
 - `script/processRCV.js` — RCV elimination logic and tie-breakers.
 - `script/processCondorcet.js` — the four Condorcet methods.
 - `script/onOpen.js` — the spreadsheet's custom menu and About dialog.

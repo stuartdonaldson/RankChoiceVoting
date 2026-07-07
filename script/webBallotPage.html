@@ -4,7 +4,7 @@
   <base target="_top">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-  <title>RankChoiceVoting Survey</title>
+  <title>RankChoiceVoting Ballot</title>
   <style>
     /* Without this, an element's own padding/border ADDS to any min-width/width set
        on it (content-box sizing) — that's what was silently squeezing .topic-text
@@ -45,7 +45,7 @@
     }
     button:disabled { background: #c7c7c7; cursor: default; }
     button.secondary { background: #f1f3f4; color: #202124; }
-    #step-noSurvey, #step-name, #step-rank, #step-done { display: none; }
+    #step-noBallot, #step-name, #step-rank, #step-done { display: none; }
     .visible { display: block !important; }
     .add-panel {
       margin-top: 12px;
@@ -130,17 +130,17 @@
     .topic-info-content { margin-top: 4px; padding-left: 34px; color: #3c4043; font-size: 0.85em; white-space: pre-wrap; }
     #status { color: #5f6368; min-height: 1.2em; margin-top: 8px; }
     #status.error { color: #d93025; }
-    footer.survey-footer { color: #5f6368; font-size: 0.85em; margin-top: 24px; }
-    p.survey-contact { color: #5f6368; font-size: 0.85em; margin-top: 4px; }
+    footer.ballot-footer { color: #5f6368; font-size: 0.85em; margin-top: 24px; }
+    p.ballot-contact { color: #5f6368; font-size: 0.85em; margin-top: 4px; }
     footer.app-version-footer { color: #9aa0a6; font-size: 0.75em; margin-top: 8px; }
   </style>
 </head>
 <body>
-  <h1 id="pageTitle">RankChoiceVoting Survey</h1>
+  <h1 id="pageTitle">RankChoiceVoting Ballot</h1>
   <p class="sub" id="pageDescription"></p>
 
-  <div id="step-noSurvey">
-    <p>No survey is currently available at this link. If you were given a link with a survey name in it (e.g. <code>?cmd=survey&amp;id=my-survey</code>), double check it's correct.</p>
+  <div id="step-noBallot">
+    <p>No ballot is currently available at this link. If you were given a link with a ballot name in it (e.g. <code>?cmd=ballot&amp;id=my-ballot</code>), double check it's correct.</p>
   </div>
 
   <div id="step-name">
@@ -190,12 +190,12 @@
     <button id="editAgainBtn" class="secondary">Re-rank</button>
   </div>
 
-  <footer class="survey-footer" id="pageFooter"></footer>
-  <p class="survey-contact" id="pageContact"></p>
+  <footer class="ballot-footer" id="pageFooter"></footer>
+  <p class="ballot-contact" id="pageContact"></p>
   <footer class="app-version-footer" id="appVersionFooter"></footer>
 
   <script>
-    var surveyId = '';
+    var ballotId = '';
     var currentName = '';
     var acceptNew = true;
     var itemDetailsByName = {}; // set from config.itemDetails — per-item notes, either admin-authored or added by a respondent via the Details field on Add New
@@ -203,16 +203,16 @@
     // intro) on step-name, config.instructions (the ballot instructions) on step-rank —
     // the two settings share that one slot rather than stacking, so Instructions reads
     // as replacing Description once a respondent moves from name entry to the ballot.
-    var surveyDescription = '';
-    var surveyInstructions = '';
-    var _SURVEY_NAME_STORAGE_KEY_PREFIX = 'rcvSurveyName:';
+    var ballotDescription = '';
+    var ballotInstructions = '';
+    var _BALLOT_NAME_STORAGE_KEY_PREFIX = 'rcvBallotName:';
 
     function loadSavedName() {
-      try { return localStorage.getItem(_SURVEY_NAME_STORAGE_KEY_PREFIX + surveyId) || ''; } catch (err) { return ''; }
+      try { return localStorage.getItem(_BALLOT_NAME_STORAGE_KEY_PREFIX + ballotId) || ''; } catch (err) { return ''; }
     }
 
     function saveName(name) {
-      try { localStorage.setItem(_SURVEY_NAME_STORAGE_KEY_PREFIX + surveyId, name); } catch (err) {}
+      try { localStorage.setItem(_BALLOT_NAME_STORAGE_KEY_PREFIX + ballotId, name); } catch (err) {}
     }
 
     var pageTitle = document.getElementById('pageTitle');
@@ -220,7 +220,7 @@
     var pageFooter = document.getElementById('pageFooter');
     var pageContact = document.getElementById('pageContact');
     var appVersionFooter = document.getElementById('appVersionFooter');
-    var stepNoSurvey = document.getElementById('step-noSurvey');
+    var stepNoBallot = document.getElementById('step-noBallot');
     var stepName = document.getElementById('step-name');
     var stepRank = document.getElementById('step-rank');
     var stepDone = document.getElementById('step-done');
@@ -247,9 +247,9 @@
     var doneName = document.getElementById('doneName');
 
     function showStep(el) {
-      [stepNoSurvey, stepName, stepRank, stepDone].forEach(function (s) { s.classList.remove('visible'); });
+      [stepNoBallot, stepName, stepRank, stepDone].forEach(function (s) { s.classList.remove('visible'); });
       el.classList.add('visible');
-      pageDescription.textContent = (el === stepRank) ? surveyInstructions : surveyDescription;
+      pageDescription.textContent = (el === stepRank) ? ballotInstructions : ballotDescription;
     }
 
     function setStatus(el, msg, isError) {
@@ -376,10 +376,10 @@
     }
 
     function applyBranding(config) {
-      pageTitle.textContent = config.title || 'RankChoiceVoting Survey';
-      document.title = config.title || 'RankChoiceVoting Survey';
-      surveyDescription = config.description || '';
-      surveyInstructions = config.instructions || '';
+      pageTitle.textContent = config.title || 'RankChoiceVoting Ballot';
+      document.title = config.title || 'RankChoiceVoting Ballot';
+      ballotDescription = config.description || '';
+      ballotInstructions = config.instructions || '';
       pageFooter.textContent = config.footer || '';
       pageContact.textContent = config.contact ? 'Contact: ' + config.contact : '';
       appVersionFooter.textContent = config.appVersion
@@ -392,7 +392,7 @@
       addInstructionsText.style.display = config.addInstructions ? 'block' : 'none';
     }
 
-    function loadSurvey(name) {
+    function loadBallot(name) {
       setStatus(status, 'Loading…', false);
       startBtn.disabled = true;
       google.script.run
@@ -409,9 +409,9 @@
         })
         .withFailureHandler(function (err) {
           startBtn.disabled = false;
-          setStatus(status, 'Could not load survey: ' + (err && err.message ? err.message : err), true);
+          setStatus(status, 'Could not load ballot: ' + (err && err.message ? err.message : err), true);
         })
-        .getSurveyForName(surveyId, name);
+        .getBallotForName(ballotId, name);
     }
 
     startBtn.addEventListener('click', function () {
@@ -420,7 +420,7 @@
         setStatus(status, 'Please enter your name.', true);
         return;
       }
-      loadSurvey(name);
+      loadBallot(name);
     });
 
     nameInput.addEventListener('keydown', function (e) {
@@ -471,7 +471,7 @@
           addBtn.disabled = false;
           setStatus(status2, 'Could not add item: ' + (err && err.message ? err.message : err), true);
         })
-        .addSurveyTopic(surveyId, phrase, details);
+        .addBallotTopic(ballotId, phrase, details);
     }
 
     addNewBtn.addEventListener('click', openAddPanel);
@@ -500,7 +500,7 @@
         .withFailureHandler(function (err) {
           setStatus(status2, 'Could not save: ' + (err && err.message ? err.message : err), true);
         })
-        .submitSurveyRanking(surveyId, currentName, getOrderedTopics(), commentInput.value.trim());
+        .submitBallotRanking(ballotId, currentName, getOrderedTopics(), commentInput.value.trim());
     }
 
     submitBtn.addEventListener('click', function () {
@@ -517,7 +517,7 @@
           submitBtn.disabled = false;
           setStatus(status2, 'Could not save: ' + (err && err.message ? err.message : err), true);
         })
-        .submitSurveyRanking(surveyId, currentName, getOrderedTopics(), commentInput.value.trim());
+        .submitBallotRanking(ballotId, currentName, getOrderedTopics(), commentInput.value.trim());
     });
 
     backBtn.addEventListener('click', function () {
@@ -525,19 +525,19 @@
     });
 
     editAgainBtn.addEventListener('click', function () {
-      loadSurvey(currentName);
+      loadBallot(currentName);
     });
 
     function init(id) {
-      surveyId = id || '';
-      if (!surveyId) {
-        showStep(stepNoSurvey);
+      ballotId = id || '';
+      if (!ballotId) {
+        showStep(stepNoBallot);
         return;
       }
       google.script.run
         .withSuccessHandler(function (config) {
           if (!config || config.error) {
-            showStep(stepNoSurvey);
+            showStep(stepNoBallot);
             return;
           }
           applyBranding(config);
@@ -545,9 +545,9 @@
           showStep(stepName);
         })
         .withFailureHandler(function () {
-          showStep(stepNoSurvey);
+          showStep(stepNoBallot);
         })
-        .getSurveyConfig(surveyId);
+        .getBallotConfig(ballotId);
     }
 
     google.script.url.getLocation(function (location) {
