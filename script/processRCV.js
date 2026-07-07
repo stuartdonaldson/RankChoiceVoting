@@ -1,87 +1,17 @@
 /**
  * Requirement:
- * Processes ranked choice voting (RCV) results from Google Form responses, redistributing votes each round,
+ * Processes ranked choice voting (RCV) results, redistributing votes each round,
  * eliminating the candidate with the fewest first-place votes, and logging each stage.
  * Handles tie-breaking using second-choice and least last-place votes, and logs all actions to the processing sheet.
- * 
- * Form Response Interface:
- * - Column 1: Voter's name (not used in processing).
- * - Columns 2 and onward: Each column represents a candidate and contains the voter's ranking for that candidate.
- *   Example: "1" in a column means the voter ranked that candidate 1st, "2" means the voter ranked that candidate 2nd, etc.
-
+ *
  * @returns {Array<Object>} An array of the top vote-getting candidate(s) after all calculated tie-breakers.
  * If there is more than one value, a tie could not be broken using second-choice and least-favorite votes.
 */
 var processingSheet = null;
 
-function processRankedChoiceVotes() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var responseSheet = ss.getSheetByName("Candidate Responses");
-  var candidateSheet = ss.getSheetByName("Candidates");
-  processingSheet = ss.getSheetByName("RCV Processing");
-
-  if (!responseSheet || !candidateSheet || !processingSheet) {
-    Logger.log("Error: One or more required sheets not found.");
-    return;
-  }
-
-  processingSheet.clear();
-  processingSheet
-    .getRange(1, 1, 1, 3)
-    .setValues([["Round", "Eliminated Candidate", "Explanation"]]);
-
-  var candidateNames = candidateSheet
-    .getRange(2, 1, candidateSheet.getLastRow() - 1, 1)
-    .getValues()
-    .flat();
-
-  // Raw response sheet is TimeStamp, Voter Name, Candidate 1 rank, Candidate 2 rank, ...
-  if (candidateNames.length === 0) {
-    Logger.log("Error: No candidates found in the Candidates sheet.");
-    return;
-  }
-  if (responseSheet.getLastRow() < 2) {
-    Logger.log("Error: No responses found in the Candidate Responses sheet.");
-    return;
-  }
-  // Get all responses, starting from the second row (to skip headers)
-  // and the second column (to skip the timestamp).
-  // The range is from the second row, second column to the last row and
-  // the last column (which is candidates.length + 1, because the first column is time stamp and the second column is voter's name).
-  // Note: The first row is the header, so we start from the second row.
-
-  var rawResponses = responseSheet
-    .getRange(2, 2, responseSheet.getLastRow() - 1, candidateNames.length + 1)
-    .getValues();
-  // If there are duplicate voters, take only the latest voter responses
-  var uniqueResponses = {};
-  rawResponses.forEach((response, index) => {
-    var voterName = response[0]; // Assuming the voter's name is in the first column
-    if (
-      !uniqueResponses[voterName] ||
-      uniqueResponses[voterName].index < index
-    ) {
-      uniqueResponses[voterName] = { response, index };
-    }
-  });
-  // After deduplication
-  rawResponses = Object.values(uniqueResponses).map((entry) => entry.response);
-  // Transform to { voterName, ranks }
-
-  var allBallots = rawResponses.map((response) => ({
-    voterName: response[0],
-    ranks: response.slice(1),
-    weight: 1,
-  }));
-
-  return runRankedChoiceVoting(candidateNames, allBallots, processingSheet);
-}
-
 /**
- * Core RCV algorithm, factored out of processRankedChoiceVotes() so
- * survey-driven analysis (webAdmin.js) can run it against a Survey-<name>
- * sheet's own Responses section instead of the fixed "Candidate
- * Responses"/"Candidates" sheets.
+ * Core RCV algorithm, run against survey-driven data sourced by webAdmin.js
+ * from a Survey-<name> sheet's own Responses section.
  *
  * @param {Array<string>} candidateNames
  * @param {Array<{voterName:string, ranks:Array, weight:number}>} allBallots

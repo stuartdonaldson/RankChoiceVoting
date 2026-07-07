@@ -1,10 +1,6 @@
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Voting and Ballot Tools')
-    .addItem('Create Ballot Form', 'showCreateRCVFormDialog')
-    .addItem('Run RCV Analysis', 'showProcessRCVResultsDialog')
-    .addItem('Run Condorcet Analysis', 'showCondorcetAnalysisDialog')
-    .addSeparator()
     .addItem('Open Survey Admin Page', 'showAdminPage')
     .addSeparator()
     .addItem('About', 'showAbout')
@@ -102,44 +98,7 @@ function showAdminPage() {
   SpreadsheetApp.getUi().showModalDialog(html, 'Survey Admin');
 }
 
-// Show a dialog with the link to the created RCV form
-function showCreateRCVFormDialog() {
-  var formUrl = createRankedChoiceVotingForm(); // You must implement createRCVForm() to return the form URL
-  var html = HtmlService.createHtmlOutput(
-    '<p>RCV Form created: <a href="' + formUrl + '" target="_blank">' + formUrl + '</a>.  You may send this link out to the respective voters.  When voting has concluded, or to look at the current standing, select <b>Process RCV Data</b> from the <b>Ranked Choice Voting</b> menu. </p>'
-  ).setWidth(400).setHeight(200);
-  SpreadsheetApp.getUi().showModalDialog(html, 'RCV Form Created');
-}
-
-// Show a dialog with the results of the RCV processing
-function showProcessRCVResultsDialog() {
-  var {winner, tie, summary} = processRankedChoiceVotes(); // returns array of winners., 1 element means there is a winner more than one is a tie even after elimination rounds.
-  var results;
-  if (winner) {
-    results = "<b>Winner: " + winner + "</b>";
-  } else if (tie) {
-    results = "<b>Tie after all eliminations:</b><br>" + summary.join(",<br>");    
-  }
-  results += "<br><br>" + formatCandidateSummaryHtml(summary);
-        
-  var instructions = '<p><b>Instructions:</b> To see the step-by-step elimination of candidates by round, view the "RCV Processing" sheet in this spreadsheet.</p>';
-  var html = HtmlService.createHtmlOutput(
-    instructions + results
-  ).setWidth(500).setHeight(450);
-  SpreadsheetApp.getUi().showModalDialog(html, 'RCV Results');
-}
-
-function showCondorcetAnalysisDialog() {
-  var results = processCondorcetVoting(); // You must implement processCondorcetVotes() to return the results
-  var html = HtmlService.createHtmlOutput(
-    // add style for font to be a sans-serif font
-    '<style>body { font-family: Arial, sans-serif; }</style>' +
-    generateCondorcetResultsHtml(results)
-  ).setWidth(600).setHeight(600);
-  SpreadsheetApp.getUi().showModalDialog(html, 'Condorcet Analysis Results');
-}
-
-// generate html output for the results of processcondorcet()
+// generate html output for the results of runSurveyAnalysis_() (webAdmin.js)
 function generateCondorcetResultsHtml(results) {
   // Basic Condorcet
   var html = '<h3>Basic Condorcet</h3>';
@@ -195,9 +154,8 @@ function generateCondorcetResultsHtml(results) {
 
 /**
  * Formats an RCV candidate summary table (as returned by
- * processRankedChoiceVotes()/runRankedChoiceVoting(), first row = header)
- * as an HTML table. Shared by the "Run RCV Analysis" menu dialog and the
- * web admin page (webAdmin.js).
+ * runRankedChoiceVoting(), first row = header) as an HTML table. Used by
+ * the web admin page (webAdmin.js).
  *
  * @param {Array<Array>} summary
  * @return {string}
