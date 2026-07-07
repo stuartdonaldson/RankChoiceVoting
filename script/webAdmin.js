@@ -15,9 +15,9 @@
 /**
  * ?cmd=admin                          — list all surveys, with a create-new-survey form
  * ?cmd=admin&action=create&id=<id>    — create a new Survey-<id> sheet, then open its edit form
- * ?cmd=admin&action=edit&id=<id>      — edit a survey's Title/Description/Footer/Contact/Accept-New/Items
+ * ?cmd=admin&action=edit&id=<id>      — edit a survey's Title/Description/Footer/Contact/Accept-New/Candidates
  * ?cmd=admin&action=save&id=<id>&...  — save the edit form
- * ?cmd=admin&action=saveItems&id=...  — rename/re-describe items and/or add a new one
+ * ?cmd=admin&action=saveCandidates&id=...  — rename/re-describe candidates and/or add a new one
  * ?cmd=admin&action=analyze&id=<id>   — run analysis on one survey and show results
  *
  * @param {Object} e doGet event.
@@ -44,8 +44,8 @@ function _handleAdmin(e) {
     case 'save':
       body = _handleAdminSave_(params);
       break;
-    case 'saveItems':
-      body = _handleAdminSaveItems_(params);
+    case 'saveCandidates':
+      body = _handleAdminSaveCandidates_(params);
       break;
     default:
       body = _renderAdminList_();
@@ -88,9 +88,9 @@ var _ADMIN_STYLE_ =
   '.survey-info{margin-top:10px;}' +
   '.survey-info summary{cursor:pointer;color:#1a73e8;font-size:0.9em;padding:6px 0;min-height:44px;display:flex;align-items:center;}' +
   '.survey-info p{margin:4px 0 0;color:#3c4043;font-size:0.9em;white-space:pre-wrap;}' +
-  '.item-row{border:1px solid #dadce0;border-radius:6px;padding:10px 12px;margin-bottom:10px;}' +
-  '.item-row label{margin-top:6px;}' +
-  '.item-row label:first-child{margin-top:0;}' +
+  '.candidate-row{border:1px solid #dadce0;border-radius:6px;padding:10px 12px;margin-bottom:10px;}' +
+  '.candidate-row label{margin-top:6px;}' +
+  '.candidate-row label:first-child{margin-top:0;}' +
   '.app-version-footer{color:#9aa0a6;font-size:0.75em;margin-top:24px;}' +
   '@media (max-width:420px){button,a.btn{width:100%;}}' +
   '</style>';
@@ -194,7 +194,7 @@ function _handleAdminCreate_(params) {
   } catch (err) {
     return _renderAdminList_(err.message, params.id);
   }
-  return _renderAdminEdit_(params.id, 'Survey created — fill in the details below and Save. Add items using the Items section below, or let respondents add them if Accept-New is checked.');
+  return _renderAdminEdit_(params.id, 'Survey created — fill in the details below and Save. Add candidates using the Candidates section below, or let respondents add them if Accept-New is checked.');
 }
 
 /**
@@ -209,7 +209,7 @@ function _renderAdminEdit_(id, message, errorMessage) {
   var back = '<p><a target="_top" href="' + _escapeHtml_(baseUrl) + '?cmd=admin">&larr; Back to survey list</a></p>';
   if (!sheet) return back + '<p>No survey found for id "' + _escapeHtml_(id) + '".</p>';
 
-  // Self-heals older sheets: adds the section-marker highlighting and the Items
+  // Self-heals older sheets: adds the section-marker highlighting and the Candidates
   // section (if missing) the first time an admin opens this survey to edit it.
   _highlightSectionMarkers_(sheet);
 
@@ -240,59 +240,59 @@ function _renderAdminEdit_(id, message, errorMessage) {
     '<button type="submit">Save</button>' +
     '</form>';
 
-  html += _renderItemsForm_(id, sheet, baseUrl);
+  html += _renderCandidatesForm_(id, sheet, baseUrl);
 
   return html;
 }
 
 /**
- * Renders the Items management form: one Name/Details field pair per existing
+ * Renders the Candidates management form: one Name/Details field pair per existing
  * candidate (rename + describe in place, position-aligned — see SurveyModel.js's
- * saveSurveyItems_) plus a section to add one new item with its own details. Both
- * submit together as a single form so a multi-item edit round-trips as one save.
+ * saveSurveyCandidates_) plus a section to add one new candidate with its own details.
+ * Both submit together as a single form so a multi-candidate edit round-trips as one save.
  *
  * @param {string} id
  * @param {Sheet} sheet
  * @param {string} baseUrl
  * @return {string}
  */
-function _renderItemsForm_(id, sheet, baseUrl) {
+function _renderCandidatesForm_(id, sheet, baseUrl) {
   var candidates = readSurveyCandidates_(sheet);
-  var items = readSurveyItemDetails_(sheet);
-  // Backfill any candidate that predates the Items table (or predates having its own
-  // row yet) so every candidate always has a field pair to edit.
-  while (items.length < candidates.length) {
-    items.push({ name: candidates[items.length], details: '' });
+  var candidateRows = readSurveyCandidateDetails_(sheet);
+  // Backfill any candidate that predates the Candidates table (or predates having its
+  // own row yet) so every candidate always has a field pair to edit.
+  while (candidateRows.length < candidates.length) {
+    candidateRows.push({ name: candidates[candidateRows.length], details: '' });
   }
 
-  var html = '<h2>Items</h2>';
+  var html = '<h2>Candidates</h2>';
   html += '<form method="get" target="_top" action="' + _escapeHtml_(baseUrl) + '">' +
     '<input type="hidden" name="cmd" value="admin">' +
-    '<input type="hidden" name="action" value="saveItems">' +
+    '<input type="hidden" name="action" value="saveCandidates">' +
     '<input type="hidden" name="id" value="' + _escapeHtml_(id) + '">' +
-    '<input type="hidden" name="itemCount" value="' + candidates.length + '">';
+    '<input type="hidden" name="candidateCount" value="' + candidates.length + '">';
 
   if (!candidates.length) {
-    html += '<p><em>No items yet — add the first one below.</em></p>';
+    html += '<p><em>No candidates yet — add the first one below.</em></p>';
   }
 
   candidates.forEach(function (name, i) {
-    html += '<div class="item-row">' +
-      '<label for="itemName' + i + '">Name</label>' +
-      '<input type="text" id="itemName' + i + '" name="item_name_' + i + '" value="' + _escapeHtml_(items[i].name || name) + '">' +
-      '<label for="itemDetails' + i + '">Details</label>' +
-      '<textarea id="itemDetails' + i + '" name="item_details_' + i + '" rows="2">' + _escapeHtml_(items[i].details || '') + '</textarea>' +
+    html += '<div class="candidate-row">' +
+      '<label for="candidateName' + i + '">Name</label>' +
+      '<input type="text" id="candidateName' + i + '" name="candidate_name_' + i + '" value="' + _escapeHtml_(candidateRows[i].name || name) + '">' +
+      '<label for="candidateDetails' + i + '">Details</label>' +
+      '<textarea id="candidateDetails' + i + '" name="candidate_details_' + i + '" rows="2">' + _escapeHtml_(candidateRows[i].details || '') + '</textarea>' +
       '</div>';
   });
 
-  html += '<h3>Add a new item</h3>' +
-    '<div class="item-row">' +
-    '<label for="newItemName">Name</label>' +
-    '<input type="text" id="newItemName" name="newItemName">' +
-    '<label for="newItemDetails">Details</label>' +
-    '<textarea id="newItemDetails" name="newItemDetails" rows="2"></textarea>' +
+  html += '<h3>Add a new candidate</h3>' +
+    '<div class="candidate-row">' +
+    '<label for="newCandidateName">Name</label>' +
+    '<input type="text" id="newCandidateName" name="newCandidateName">' +
+    '<label for="newCandidateDetails">Details</label>' +
+    '<textarea id="newCandidateDetails" name="newCandidateDetails" rows="2"></textarea>' +
     '</div>' +
-    '<button type="submit">Save Items</button>' +
+    '<button type="submit">Save Candidates</button>' +
     '</form>';
 
   return html;
@@ -302,30 +302,30 @@ function _renderItemsForm_(id, sheet, baseUrl) {
  * @param {Object} params
  * @return {string}
  */
-function _handleAdminSaveItems_(params) {
+function _handleAdminSaveCandidates_(params) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = findSurveySheet_(ss, params.id);
   if (!sheet) return _renderAdminList_('No survey found for id "' + params.id + '".');
 
   try {
-    var count = parseInt(params.itemCount, 10) || 0;
-    var items = [];
+    var count = parseInt(params.candidateCount, 10) || 0;
+    var candidateRows = [];
     for (var i = 0; i < count; i++) {
-      items.push({ name: params['item_name_' + i] || '', details: params['item_details_' + i] || '' });
+      candidateRows.push({ name: params['candidate_name_' + i] || '', details: params['candidate_details_' + i] || '' });
     }
-    if (items.length) {
-      saveSurveyItemsForId_(params.id, items);
+    if (candidateRows.length) {
+      saveSurveyCandidatesForId_(params.id, candidateRows);
     }
 
-    var newName = String(params.newItemName || '').trim();
+    var newName = String(params.newCandidateName || '').trim();
     if (newName) {
-      addSurveyItemForAdmin_(params.id, newName, params.newItemDetails || '');
+      addSurveyCandidateForAdmin_(params.id, newName, params.newCandidateDetails || '');
     }
   } catch (err) {
     return _renderAdminEdit_(params.id, null, err.message);
   }
 
-  return _renderAdminEdit_(params.id, 'Items saved.');
+  return _renderAdminEdit_(params.id, 'Candidates saved.');
 }
 
 /**

@@ -31,13 +31,14 @@ function testCreateNewSurveyCreatesSkeleton() {
   assert.equal(config['Accept-New'], 'TRUE');
   assert.equal(config.Info, '');
 
-  // Results marker at row 8, Items marker/header at 9/10, Responses marker at row 11,
-  // Responses header at row 12. Markers are bracket-decorated ("[Results]", not
-  // "Results") so a survey item literally named "Results"/"Items"/"Responses" can
-  // never be mistaken for the real marker; the Items header (row 10) starts at col B
-  // (col A stays blank/reserved) so item data is never in the marker-scanned column.
+  // Results marker at row 8, Candidates marker/header at 9/10, Responses marker at row
+  // 11, Responses header at row 12. Markers are bracket-decorated ("[Results]", not
+  // "Results") so a survey candidate literally named "Results"/"Candidates"/"Responses"
+  // can never be mistaken for the real marker; the Candidates header (row 10) starts
+  // at col B (col A stays blank/reserved) so candidate data is never in the
+  // marker-scanned column.
   assert.equal(sheet.getRange(8, 1).getValue(), '[Results]');
-  assert.equal(sheet.getRange(9, 1).getValue(), '[Items]');
+  assert.equal(sheet.getRange(9, 1).getValue(), '[Candidates]');
   assert.equal(sheet.getRange(10, 1).getValue(), ''); // col A reserved, always blank here
   assert.deepEqual(sheet.getRange(10, 2, 1, 2).getValues()[0], ['Name', 'Details']);
   assert.equal(sheet.getRange(11, 1).getValue(), '[Responses]');
@@ -201,21 +202,21 @@ function testGetSurveyForRespondentIncludesItemDetails() {
 
 function testAddSurveyCandidateTracksDetailsPositionAligned() {
   const { SM, ss } = loadSurveyModel();
-  const sheet = SM.createNewSurvey_(ss, 'ItemsTest');
+  const sheet = SM.createNewSurvey_(ss, 'CandidatesTest');
 
   SM.addSurveyCandidate_(sheet, 'Alice', 'Loves cats');
   SM.addSurveyCandidate_(sheet, 'Bob', '');
   SM.addSurveyCandidate_(sheet, 'Carol', 'Prefers mornings');
 
   assert.deepEqual(SM.readSurveyCandidates_(sheet), ['Alice', 'Bob', 'Carol']);
-  assert.deepEqual(SM.readSurveyItemDetails_(sheet), [
+  assert.deepEqual(SM.readSurveyCandidateDetails_(sheet), [
     { name: 'Alice', details: 'Loves cats' },
     { name: 'Bob', details: '' },
     { name: 'Carol', details: 'Prefers mornings' },
   ]);
 }
 
-function testSaveSurveyItemsRenamesAndUpdatesDetailsWithoutDisturbingResponses() {
+function testSaveSurveyCandidatesRenamesAndUpdatesDetailsWithoutDisturbingResponses() {
   const { SM, ss } = loadSurveyModel();
   const sheet = SM.createNewSurvey_(ss, 'RenameTest');
 
@@ -223,13 +224,13 @@ function testSaveSurveyItemsRenamesAndUpdatesDetailsWithoutDisturbingResponses()
   SM.addSurveyCandidate_(sheet, 'Bob', '');
   SM.submitSurveyResponse_('RenameTest', 'Voter One', ['Bob', 'Alice'], '');
 
-  SM.saveSurveyItems_(sheet, [
+  SM.saveSurveyCandidates_(sheet, [
     { name: 'Alicia', details: 'renamed from Alice' },
     { name: 'Robert', details: 'renamed from Bob' },
   ]);
 
   assert.deepEqual(SM.readSurveyCandidates_(sheet), ['Alicia', 'Robert']);
-  assert.deepEqual(SM.readSurveyItemDetails_(sheet), [
+  assert.deepEqual(SM.readSurveyCandidateDetails_(sheet), [
     { name: 'Alicia', details: 'renamed from Alice' },
     { name: 'Robert', details: 'renamed from Bob' },
   ]);
@@ -241,36 +242,36 @@ function testSaveSurveyItemsRenamesAndUpdatesDetailsWithoutDisturbingResponses()
   assert.deepEqual(rows[0].ranks, [2, 1]); // Alice(now Alicia)=2, Bob(now Robert)=1
 }
 
-function testSaveSurveyItemsRejectsCountMismatch() {
+function testSaveSurveyCandidatesRejectsCountMismatch() {
   const { SM, ss } = loadSurveyModel();
   const sheet = SM.createNewSurvey_(ss, 'MismatchTest');
   SM.addSurveyCandidate_(sheet, 'Alice', '');
 
   assert.throws(
-    () => SM.saveSurveyItems_(sheet, [{ name: 'A', details: '' }, { name: 'B', details: '' }]),
+    () => SM.saveSurveyCandidates_(sheet, [{ name: 'A', details: '' }, { name: 'B', details: '' }]),
     /count changed/
   );
 }
 
-function testSaveSurveyItemsRejectsEmptyName() {
+function testSaveSurveyCandidatesRejectsEmptyName() {
   const { SM, ss } = loadSurveyModel();
   const sheet = SM.createNewSurvey_(ss, 'EmptyNameTest');
   SM.addSurveyCandidate_(sheet, 'Alice', '');
 
-  assert.throws(() => SM.saveSurveyItems_(sheet, [{ name: '  ', details: '' }]), /cannot be empty/);
+  assert.throws(() => SM.saveSurveyCandidates_(sheet, [{ name: '  ', details: '' }]), /cannot be empty/);
 }
 
-function testAddSurveyItemForAdminAndSaveSurveyItemsForId() {
+function testAddSurveyCandidateForAdminAndSaveSurveyCandidatesForId() {
   const { SM, ss } = loadSurveyModel();
   SM.createNewSurvey_(ss, 'IdWrappers');
 
-  const result = SM.addSurveyItemForAdmin_('IdWrappers', 'Dana', 'added via admin');
+  const result = SM.addSurveyCandidateForAdmin_('IdWrappers', 'Dana', 'added via admin');
   assert.deepEqual(result, { candidate: 'Dana' });
 
-  SM.saveSurveyItemsForId_('IdWrappers', [{ name: 'Dana Renamed', details: 'updated' }]);
+  SM.saveSurveyCandidatesForId_('IdWrappers', [{ name: 'Dana Renamed', details: 'updated' }]);
 
   const sheet = SM.findSurveySheet_(ss, 'IdWrappers');
-  assert.deepEqual(SM.readSurveyItemDetails_(sheet), [{ name: 'Dana Renamed', details: 'updated' }]);
+  assert.deepEqual(SM.readSurveyCandidateDetails_(sheet), [{ name: 'Dana Renamed', details: 'updated' }]);
 }
 
 /**
@@ -286,19 +287,19 @@ function testAddSurveyCandidateForIdAcceptsRespondentDetails() {
   assert.deepEqual(result, { candidate: 'Elm Street' });
 
   const sheet = SM.findSurveySheet_(ss, 'RespondentAdd');
-  assert.deepEqual(SM.readSurveyItemDetails_(sheet), [{ name: 'Elm Street', details: 'suggested by a voter' }]);
+  assert.deepEqual(SM.readSurveyCandidateDetails_(sheet), [{ name: 'Elm Street', details: 'suggested by a voter' }]);
 }
 
 /**
- * Simulates a sheet created before the Items section existed (Results/Responses
+ * Simulates a sheet created before the Candidates section existed (Results/Responses
  * markers only, candidates already typed directly into the Responses header) to
- * confirm _ensureItemsSection_ inserts an empty Items section on first touch, and
- * that adding a further candidate correctly backfills the pre-existing ones instead
- * of misaligning the new item's details against the wrong column.
+ * confirm _ensureCandidatesSection_ inserts an empty Candidates section on first
+ * touch, and that adding a further candidate correctly backfills the pre-existing
+ * ones instead of misaligning the new candidate's details against the wrong column.
  */
-function testEnsureItemsSectionSelfHealsOldSheetAndBackfillsOnAdd() {
+function testEnsureCandidatesSectionSelfHealsOldSheetAndBackfillsOnAdd() {
   const { SM, ss } = loadSurveyModel();
-  const sheet = ss.insertSheet('Survey-PreItems');
+  const sheet = ss.insertSheet('Survey-PreCandidates');
   sheet.getRange(1, 1, 6, 2).setValues([
     ['Title', 'T'], ['Description', 'D'], ['Footer', 'F'],
     ['Contact', 'C'], ['Accept-New', 'TRUE'], ['Info', ''],
@@ -307,44 +308,44 @@ function testEnsureItemsSectionSelfHealsOldSheetAndBackfillsOnAdd() {
   sheet.getRange(10, 1).setValue('Responses');
   sheet.getRange(11, 1, 1, 6).setValues([['Date', 'Name', 'Weight', 'Comment', 'Alice', 'Bob']]);
 
-  assert.deepEqual(SM.readSurveyItemDetails_(sheet), []); // no Items rows yet, but no throw
-  // _ensureItemsSection_ inserts the Items marker+header directly above the (now
-  // shifted) Responses marker: old Responses(10) -> 12, Items marker lands at 10.
-  // Looking up the Responses marker along the way migrates its bare legacy text to
-  // "[Responses]"; the new Items marker is written decorated from the start.
-  assert.equal(sheet.getRange(10, 1).getValue(), '[Items]');
+  assert.deepEqual(SM.readSurveyCandidateDetails_(sheet), []); // no Candidates rows yet, but no throw
+  // _ensureCandidatesSection_ inserts the Candidates marker+header directly above the
+  // (now shifted) Responses marker: old Responses(10) -> 12, Candidates marker lands
+  // at 10. Looking up the Responses marker along the way migrates its bare legacy text
+  // to "[Responses]"; the new Candidates marker is written decorated from the start.
+  assert.equal(sheet.getRange(10, 1).getValue(), '[Candidates]');
   assert.equal(sheet.getRange(11, 1).getValue(), ''); // col A reserved, blank
   assert.deepEqual(sheet.getRange(11, 2, 1, 2).getValues()[0], ['Name', 'Details']);
   assert.equal(sheet.getRange(12, 1).getValue(), '[Responses]');
 
-  SM.addSurveyCandidate_(sheet, 'Carol', 'newest item');
+  SM.addSurveyCandidate_(sheet, 'Carol', 'newest candidate');
 
   assert.deepEqual(SM.readSurveyCandidates_(sheet), ['Alice', 'Bob', 'Carol']);
-  assert.deepEqual(SM.readSurveyItemDetails_(sheet), [
+  assert.deepEqual(SM.readSurveyCandidateDetails_(sheet), [
     { name: 'Alice', details: '' },
     { name: 'Bob', details: '' },
-    { name: 'Carol', details: 'newest item' },
+    { name: 'Carol', details: 'newest candidate' },
   ]);
 }
 
 /**
- * Reproduces the live bug found on Survey-ABC-2026-7: an Items section that DOES
+ * Reproduces the live bug found on Survey-ABC-2026-7: a Candidates section that DOES
  * exist (created before the column-A-reservation fix shipped), with Name/Details
- * still sitting in columns A/B instead of B/C. Before _migrateItemsColumnsIfNeeded_
- * existed, readSurveyItemDetails_ would silently misread column B (the old Details
- * value) as the new Name column and an always-empty column C as Details — returning
- * every item with blank details instead of throwing, which is why this went
- * unnoticed until a user reported "I don't see any item details."
+ * still sitting in columns A/B instead of B/C. Before _migrateCandidatesColumnsIfNeeded_
+ * existed, readSurveyCandidateDetails_ would silently misread column B (the old
+ * Details value) as the new Name column and an always-empty column C as Details —
+ * returning every candidate with blank details instead of throwing, which is why this
+ * went unnoticed until a user reported "I don't see any candidate details."
  */
-function testMigratesExistingOldColumnItemsSectionOnRead() {
+function testMigratesExistingOldColumnCandidatesSectionOnRead() {
   const { SM, ss } = loadSurveyModel();
-  const sheet = ss.insertSheet('Survey-OldItemsCols');
+  const sheet = ss.insertSheet('Survey-OldCandidatesCols');
   sheet.getRange(1, 1, 6, 2).setValues([
     ['Title', 'T'], ['Description', 'D'], ['Footer', 'F'],
     ['Contact', 'C'], ['Accept-New', 'TRUE'], ['Info', ''],
   ]);
   sheet.getRange(8, 1).setValue('[Results]');
-  sheet.getRange(9, 1).setValue('[Items]');
+  sheet.getRange(9, 1).setValue('[Candidates]');
   // Old layout: Name/Details in columns A/B (not B/C).
   sheet.getRange(10, 1, 1, 2).setValues([['Name', 'Details']]);
   sheet.getRange(11, 1, 3, 2).setValues([
@@ -355,8 +356,8 @@ function testMigratesExistingOldColumnItemsSectionOnRead() {
   sheet.getRange(14, 1).setValue('[Responses]');
   sheet.getRange(15, 1, 1, 7).setValues([['Date', 'Name', 'Weight', 'Comment', 'book 1', 'book 2', 'book 3']]);
 
-  const items = SM.readSurveyItemDetails_(sheet);
-  assert.deepEqual(items, [
+  const candidateRows = SM.readSurveyCandidateDetails_(sheet);
+  assert.deepEqual(candidateRows, [
     { name: 'book 1', details: 'details for b1' },
     { name: 'book 2', details: 'details for b2' },
     { name: 'book 3', details: 'details for b3' },
@@ -370,6 +371,68 @@ function testMigratesExistingOldColumnItemsSectionOnRead() {
 
   // Candidates/Responses section untouched by the migration.
   assert.deepEqual(SM.readSurveyCandidates_(sheet), ['book 1', 'book 2', 'book 3']);
+}
+
+/**
+ * Confirms the old "[Items]" marker (and its bare pre-decoration form "Items") is
+ * recognized as a legacy alias for "[Candidates]" and migrated to the decorated
+ * "[Candidates]" text in place the first time it's looked up — covers a sheet that
+ * hasn't yet been manually renamed since the Items->Candidates rename.
+ */
+function testLegacyItemsMarkerMigratesToCandidatesMarker() {
+  const { SM, ss } = loadSurveyModel();
+  const sheet = ss.insertSheet('Survey-LegacyItems');
+  sheet.getRange(1, 1, 6, 2).setValues([
+    ['Title', 'T'], ['Description', 'D'], ['Footer', 'F'],
+    ['Contact', 'C'], ['Accept-New', 'TRUE'], ['Info', ''],
+  ]);
+  sheet.getRange(8, 1).setValue('[Results]');
+  sheet.getRange(9, 1).setValue('[Items]');
+  sheet.getRange(10, 2, 1, 2).setValues([['Name', 'Details']]);
+  sheet.getRange(11, 2, 1, 2).setValues([['Alice', 'Loves cats']]);
+  sheet.getRange(12, 1).setValue('[Responses]');
+  sheet.getRange(13, 1, 1, 5).setValues([['Date', 'Name', 'Weight', 'Comment', 'Alice']]);
+
+  assert.deepEqual(SM.readSurveyCandidateDetails_(sheet), [{ name: 'Alice', details: 'Loves cats' }]);
+  assert.equal(sheet.getRange(9, 1).getValue(), '[Candidates]'); // migrated in place
+}
+
+/**
+ * The Candidates table is the PRIMARY identification of candidates: a candidate
+ * pre-populated there directly (e.g. by hand-editing the sheet, ahead of any votes)
+ * but not yet present in the Responses header must still show up everywhere that
+ * reads candidates — readSurveyCandidates_ reconciles the Responses header to match
+ * on every read, appending the missing column(s) without disturbing existing ones.
+ */
+function testPrePopulatedCandidateNotInResponsesIsReconciledIn() {
+  const { SM, ss } = loadSurveyModel();
+  const sheet = SM.createNewSurvey_(ss, 'PrePopulated');
+
+  SM.addSurveyCandidate_(sheet, 'Alice', '');
+  SM.submitSurveyResponse_('PrePopulated', 'Voter One', ['Alice'], '');
+
+  // Hand-populate a second candidate directly into the Candidates table only —
+  // simulates pre-populating candidates in the spreadsheet without going through
+  // addSurveyCandidate_, so the Responses header doesn't have a column for it yet.
+  SM.writeSurveyCandidateDetails_(sheet, [
+    { name: 'Alice', details: '' },
+    { name: 'Bob', details: '' },
+  ]);
+
+  // Responses header still only has Alice's column at this point.
+  assert.equal(sheet.getLastColumn(), 5);
+
+  // readSurveyCandidates_ reconciles: Bob's column gets appended, Alice's existing
+  // column/position (and Voter One's recorded rank) are left untouched.
+  assert.deepEqual(SM.readSurveyCandidates_(sheet), ['Alice', 'Bob']);
+  const rows = SM.readSurveyResponseRows_(sheet);
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0].ranks, [1, '']); // Alice=1 (unchanged), Bob unranked
+
+  // getSurveyForRespondent_ (the RPC payload the survey page renders from) also
+  // sees the reconciled, complete candidate list.
+  const result = SM.getSurveyForRespondent_('PrePopulated', '');
+  assert.deepEqual(result.candidates, ['Alice', 'Bob']);
 }
 
 function testDuplicateIdThrows() {
@@ -394,13 +457,15 @@ function run() {
   testCandidatesAndSubmitResponseRoundTrip();
   testGetSurveyForRespondentIncludesItemDetails();
   testAddSurveyCandidateTracksDetailsPositionAligned();
-  testSaveSurveyItemsRenamesAndUpdatesDetailsWithoutDisturbingResponses();
-  testSaveSurveyItemsRejectsCountMismatch();
-  testSaveSurveyItemsRejectsEmptyName();
-  testAddSurveyItemForAdminAndSaveSurveyItemsForId();
+  testSaveSurveyCandidatesRenamesAndUpdatesDetailsWithoutDisturbingResponses();
+  testSaveSurveyCandidatesRejectsCountMismatch();
+  testSaveSurveyCandidatesRejectsEmptyName();
+  testAddSurveyCandidateForAdminAndSaveSurveyCandidatesForId();
   testAddSurveyCandidateForIdAcceptsRespondentDetails();
-  testEnsureItemsSectionSelfHealsOldSheetAndBackfillsOnAdd();
-  testMigratesExistingOldColumnItemsSectionOnRead();
+  testEnsureCandidatesSectionSelfHealsOldSheetAndBackfillsOnAdd();
+  testMigratesExistingOldColumnCandidatesSectionOnRead();
+  testLegacyItemsMarkerMigratesToCandidatesMarker();
+  testPrePopulatedCandidateNotInResponsesIsReconciledIn();
   testDuplicateIdThrows();
   testInvalidIdThrows();
   console.log('test_survey_model: all tests passed');
