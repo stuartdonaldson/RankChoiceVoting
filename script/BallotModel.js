@@ -482,6 +482,25 @@ function _reconcileCandidatesWithResponses_(sheet) {
   var existingNames = lastCol < _BALLOT_FIRST_CANDIDATE_COL ? [] :
     sheet.getRange(headerRow, _BALLOT_FIRST_CANDIDATE_COL, 1, lastCol - _BALLOT_FIRST_CANDIDATE_COL + 1)
       .getValues()[0].map(function (v) { return String(v || '').trim(); });
+
+  // Sanity check: a blank cell before a non-blank one means an earlier write left a
+  // gap in the Responses header — e.g. by computing the append column from
+  // sheet.getLastColumn(), which can be pushed right of the header's own last
+  // candidate column by a wider Candidates table (its Link URL column included).
+  // Compact left to realign header names with the vote columns beneath them, which
+  // are always written starting at _BALLOT_FIRST_CANDIDATE_COL regardless of the
+  // header (see submitBallotResponse_) — so the header, not the data, is what drifted.
+  var compacted = existingNames.filter(function (n) { return n; });
+  if (compacted.length !== existingNames.length) {
+    Logger.log('Ballot "' + sheet.getName() + '": correcting ' + (existingNames.length - compacted.length) +
+      ' blank gap column(s) in the Responses header.');
+    sheet.getRange(headerRow, _BALLOT_FIRST_CANDIDATE_COL, 1, existingNames.length).clearContent();
+    if (compacted.length) {
+      sheet.getRange(headerRow, _BALLOT_FIRST_CANDIDATE_COL, 1, compacted.length).setValues([compacted]);
+    }
+    existingNames = compacted;
+  }
+
   var existingSet = {};
   existingNames.forEach(function (n) { if (n) existingSet[n] = true; });
 
@@ -490,7 +509,9 @@ function _reconcileCandidatesWithResponses_(sheet) {
     .filter(function (n) { return n && !existingSet[n]; });
   if (!missingNames.length) return;
 
-  var nextCol = Math.max(sheet.getLastColumn() + 1, _BALLOT_FIRST_CANDIDATE_COL);
+  // Computed from the header's own (now-compacted) candidate count, not
+  // sheet.getLastColumn() — see the compaction comment above for why that's unsafe.
+  var nextCol = _BALLOT_FIRST_CANDIDATE_COL + existingNames.length;
   sheet.getRange(headerRow, nextCol, 1, missingNames.length).setValues([missingNames]);
 }
 
@@ -810,9 +831,14 @@ function readBallotCandidateDetails_(sheet) {
   var count = responsesRow - candidatesHeaderRow - 1;
   if (count <= 0) return [];
   var values = sheet.getRange(candidatesHeaderRow + 1, _BALLOT_CANDIDATES_FIRST_COL, count, _BALLOT_CANDIDATES_HEADER.length).getValues();
-  return values.map(function (r) {
-    return { name: String(r[0] || '').trim(), details: String(r[1] || ''), linkText: String(r[2] || ''), linkUrl: String(r[3] || '') };
-  });
+  // A row with no name (e.g. a stray blank row someone left in the sheet) isn't a
+  // candidate — skip it rather than returning a phantom entry that would throw off
+  // the position alignment with the Responses header's candidate columns.
+  return values
+    .map(function (r) {
+      return { name: String(r[0] || '').trim(), details: String(r[1] || ''), linkText: String(r[2] || ''), linkUrl: String(r[3] || '') };
+    })
+    .filter(function (it) { return it.name; });
 }
 
 /**

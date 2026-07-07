@@ -512,6 +512,56 @@ function testPrePopulatedCandidateNotInResponsesIsReconciledIn() {
   assert.deepEqual(result.candidates, ['Alice', 'Bob']);
 }
 
+/**
+ * A stray blank row in the Candidates table (e.g. hand-edited into the sheet, or left
+ * behind by some other bug) must not be treated as a candidate — readBallotCandidateDetails_
+ * is position-aligned with the Responses header's candidate columns, so a phantom blank
+ * entry would throw off every candidate after it.
+ */
+function testReadBallotCandidateDetailsIgnoresBlankRow() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = SM.createNewBallot_(ss, 'BlankRow');
+
+  SM.writeBallotCandidateDetails_(sheet, [
+    { name: 'Alice', details: '' },
+    { name: '', details: '' }, // stray blank row
+    { name: 'Bob', details: '' },
+  ]);
+
+  assert.deepEqual(SM.readBallotCandidateDetails_(sheet), [
+    { name: 'Alice', details: '', linkText: '', linkUrl: '' },
+    { name: 'Bob', details: '', linkText: '', linkUrl: '' },
+  ]);
+}
+
+/**
+ * Regression test for a real bug seen on the SIT sheet: pre-populating the Candidates
+ * table directly (skipping addBallotCandidate_) before any Responses columns exist meant
+ * sheet.getLastColumn() reflected the Candidates table's own fixed-width header (through
+ * its Link URL column) rather than the Responses header's candidate-column count, so the
+ * old _reconcileCandidatesWithResponses_ appended candidate names one column to the right
+ * of where submitBallotResponse_ actually writes ranks — leaving a blank gap column and
+ * every candidate's name shifted off of its vote data.
+ */
+function testReconcileCompactsGapCausedByWiderCandidatesTable() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = SM.createNewBallot_(ss, 'GapTest');
+
+  SM.writeBallotCandidateDetails_(sheet, [
+    { name: 'Alice', details: '' },
+    { name: 'Bob', details: '' },
+  ]);
+
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice', 'Bob']);
+
+  SM.submitBallotResponse_('GapTest', 'Voter One', ['Bob', 'Alice'], '');
+  const rows = SM.readBallotResponseRows_(sheet);
+  assert.equal(rows.length, 1);
+  // Alice=2, Bob=1 — proves the header lines up with the vote columns rather than
+  // being shifted right by a gap column.
+  assert.deepEqual(rows[0].ranks, [2, 1]);
+}
+
 function testDuplicateIdThrows() {
   const { SM, ss } = loadBallotModel();
   SM.createNewBallot_(ss, 'Dup');
@@ -546,6 +596,8 @@ function run() {
   testMigratesExistingOldColumnCandidatesSectionOnRead();
   testLegacyItemsMarkerMigratesToCandidatesMarker();
   testPrePopulatedCandidateNotInResponsesIsReconciledIn();
+  testReadBallotCandidateDetailsIgnoresBlankRow();
+  testReconcileCompactsGapCausedByWiderCandidatesTable();
   testDuplicateIdThrows();
   testInvalidIdThrows();
   console.log('test_ballot_model: all tests passed');
