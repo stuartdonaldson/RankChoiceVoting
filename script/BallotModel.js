@@ -61,7 +61,7 @@
 var BALLOT_SHEET_PREFIX = 'Ballot-';
 var _BALLOT_RESULTS_MARKER = '[Results]';
 var _BALLOT_CANDIDATES_MARKER = '[Candidates]';
-var _BALLOT_CANDIDATES_HEADER = ['Name', 'Details'];
+var _BALLOT_CANDIDATES_HEADER = ['Name', 'Details', 'Link Text', 'Link URL'];
 var _BALLOT_CANDIDATES_FIRST_COL = 2; // col B — col A stays blank/reserved throughout the Candidates section
 var _BALLOT_RESPONSES_MARKER = '[Responses]';
 // Legacy marker text recognized by _findMarkerRow_ purely to migrate older sheets in
@@ -232,6 +232,26 @@ function _migrateCandidatesColumnsIfNeeded_(sheet) {
   if (count > 0) {
     sheet.getRange(candidatesHeaderRow + 1, _BALLOT_CANDIDATES_FIRST_COL, count, 2).setValues(oldValues);
   }
+}
+
+/**
+ * Backfills the Candidates header row with any header columns added to
+ * _BALLOT_CANDIDATES_HEADER after a sheet was created (e.g. "Link Text"/"Link URL"
+ * added after Name/Details) — a sheet already on the current header is left untouched.
+ * Only ever appends missing trailing header cells; never rewrites the existing ones,
+ * so it can't clobber a sheet mid-migration from the old column-A layout.
+ *
+ * @param {Sheet} sheet
+ */
+function _ensureCandidatesHeaderColumns_(sheet) {
+  var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
+  if (candidatesRow === -1) return;
+  var headerRow = candidatesRow + 1;
+  var current = sheet.getRange(headerRow, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).getValues()[0];
+  var missing = _BALLOT_CANDIDATES_HEADER.filter(function (label, i) { return String(current[i] || '').trim() === ''; });
+  if (!missing.length) return;
+  var firstMissingCol = _BALLOT_CANDIDATES_FIRST_COL + (_BALLOT_CANDIDATES_HEADER.length - missing.length);
+  sheet.getRange(headerRow, firstMissingCol, 1, missing.length).setValues([missing]);
 }
 
 /**
@@ -579,13 +599,18 @@ function _findBallotResponseRowForName_(sheet, name) {
  * @param {Sheet} sheet
  * @param {string} phrase
  * @param {string=} details admin-only note for this candidate (respondents never pass this).
+ * @param {string=} linkText admin-only link label shown alongside details (respondents never pass this).
+ * @param {string=} linkUrl admin-only link target, opened in a new tab (respondents never pass this).
  */
-function addBallotCandidate_(sheet, phrase, details) {
+function addBallotCandidate_(sheet, phrase, details, linkText, linkUrl) {
   var headerRow = _getResponsesHeaderRow_(sheet);
   if (headerRow === -1) throw new Error('Ballot has no Responses section.');
   var existingCandidates = readBallotCandidates_(sheet); // BEFORE the new column exists
-  var nextCol = sheet.getLastColumn() + 1;
-  if (nextCol < _BALLOT_FIRST_CANDIDATE_COL) nextCol = _BALLOT_FIRST_CANDIDATE_COL;
+  // Computed from the Responses header's own candidate-column count (not
+  // sheet.getLastColumn()) — the Candidates table sits in earlier columns and can be
+  // wider than the Responses section (e.g. its Link URL column), which would otherwise
+  // throw off where the next candidate column belongs.
+  var nextCol = _BALLOT_FIRST_CANDIDATE_COL + existingCandidates.length;
   sheet.getRange(headerRow, nextCol).setValue(phrase);
 
   var candidateRows = readBallotCandidateDetails_(sheet);
@@ -593,9 +618,9 @@ function addBallotCandidate_(sheet, phrase, details) {
   // a candidate added, before this feature existed) with blank details, so positions
   // never drift between the Candidates table and the Responses header's candidate columns.
   while (candidateRows.length < existingCandidates.length) {
-    candidateRows.push({ name: existingCandidates[candidateRows.length], details: '' });
+    candidateRows.push({ name: existingCandidates[candidateRows.length], details: '', linkText: '', linkUrl: '' });
   }
-  candidateRows.push({ name: phrase, details: details || '' });
+  candidateRows.push({ name: phrase, details: details || '', linkText: linkText || '', linkUrl: linkUrl || '' });
   writeBallotCandidateDetails_(sheet, candidateRows);
 }
 
@@ -622,10 +647,13 @@ function getBallotForRespondent_(id, name) {
   // has no key here, which the client treats as "no details to show," not an error.
   // NOTE: the RPC field is still named `itemDetails` — it's an established part of
   // the client contract (webBallotPage.html reads config.itemDetails), unrelated to
-  // the Items->Candidates section rename.
+  // the Items->Candidates section rename. Each entry is {details, linkText, linkUrl}
+  // rather than a bare string so the client can render the optional link alongside it.
   var itemDetails = {};
   readBallotCandidateDetails_(sheet).forEach(function (it) {
-    if (it.details) itemDetails[it.name] = it.details;
+    if (it.details || it.linkUrl) {
+      itemDetails[it.name] = { details: it.details || '', linkText: it.linkText || '', linkUrl: it.linkUrl || '' };
+    }
   });
 
   var result = {
@@ -769,41 +797,43 @@ function writeBallotResults_(sheet, rows) {
  * list candidates that don't have a Responses column yet.
  *
  * @param {Sheet} sheet
- * @return {Array<{name:string, details:string}>}
+ * @return {Array<{name:string, details:string, linkText:string, linkUrl:string}>}
  */
 function readBallotCandidateDetails_(sheet) {
   _ensureCandidatesSection_(sheet);
   _migrateCandidatesColumnsIfNeeded_(sheet);
+  _ensureCandidatesHeaderColumns_(sheet);
   var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
   var responsesRow = _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER);
   if (candidatesRow === -1 || responsesRow === -1) return [];
   var candidatesHeaderRow = candidatesRow + 1;
   var count = responsesRow - candidatesHeaderRow - 1;
   if (count <= 0) return [];
-  var values = sheet.getRange(candidatesHeaderRow + 1, _BALLOT_CANDIDATES_FIRST_COL, count, 2).getValues();
+  var values = sheet.getRange(candidatesHeaderRow + 1, _BALLOT_CANDIDATES_FIRST_COL, count, _BALLOT_CANDIDATES_HEADER.length).getValues();
   return values.map(function (r) {
-    return { name: String(r[0] || '').trim(), details: String(r[1] || '') };
+    return { name: String(r[0] || '').trim(), details: String(r[1] || ''), linkText: String(r[2] || ''), linkUrl: String(r[3] || '') };
   });
 }
 
 /**
  * Resizes + rewrites the Candidates table to exactly match `candidateRows` (array of
- * {name, details}, one per candidate column, in the same order). Leaves the
- * Responses section untouched — the insert/delete happens strictly between the
- * Candidates header and the Responses marker.
+ * {name, details, linkText, linkUrl}, one per candidate column, in the same order).
+ * Leaves the Responses section untouched — the insert/delete happens strictly between
+ * the Candidates header and the Responses marker.
  *
  * @param {Sheet} sheet
- * @param {Array<{name:string, details:string}>} candidateRows
+ * @param {Array<{name:string, details:string, linkText:string, linkUrl:string}>} candidateRows
  */
 function writeBallotCandidateDetails_(sheet, candidateRows) {
   _ensureCandidatesSection_(sheet);
   _migrateCandidatesColumnsIfNeeded_(sheet);
+  _ensureCandidatesHeaderColumns_(sheet);
   var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
   var responsesRow = _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER);
   if (candidatesRow === -1 || responsesRow === -1) {
     throw new Error('Ballot sheet is missing its Candidates/Responses markers.');
   }
-  var rows = candidateRows.map(function (it) { return [it.name || '', it.details || '']; });
+  var rows = candidateRows.map(function (it) { return [it.name || '', it.details || '', it.linkText || '', it.linkUrl || '']; });
   _resizeSectionRows_(sheet, candidatesRow + 1, responsesRow, rows, _BALLOT_CANDIDATES_FIRST_COL);
 }
 
@@ -815,7 +845,7 @@ function writeBallotCandidateDetails_(sheet, candidateRows) {
  * ballot's current candidate count (stale form — caller should reload and retry).
  *
  * @param {Sheet} sheet
- * @param {Array<{name:string, details:string}>} candidateRows
+ * @param {Array<{name:string, details:string, linkText:string, linkUrl:string}>} candidateRows
  */
 function saveBallotCandidates_(sheet, candidateRows) {
   var candidates = readBallotCandidates_(sheet);
@@ -832,7 +862,7 @@ function saveBallotCandidates_(sheet, candidateRows) {
     sheet.getRange(headerRow, _BALLOT_FIRST_CANDIDATE_COL, 1, names.length).setValues([names]);
   }
   writeBallotCandidateDetails_(sheet, candidateRows.map(function (it, i) {
-    return { name: names[i], details: String(it.details || '') };
+    return { name: names[i], details: String(it.details || ''), linkText: String(it.linkText || ''), linkUrl: String(it.linkUrl || '') };
   }));
   _highlightSectionMarkers_(sheet);
 }
@@ -843,7 +873,7 @@ function saveBallotCandidates_(sheet, candidateRows) {
  * admin edits and respondent submissions/candidate-adds must not interleave).
  *
  * @param {string} id
- * @param {Array<{name:string, details:string}>} candidateRows
+ * @param {Array<{name:string, details:string, linkText:string, linkUrl:string}>} candidateRows
  */
 function saveBallotCandidatesForId_(id, candidateRows) {
   var lock = LockService.getScriptLock();
@@ -866,9 +896,11 @@ function saveBallotCandidatesForId_(id, candidateRows) {
  * @param {string} id
  * @param {string} name
  * @param {string=} details
+ * @param {string=} linkText
+ * @param {string=} linkUrl
  * @return {{candidate:string}}
  */
-function addBallotCandidateForAdmin_(id, name, details) {
+function addBallotCandidateForAdmin_(id, name, details, linkText, linkUrl) {
   name = String(name || '').trim();
   if (!name) throw new Error('Candidate name cannot be empty.');
 
@@ -878,7 +910,7 @@ function addBallotCandidateForAdmin_(id, name, details) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
-    addBallotCandidate_(sheet, name, details);
+    addBallotCandidate_(sheet, name, details, linkText, linkUrl);
     _highlightSectionMarkers_(sheet);
     return { candidate: name };
   } finally {
@@ -913,6 +945,7 @@ if (typeof module !== 'undefined' && module.exports) {
     addBallotCandidateForAdmin_: addBallotCandidateForAdmin_,
     _highlightSectionMarkers_: _highlightSectionMarkers_,
     _ensureCandidatesSection_: _ensureCandidatesSection_,
-    _migrateCandidatesColumnsIfNeeded_: _migrateCandidatesColumnsIfNeeded_
+    _migrateCandidatesColumnsIfNeeded_: _migrateCandidatesColumnsIfNeeded_,
+    _ensureCandidatesHeaderColumns_: _ensureCandidatesHeaderColumns_
   };
 }

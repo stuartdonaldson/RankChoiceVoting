@@ -146,6 +146,7 @@
     .topic-text { min-width: 0; overflow-wrap: break-word; font-weight: bold; }
     .topic-info-content { margin-top: 4px; padding-left: 34px; color: #3c4043; font-size: 0.9em; white-space: pre-wrap; }
     .topic-info-content.empty { font-style: italic; color: #9aa0a6; }
+    .topic-info-link { display: block; margin-top: 4px; padding-left: 34px; font-size: 0.9em; }
     .candidate-edit-panel { margin-top: 8px; }
 
     /* Wraps content that is never shown to respondents at all (Admin-Only Notes) — a
@@ -267,6 +268,10 @@
         <input type="text" id="newCandidateNameInput">
         <label for="newCandidateDetailsInput">Details (optional)</label>
         <textarea id="newCandidateDetailsInput" rows="2"></textarea>
+        <label for="newCandidateLinkTextInput">Link Text (optional)</label>
+        <input type="text" id="newCandidateLinkTextInput">
+        <label for="newCandidateLinkUrlInput">Link URL (optional)</label>
+        <input type="url" id="newCandidateLinkUrlInput" placeholder="https://…">
         <div class="field-panel-actions">
           <button type="button" id="addCandidateSaveBtn">Add</button>
           <button type="button" class="secondary" id="addCandidateCancelBtn">Cancel</button>
@@ -492,13 +497,21 @@
       details.className = 'topic-info-content' + (candidate.details ? '' : ' empty');
       details.textContent = candidate.details || 'No details yet.';
 
+      var link = document.createElement('a');
+      link.className = 'topic-info-link';
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.hidden = true;
+
       var panel = document.createElement('div');
       panel.className = 'field-panel candidate-edit-panel';
       panel.hidden = true;
       panel.innerHTML =
-        '<p class="field-help">What respondents drag-order to rank. Edit this candidate’s name and details below.</p>' +
+        '<p class="field-help">What respondents drag-order to rank. Edit this candidate’s name, details, and link below.</p>' +
         '<label>Name</label><input type="text" class="cand-name-input">' +
         '<label>Details (optional)</label><textarea rows="2" class="cand-details-input"></textarea>' +
+        '<label>Link Text (optional)</label><input type="text" class="cand-link-text-input">' +
+        '<label>Link URL (optional)</label><input type="url" class="cand-link-url-input" placeholder="https://…">' +
         '<div class="field-panel-actions">' +
         '<button type="button" class="cand-save-btn">Save</button>' +
         '<button type="button" class="secondary cand-cancel-btn">Cancel</button>' +
@@ -507,10 +520,24 @@
 
       li.appendChild(row);
       li.appendChild(details);
+      li.appendChild(link);
       li.appendChild(panel);
+
+      function renderLink() {
+        if (candidate.linkUrl) {
+          link.href = candidate.linkUrl;
+          link.textContent = candidate.linkText || candidate.linkUrl;
+          link.hidden = false;
+        } else {
+          link.hidden = true;
+        }
+      }
+      renderLink();
 
       var nameInput = panel.querySelector('.cand-name-input');
       var detailsInput = panel.querySelector('.cand-details-input');
+      var linkTextInput = panel.querySelector('.cand-link-text-input');
+      var linkUrlInput = panel.querySelector('.cand-link-url-input');
       var saveBtn = panel.querySelector('.cand-save-btn');
       var cancelBtn = panel.querySelector('.cand-cancel-btn');
       var statusEl = panel.querySelector('.cand-status');
@@ -518,15 +545,19 @@
       function showDisplay() {
         row.hidden = false;
         details.hidden = false;
+        renderLink();
         panel.hidden = true;
       }
 
       editBtn.addEventListener('click', function () {
         nameInput.value = candidate.name;
         detailsInput.value = candidate.details || '';
+        linkTextInput.value = candidate.linkText || '';
+        linkUrlInput.value = candidate.linkUrl || '';
         setStatus(statusEl, '', false);
         row.hidden = true;
         details.hidden = true;
+        link.hidden = true;
         panel.hidden = false;
       });
 
@@ -539,6 +570,8 @@
           return;
         }
         var newDetails = detailsInput.value.trim();
+        var newLinkText = linkTextInput.value.trim();
+        var newLinkUrl = linkUrlInput.value.trim();
         saveBtn.disabled = true;
         setStatus(statusEl, 'Saving…', false);
         google.script.run
@@ -546,6 +579,8 @@
             saveBtn.disabled = false;
             candidate.name = result.name;
             candidate.details = result.details;
+            candidate.linkText = result.linkText;
+            candidate.linkUrl = result.linkUrl;
             text.textContent = candidate.name;
             details.textContent = candidate.details || 'No details yet.';
             details.className = 'topic-info-content' + (candidate.details ? '' : ' empty');
@@ -556,7 +591,7 @@
             saveBtn.disabled = false;
             setStatus(statusEl, 'Could not save: ' + (err && err.message ? err.message : err), true);
           })
-          .adminSaveCandidate(ballotId, index, newName, newDetails);
+          .adminSaveCandidate(ballotId, index, newName, newDetails, newLinkText, newLinkUrl);
       });
 
       return li;
@@ -566,6 +601,8 @@
     var addCandidatePanel = document.getElementById('addCandidatePanel');
     var newCandidateNameInput = document.getElementById('newCandidateNameInput');
     var newCandidateDetailsInput = document.getElementById('newCandidateDetailsInput');
+    var newCandidateLinkTextInput = document.getElementById('newCandidateLinkTextInput');
+    var newCandidateLinkUrlInput = document.getElementById('newCandidateLinkUrlInput');
     var addCandidateSaveBtn = document.getElementById('addCandidateSaveBtn');
     var addCandidateCancelBtn = document.getElementById('addCandidateCancelBtn');
     var addCandidateStatus = document.getElementById('addCandidateStatus');
@@ -578,6 +615,8 @@
     addCandidateBtn.addEventListener('click', function () {
       newCandidateNameInput.value = '';
       newCandidateDetailsInput.value = '';
+      newCandidateLinkTextInput.value = '';
+      newCandidateLinkUrlInput.value = '';
       setStatus(addCandidateStatus, '', false);
       addCandidatePanel.hidden = false;
       addCandidateBtn.hidden = true;
@@ -592,12 +631,14 @@
         return;
       }
       var details = newCandidateDetailsInput.value.trim();
+      var linkText = newCandidateLinkTextInput.value.trim();
+      var linkUrl = newCandidateLinkUrlInput.value.trim();
       addCandidateSaveBtn.disabled = true;
       setStatus(addCandidateStatus, 'Saving…', false);
       google.script.run
         .withSuccessHandler(function () {
           addCandidateSaveBtn.disabled = false;
-          fieldData.candidates.push({ name: name, details: details });
+          fieldData.candidates.push({ name: name, details: details, linkText: linkText, linkUrl: linkUrl });
           renderCandidates(fieldData.candidates);
           closeAddCandidatePanel();
         })
@@ -605,7 +646,7 @@
           addCandidateSaveBtn.disabled = false;
           setStatus(addCandidateStatus, 'Could not add: ' + (err && err.message ? err.message : err), true);
         })
-        .adminAddCandidate(ballotId, name, details);
+        .adminAddCandidate(ballotId, name, details, linkText, linkUrl);
     });
 
     // --- Adding New Candidates (Accept-New + Add-Instructions, saved together) ---

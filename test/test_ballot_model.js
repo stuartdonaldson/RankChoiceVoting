@@ -273,7 +273,7 @@ function testGetBallotForRespondentIncludesItemDetails() {
   SM.addBallotCandidate_(sheet, 'Bob', '');
 
   const result = SM.getBallotForRespondent_('RespondentDetails', '');
-  assert.deepEqual(result.itemDetails, { Alice: 'Loves cats' }); // Bob has no entry (empty details)
+  assert.deepEqual(result.itemDetails, { Alice: { details: 'Loves cats', linkText: '', linkUrl: '' } }); // Bob has no entry (empty details)
   assert.deepEqual(result.candidates, ['Alice', 'Bob']);
 }
 
@@ -287,9 +287,9 @@ function testAddBallotCandidateTracksDetailsPositionAligned() {
 
   assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice', 'Bob', 'Carol']);
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet), [
-    { name: 'Alice', details: 'Loves cats' },
-    { name: 'Bob', details: '' },
-    { name: 'Carol', details: 'Prefers mornings' },
+    { name: 'Alice', details: 'Loves cats', linkText: '', linkUrl: '' },
+    { name: 'Bob', details: '', linkText: '', linkUrl: '' },
+    { name: 'Carol', details: 'Prefers mornings', linkText: '', linkUrl: '' },
   ]);
 }
 
@@ -308,8 +308,8 @@ function testSaveBallotCandidatesRenamesAndUpdatesDetailsWithoutDisturbingRespon
 
   assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alicia', 'Robert']);
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet), [
-    { name: 'Alicia', details: 'renamed from Alice' },
-    { name: 'Robert', details: 'renamed from Bob' },
+    { name: 'Alicia', details: 'renamed from Alice', linkText: '', linkUrl: '' },
+    { name: 'Robert', details: 'renamed from Bob', linkText: '', linkUrl: '' },
   ]);
 
   // Rename is purely positional (column index unchanged) — the voter's ranks,
@@ -348,7 +348,7 @@ function testAddBallotCandidateForAdminAndSaveBallotCandidatesForId() {
   SM.saveBallotCandidatesForId_('IdWrappers', [{ name: 'Dana Renamed', details: 'updated' }]);
 
   const sheet = SM.findBallotSheet_(ss, 'IdWrappers');
-  assert.deepEqual(SM.readBallotCandidateDetails_(sheet), [{ name: 'Dana Renamed', details: 'updated' }]);
+  assert.deepEqual(SM.readBallotCandidateDetails_(sheet), [{ name: 'Dana Renamed', details: 'updated', linkText: '', linkUrl: '' }]);
 }
 
 /**
@@ -364,7 +364,7 @@ function testAddBallotCandidateForIdAcceptsRespondentDetails() {
   assert.deepEqual(result, { candidate: 'Elm Street' });
 
   const sheet = SM.findBallotSheet_(ss, 'RespondentAdd');
-  assert.deepEqual(SM.readBallotCandidateDetails_(sheet), [{ name: 'Elm Street', details: 'suggested by a voter' }]);
+  assert.deepEqual(SM.readBallotCandidateDetails_(sheet), [{ name: 'Elm Street', details: 'suggested by a voter', linkText: '', linkUrl: '' }]);
 }
 
 /**
@@ -399,9 +399,9 @@ function testEnsureCandidatesSectionSelfHealsOldSheetAndBackfillsOnAdd() {
 
   assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice', 'Bob', 'Carol']);
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet), [
-    { name: 'Alice', details: '' },
-    { name: 'Bob', details: '' },
-    { name: 'Carol', details: 'newest candidate' },
+    { name: 'Alice', details: '', linkText: '', linkUrl: '' },
+    { name: 'Bob', details: '', linkText: '', linkUrl: '' },
+    { name: 'Carol', details: 'newest candidate', linkText: '', linkUrl: '' },
   ]);
 }
 
@@ -435,9 +435,9 @@ function testMigratesExistingOldColumnCandidatesSectionOnRead() {
 
   const candidateRows = SM.readBallotCandidateDetails_(sheet);
   assert.deepEqual(candidateRows, [
-    { name: 'book 1', details: 'details for b1' },
-    { name: 'book 2', details: 'details for b2' },
-    { name: 'book 3', details: 'details for b3' },
+    { name: 'book 1', details: 'details for b1', linkText: '', linkUrl: '' },
+    { name: 'book 2', details: 'details for b2', linkText: '', linkUrl: '' },
+    { name: 'book 3', details: 'details for b3', linkText: '', linkUrl: '' },
   ]);
 
   // Migrated in place: header/data now live at columns B/C, column A blank.
@@ -470,7 +470,7 @@ function testLegacyItemsMarkerMigratesToCandidatesMarker() {
   sheet.getRange(12, 1).setValue('[Responses]');
   sheet.getRange(13, 1, 1, 5).setValues([['Date', 'Name', 'Weight', 'Comment', 'Alice']]);
 
-  assert.deepEqual(SM.readBallotCandidateDetails_(sheet), [{ name: 'Alice', details: 'Loves cats' }]);
+  assert.deepEqual(SM.readBallotCandidateDetails_(sheet), [{ name: 'Alice', details: 'Loves cats', linkText: '', linkUrl: '' }]);
   assert.equal(sheet.getRange(9, 1).getValue(), '[Candidates]'); // migrated in place
 }
 

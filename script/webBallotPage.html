@@ -128,6 +128,7 @@
       min-height: 44px;
     }
     .topic-info-content { margin-top: 4px; padding-left: 34px; color: #3c4043; font-size: 0.85em; white-space: pre-wrap; }
+    .topic-info-link { display: block; margin-top: 4px; padding-left: 34px; font-size: 0.85em; }
     #status { color: #5f6368; min-height: 1.2em; margin-top: 8px; }
     #status.error { color: #d93025; }
     footer.ballot-footer { color: #5f6368; font-size: 0.85em; margin-top: 24px; }
@@ -287,16 +288,28 @@
       // row (not an always-visible extra summary line per item), and the item name
       // itself is also tappable/clickable as a bigger, easier target on mobile. The
       // expanded content only takes up space once actually opened. Omitted entirely
-      // when this item has no details (e.g. one a respondent added themselves without
-      // filling in the Add New panel's optional Details field).
-      var details = itemDetailsByName[topic];
-      if (details) {
+      // when this item has no details/link (e.g. one a respondent added themselves
+      // without filling in the Add New panel's optional Details field).
+      var info = itemDetailsByName[topic];
+      if (info && (info.details || info.linkUrl)) {
         text.classList.add('has-details');
 
         var infoContent = document.createElement('div');
         infoContent.className = 'topic-info-content';
-        infoContent.textContent = details;
+        if (info.details) {
+          infoContent.appendChild(document.createTextNode(info.details));
+        }
         infoContent.hidden = true;
+
+        if (info.linkUrl) {
+          var infoLink = document.createElement('a');
+          infoLink.className = 'topic-info-link';
+          infoLink.href = info.linkUrl;
+          infoLink.target = '_blank';
+          infoLink.rel = 'noopener noreferrer';
+          infoLink.textContent = info.linkText || info.linkUrl;
+          infoContent.appendChild(infoLink);
+        }
 
         var infoBtn = document.createElement('button');
         infoBtn.type = 'button';

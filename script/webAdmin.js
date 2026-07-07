@@ -235,9 +235,9 @@ function getAdminEditData(id) {
   var candidates = readBallotCandidates_(sheet);
   var candidateRows = readBallotCandidateDetails_(sheet);
   // Backfill any candidate that predates the Candidates table (or predates having its
-  // own row yet) so every candidate always has a name/details pair to edit.
+  // own row yet) so every candidate always has a name/details/link set to edit.
   while (candidateRows.length < candidates.length) {
-    candidateRows.push({ name: candidates[candidateRows.length], details: '' });
+    candidateRows.push({ name: candidates[candidateRows.length], details: '', linkText: '', linkUrl: '' });
   }
 
   var baseUrl = _getWebAppUrl_();
@@ -307,7 +307,7 @@ function adminSaveAddSettings(id, acceptNew, addInstructions) {
 }
 
 /**
- * RPC: saves one existing candidate's name/details from its pencil-icon editor.
+ * RPC: saves one existing candidate's name/details/link from its pencil-icon editor.
  * saveBallotCandidatesForId_ requires the full candidate list (it throws if the count
  * changed since the page loaded), so this re-reads the current rows and replaces just
  * the edited one, position-aligned by index — matching how the old combined form saved
@@ -317,9 +317,11 @@ function adminSaveAddSettings(id, acceptNew, addInstructions) {
  * @param {number} index
  * @param {string} name
  * @param {string} details
- * @return {{ok:boolean, name:string, details:string}}
+ * @param {string=} linkText
+ * @param {string=} linkUrl
+ * @return {{ok:boolean, name:string, details:string, linkText:string, linkUrl:string}}
  */
-function adminSaveCandidate(id, index, name, details) {
+function adminSaveCandidate(id, index, name, details, linkText, linkUrl) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = findBallotSheet_(ss, id);
   if (!sheet) throw new Error('No ballot found for id "' + id + '".');
@@ -327,13 +329,24 @@ function adminSaveCandidate(id, index, name, details) {
   var candidates = readBallotCandidates_(sheet);
   var rows = readBallotCandidateDetails_(sheet);
   while (rows.length < candidates.length) {
-    rows.push({ name: candidates[rows.length], details: '' });
+    rows.push({ name: candidates[rows.length], details: '', linkText: '', linkUrl: '' });
   }
   if (index < 0 || index >= rows.length) throw new Error('Invalid candidate index.');
 
-  rows[index] = { name: String(name || '').trim(), details: String(details || '') };
+  rows[index] = {
+    name: String(name || '').trim(),
+    details: String(details || ''),
+    linkText: String(linkText || ''),
+    linkUrl: String(linkUrl || '')
+  };
   saveBallotCandidatesForId_(id, rows);
-  return { ok: true, name: rows[index].name, details: rows[index].details };
+  return {
+    ok: true,
+    name: rows[index].name,
+    details: rows[index].details,
+    linkText: rows[index].linkText,
+    linkUrl: rows[index].linkUrl
+  };
 }
 
 /**
@@ -342,10 +355,12 @@ function adminSaveCandidate(id, index, name, details) {
  * @param {string} id
  * @param {string} name
  * @param {string=} details
+ * @param {string=} linkText
+ * @param {string=} linkUrl
  * @return {{candidate:string}}
  */
-function adminAddCandidate(id, name, details) {
-  return addBallotCandidateForAdmin_(id, name, details);
+function adminAddCandidate(id, name, details, linkText, linkUrl) {
+  return addBallotCandidateForAdmin_(id, name, details, linkText, linkUrl);
 }
 
 /**
