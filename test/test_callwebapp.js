@@ -34,6 +34,19 @@ function testParseArgsBodyMerged() {
   assert.deepEqual(r.extraBody, { properties: { AXIOM_DATASET: 'survey' } });
 }
 
+function testParseArgsFlagsBeforeAction() {
+  // Flags placed before the action must not have their values mistaken for the action.
+  const r = parseArgs_([
+    'node', 'callWebapp.js',
+    '--env', 'sit',
+    'createSurvey',
+    '--body', '{"id":"SmokeTest1"}',
+  ]);
+  assert.equal(r.action, 'createSurvey');
+  assert.equal(r.env, 'sit');
+  assert.deepEqual(r.extraBody, { id: 'SmokeTest1' });
+}
+
 // --- buildPayload_ ---
 
 function testBuildPayloadInjectsSecret() {
@@ -73,6 +86,7 @@ function run() {
   testParseArgsDefaults();
   testParseArgsAllFlags();
   testParseArgsBodyMerged();
+  testParseArgsFlagsBeforeAction();
   testBuildPayloadInjectsSecret();
   testBuildPayloadMergesExtraBody();
   testBuildPayloadBootstrapSecretNoSecretField();

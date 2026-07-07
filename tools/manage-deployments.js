@@ -2,30 +2,35 @@
 /**
  * RankChoiceVoting Deployment Manager
  *
- * Adapted from F3Go30's tools/manage-deployments.js. Manages two environments —
- * SIT (dev scriptId) and PROD (prod scriptId) — and owns .clasp.json, version
- * stamping, and named-deployment updates.
+ * Adapted from F3Go30's tools/manage-deployments.js. Manages three environments —
+ * SIT (dev scriptId), PROD (prod scriptId), and NUUC (a separate live deployment under its
+ * own Google account) — and owns .clasp.json, version stamping, and named-deployment updates.
  *
  * Run via npm scripts:
  *   npm run deploy:sit    # bump build only + stamp SIT  + clasp push -f to sitScriptId
  *   npm run deploy:prod   # bump patch      + stamp PROD + clasp push -f to prodScriptId  (alias: npm run push)
+ *   npm run deploy:nuuc   # bump patch      + stamp NUUC + clasp push -f to nuucScriptId
  *
- * package.json carries two counters: "version" (semver, PROD-facing) and "build" (a plain
+ * package.json carries two counters: "version" (semver, PROD/NUUC-facing) and "build" (a plain
  * integer, SIT-facing). A SIT deploy leaves "version" untouched and bumps "build" instead
  * (unless --skip-bump), so repeated SIT deploys between PROD releases don't burn through patch
- * numbers; the SIT-stamped APP_VERSION is `${version}.${build}` (e.g. "0.0.1.7"). A PROD deploy
- * bumps the patch segment of "version" (unless --skip-bump) and *always* resets "build" to 0.
+ * numbers; the SIT-stamped APP_VERSION is `${version}.${build}` (e.g. "0.0.1.7"). A PROD or
+ * NUUC deploy bumps the patch segment of "version" (unless --skip-bump) and *always* resets
+ * "build" to 0.
  *
  * Direct invocation:
  *   node tools/manage-deployments.js --deploy-sit
  *   node tools/manage-deployments.js --deploy-prod
+ *   node tools/manage-deployments.js --deploy-nuuc
  *
  * Prerequisites:
- *   - local.settings.json at project root with sitScriptId and prodScriptId populated, plus
- *     claspAuth pointing at this project's clasp credential file. No deployment ID fields
- *     needed — each script project must carry exactly one active named (Web app) deployment,
- *     looked up fresh via `clasp deployments` on every deploy (see findActiveDeploymentId_).
- *   - clasp authenticated into claspAuth (clasp_config_auth=<file> clasp login)
+ *   - local.settings.json at project root with sitScriptId, prodScriptId, and nuucScriptId
+ *     populated, plus claspAuth pointing at this project's clasp credential file for SIT/PROD
+ *     and nuucAuth pointing at the credential file for NUUC's separate Google account. No
+ *     deployment ID fields needed — each script project must carry exactly one active named
+ *     (Web app) deployment, looked up fresh via `clasp deployments` on every deploy (see
+ *     findActiveDeploymentId_).
+ *   - clasp authenticated into claspAuth and nuucAuth (clasp_config_auth=<file> clasp login)
  *   - @inquirer/prompts installed (npm install)
  */
 
@@ -47,18 +52,21 @@ function expandHome_(p) {
   return p && p.startsWith('~') ? path.join(os.homedir(), p.slice(1)) : p;
 }
 
-function resolveClaspAuthPath_(settings) {
-  const claspAuth = settings.claspAuth;
+function resolveClaspAuthPath_(settings, claspAuthKey) {
+  const claspAuth = settings[claspAuthKey || 'claspAuth'];
   if (!claspAuth) {
-    console.error('❌  claspAuth is not set in local.settings.json');
+    console.error(`❌  ${claspAuthKey || 'claspAuth'} is not set in local.settings.json`);
     process.exit(1);
   }
   return expandHome_(claspAuth);
 }
 
+// NUUC deploys under a separate Google account from SIT/PROD, hence its own claspAuthKey
+// (nuucAuth) instead of the shared claspAuth used by sit/prod.
 const TARGETS = {
-  sit:  { scriptIdKey: 'sitScriptId',  label: 'SIT',  emoji: '🧪', deploymentIdKey: 'sitDeploymentId'  },
-  prod: { scriptIdKey: 'prodScriptId', label: 'PROD', emoji: '🚀', deploymentIdKey: 'prodDeploymentId' },
+  sit:  { scriptIdKey: 'sitScriptId',  label: 'SIT',  emoji: '🧪', deploymentIdKey: 'sitDeploymentId',  claspAuthKey: 'claspAuth' },
+  prod: { scriptIdKey: 'prodScriptId', label: 'PROD', emoji: '🚀', deploymentIdKey: 'prodDeploymentId', claspAuthKey: 'claspAuth' },
+  nuuc: { scriptIdKey: 'nuucScriptId', label: 'NUUC', emoji: '⛪', deploymentIdKey: 'nuucDeploymentId', claspAuthKey: 'nuucAuth'  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -190,7 +198,7 @@ function saveDeploymentId_(targetKey, deploymentId) {
 // ─────────────────────────────────────────────────────────────────────────
 
 function deploy(targetKey, options = {}) {
-  const { scriptIdKey, label, emoji } = TARGETS[targetKey];
+  const { scriptIdKey, label, emoji, claspAuthKey } = TARGETS[targetKey];
   const settings = loadSettings();
   const scriptId = settings[scriptIdKey];
 
@@ -199,7 +207,7 @@ function deploy(targetKey, options = {}) {
     process.exit(1);
   }
 
-  const claspAuthPath = resolveClaspAuthPath_(settings);
+  const claspAuthPath = resolveClaspAuthPath_(settings, claspAuthKey);
   const claspEnv = { ...process.env, clasp_config_auth: claspAuthPath };
 
   console.log(`\n${emoji}  Deploying to ${label} (${scriptId.slice(0, 12)}…)\n`);
@@ -207,8 +215,8 @@ function deploy(targetKey, options = {}) {
   writeClasp(scriptId);
   console.log(`✅ .clasp.json written (rootDir: script, scriptId: ${scriptId.slice(0, 12)}…)`);
 
-  // SIT bumps the build counter and leaves "version" alone; PROD bumps the patch version and
-  // always resets build to 0.
+  // SIT bumps the build counter and leaves "version" alone; PROD and NUUC (both stable,
+  // customer-facing deployments) bump the patch version and always reset build to 0.
   let version;
   if (targetKey === 'sit') {
     if (!options.skipBump) {
@@ -254,6 +262,19 @@ function deploy(targetKey, options = {}) {
   // menu ends up with an empty or stale URL until this runs.
   console.log(`\n🔗 Setting WEBAPP_URL script property on ${label}…`);
   execSync(`node tools/callWebapp.js setWebappUrl --env ${targetKey}`, { stdio: 'inherit', cwd: ROOT });
+
+  // Bootstrap ADMIN_SHARED_SECRET immediately, before this deployment's URL is ever shared —
+  // bootstrapSecret is reachable by anyone on an ANYONE_ANONYMOUS deployment until a secret is
+  // set, so closing that window here (rather than leaving it to a manual follow-up step) is
+  // what keeps the race narrow. bootstrapAdminSecret_ refuses to overwrite an existing secret,
+  // so re-running deploy on an already-bootstrapped target is a harmless no-op (exit code 1,
+  // "already_bootstrapped" — not treated as a deploy failure).
+  console.log(`\n🔐 Bootstrapping ADMIN_SHARED_SECRET on ${label} (no-op if already set)…`);
+  try {
+    execSync(`node tools/callWebapp.js bootstrapSecret --env ${targetKey}`, { stdio: 'inherit', cwd: ROOT });
+  } catch (err) {
+    console.log(`ℹ️  ${label} admin secret already bootstrapped (or bootstrap failed) — continuing.`);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -272,9 +293,10 @@ async function interactiveMenu() {
   const action = await select({
     message: 'Deploy target:',
     choices: [
-      { name: '🧪 SIT   — push to sitScriptId (SIT stamp)',   value: 'sit'  },
-      { name: '🚀 PROD  — push to prodScriptId (PROD stamp)', value: 'prod' },
-      { name: '❌ Exit',                                       value: 'exit' },
+      { name: '🧪 SIT   — push to sitScriptId (SIT stamp)',    value: 'sit'  },
+      { name: '🚀 PROD  — push to prodScriptId (PROD stamp)',  value: 'prod' },
+      { name: '⛪ NUUC  — push to nuucScriptId (NUUC stamp)',  value: 'nuuc' },
+      { name: '❌ Exit',                                        value: 'exit' },
     ],
   });
 
@@ -291,6 +313,7 @@ async function main() {
 
   if (args.includes('--deploy-sit'))  return deploy('sit', options);
   if (args.includes('--deploy-prod')) return deploy('prod', options);
+  if (args.includes('--deploy-nuuc')) return deploy('nuuc', options);
 
   await interactiveMenu();
 }

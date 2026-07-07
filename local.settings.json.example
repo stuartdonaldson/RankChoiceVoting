@@ -1,13 +1,18 @@
 {
-  "claspAuth":  "<path to this project's clasp credential file, e.g. ~/.clasprc-rankchoicevoting.json — passed to clasp via the clasp_config_auth env var by tools/manage-deployments.js>",
+  "claspAuth":  "<path to this project's clasp credential file for SIT/PROD, e.g. ~/.clasprc-rankchoicevoting.json — passed to clasp via the clasp_config_auth env var by tools/manage-deployments.js>",
+  "nuucAuth":   "<clasp credential file for the NUUC target's Google account (NUUC deploys under a separate account from SIT/PROD, so it has its own clasp login) — e.g. ~/.clasprc-nuuc.json>",
   "sitScriptId":  "<SIT (dev) Apps Script project ID — Apps Script editor > Project Settings > IDs>",
   "prodScriptId": "<PROD Apps Script project ID — Apps Script editor > Project Settings > IDs>",
+  "nuucScriptId": "<NUUC Apps Script project ID — Apps Script editor > Project Settings > IDs>",
+  "nuucSheetId":  "<Spreadsheet ID the NUUC script project is bound to, for reference — not read by tooling>",
   "sitDeploymentId":  "<SIT web app deployment ID — filled in automatically by tools/manage-deployments.js after the first SIT deploy>",
   "prodDeploymentId": "<PROD web app deployment ID — filled in automatically by tools/manage-deployments.js after the first PROD deploy>",
+  "nuucDeploymentId": "<NUUC web app deployment ID — filled in automatically by tools/manage-deployments.js after the first NUUC deploy>",
   "axiomDataset":    "<Axiom dataset name, e.g. survey — used by tools/query-axiom.js and GasLogger.flush()>",
   "axiomToken":      "<Axiom ingest token — also set as the GAS script property AXIOM_TOKEN via the admin setScriptProperties action>",
   "axiomQueryToken": "<Axiom query token — used only by tools/query-axiom.js; may be the same token as axiomToken>",
   "sitAdminSecret":  "<SIT ADMIN_SHARED_SECRET — leave as empty string \"\" and let tools/callWebapp.js bootstrapSecret fill it in>",
   "prodAdminSecret": "<PROD ADMIN_SHARED_SECRET — leave as empty string \"\" and let tools/callWebapp.js bootstrapSecret fill it in>",
+  "nuucAdminSecret": "<NUUC ADMIN_SHARED_SECRET — leave as empty string \"\" and let tools/callWebapp.js bootstrapSecret fill it in>",
   "GAS_LOGGER_PARENT_FOLDER_ID": "<Drive folder ID or URL of the shared log root — set via the admin setScriptProperties action>"
 }

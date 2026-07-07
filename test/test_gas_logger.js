@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const {
   buildAxiomRows_,
   maskPiiForLog_,
+  maskNameForLog_,
   maskRecipientListForLog_,
 } = require('../script/GasLogger.js');
 
@@ -67,5 +68,13 @@ assert.equal(
 
 assert.equal(maskRecipientListForLog_(''), '');
 assert.equal(maskRecipientListForLog_(null), '');
+
+// maskNameForLog_ — per-word first/last letter, middle collapsed to '..'; used where a
+// masked-but-recognizable hint (e.g. in survey action logs) is more useful than a single blob.
+assert.equal(maskNameForLog_('Stuart Donaldson'), 'S..t D..n');
+assert.equal(maskNameForLog_('Jo'), 'Jo');
+assert.equal(maskNameForLog_('J'), 'J');
+assert.equal(maskNameForLog_(''), '');
+assert.equal(maskNameForLog_(null), '');
 
 console.log('test_gas_logger.js: PASS');

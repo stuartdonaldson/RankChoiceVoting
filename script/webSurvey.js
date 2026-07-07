@@ -31,7 +31,7 @@ function _handleSurvey(e) {
   var action = params.action || 'page';
   var id = params.id || '';
 
-  GasLogger.log('webapp.survey', { action: action, id: id, parameter: JSON.stringify(params) });
+  GasLogger.log('webapp.survey', { action: action, id: id, name: maskNameForLog_(params.name) });
   GasLogger.flush();
 
   if (action === 'page') {

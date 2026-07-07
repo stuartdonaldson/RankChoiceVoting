@@ -10,11 +10,12 @@
  * integration tests against a live SIT deployment.
  *
  * Usage:
- *   node tools/callWebapp.js <action> [--env sit|prod] [--body '{"key":"val"}']
+ *   node tools/callWebapp.js <action> [--env sit|prod|nuuc] [--body '{"key":"val"}']
  *
- * The admin secret (sitAdminSecret/prodAdminSecret in local.settings.json) is
- * injected into the POST body automatically for every action EXCEPT
- * bootstrapSecret and setWebappUrl, which are ungated on the server side.
+ * The admin secret (sitAdminSecret/prodAdminSecret/nuucAdminSecret in
+ * local.settings.json) is injected into the POST body automatically for every
+ * action EXCEPT bootstrapSecret and setWebappUrl, which are ungated on the
+ * server side.
  *
  * Examples:
  *   node tools/callWebapp.js setWebappUrl --env prod
@@ -42,20 +43,36 @@ const UNGATED_ACTIONS = new Set(['bootstrapSecret', 'setWebappUrl']);
 const ENV_MAP = {
   sit:  { deploymentIdKey: 'sitDeploymentId',  adminSecretKey: 'sitAdminSecret'  },
   prod: { deploymentIdKey: 'prodDeploymentId', adminSecretKey: 'prodAdminSecret' },
+  nuuc: { deploymentIdKey: 'nuucDeploymentId', adminSecretKey: 'nuucAdminSecret' },
 };
+
+// Flags that consume the following argv slot as their value — used to skip both when
+// scanning for the action token, so `--env sit` before the action doesn't leave "sit"
+// mistaken for it.
+const VALUE_FLAGS = new Set(['--env', '--body']);
 
 function parseArgs_(argv) {
   const args = argv.slice(2);
-  const action = args.find(a => !a.startsWith('--'));
+  let action;
+  for (let i = 0; i < args.length; i++) {
+    if (VALUE_FLAGS.has(args[i])) {
+      i++;
+      continue;
+    }
+    if (!args[i].startsWith('--')) {
+      action = args[i];
+      break;
+    }
+  }
   if (!action) {
-    console.error('Usage: callWebapp.js <action> [--env sit|prod] [--body \'{"key":"val"}\']');
+    console.error('Usage: callWebapp.js <action> [--env sit|prod|nuuc] [--body \'{"key":"val"}\']');
     process.exit(1);
   }
 
   const envIdx = args.indexOf('--env');
   const env = envIdx !== -1 ? args[envIdx + 1] : 'sit';
   if (!ENV_MAP[env]) {
-    console.error(`❌  Unknown env "${env}". Use sit or prod.`);
+    console.error(`❌  Unknown env "${env}". Use sit, prod, or nuuc.`);
     process.exit(1);
   }
 

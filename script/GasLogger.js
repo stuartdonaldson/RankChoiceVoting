@@ -93,6 +93,24 @@ function maskMiddleChars_(s) {
 }
 
 /**
+ * Masks a person's name word-by-word so a masked log entry still hints at who it was
+ * (useful for spotting a specific respondent in a bug report) without logging the raw
+ * name. Each word keeps its first and last letter; everything between becomes '..'.
+ * Words of two letters or fewer are left as-is (nothing left to mask).
+ * E.g. 'Stuart Donaldson' -> 'S..t D..n'.
+ * @param {string} value
+ * @returns {string}
+ */
+function maskNameForLog_(value) {
+  var text = String(value || '').trim();
+  if (!text) return '';
+  return text.split(/\s+/).map(function(word) {
+    if (word.length <= 2) return word;
+    return word[0] + '..' + word[word.length - 1];
+  }).join(' ');
+}
+
+/**
  * Masks each address in a comma-separated recipient list, handling the optional
  * 'Display Name <email>' form.
  * @param {string} recipientList
@@ -323,6 +341,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     buildAxiomRows_: buildAxiomRows_,
     maskPiiForLog_: maskPiiForLog_,
+    maskNameForLog_: maskNameForLog_,
     maskRecipientListForLog_: maskRecipientListForLog_
   };
 }

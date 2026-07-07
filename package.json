@@ -1,12 +1,13 @@
 {
   "name": "rankchoicevoting",
-  "version": "0.0.1",
-  "build": 23,
+  "version": "0.0.3",
+  "build": 0,
   "private": true,
   "scripts": {
     "test": "node test/test_gas_logger.js && node test/test_survey_model.js && node test/test_manage_deployments.js && node test/test_callwebapp.js",
     "deploy:sit": "node tools/manage-deployments.js --deploy-sit",
     "deploy:prod": "node tools/manage-deployments.js --deploy-prod",
+    "deploy:nuuc": "node tools/manage-deployments.js --deploy-nuuc",
     "push": "node tools/manage-deployments.js --deploy-prod",
     "release:patch": "npm version patch && npm run push -- --skip-bump && git push --follow-tags",
     "release:minor": "npm version minor && npm run push -- --skip-bump && git push --follow-tags",

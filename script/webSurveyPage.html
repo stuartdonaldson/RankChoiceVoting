@@ -189,7 +189,7 @@
     var surveyId = '';
     var currentName = '';
     var acceptNew = true;
-    var itemDetailsByName = {}; // set from config.itemDetails — admin-only notes per item
+    var itemDetailsByName = {}; // set from config.itemDetails — per-item notes, either admin-authored or added by a respondent via the Details field on Add New
     var _SURVEY_NAME_STORAGE_KEY_PREFIX = 'rcvSurveyName:';
 
     function loadSavedName() {
@@ -266,8 +266,8 @@
       // row (not an always-visible extra summary line per item), and the item name
       // itself is also tappable/clickable as a bigger, easier target on mobile. The
       // expanded content only takes up space once actually opened. Omitted entirely
-      // when this item has no details (e.g. one a respondent added themselves, since
-      // Accept-New doesn't collect details).
+      // when this item has no details (e.g. one a respondent added themselves without
+      // filling in the Add New panel's optional Details field).
       var details = itemDetailsByName[topic];
       if (details) {
         text.classList.add('has-details');
