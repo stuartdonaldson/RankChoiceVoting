@@ -25,24 +25,26 @@ function testCreateNewSurveyCreatesSkeleton() {
 
   const config = SM.readSurveyConfig_(sheet);
   assert.equal(config.Title, '[TODO: survey title shown to respondents]');
-  assert.equal(config.Description, '[TODO: description/instructions shown above the ranking list]');
+  assert.equal(config.Description, '[TODO: intro text shown before respondents enter their name]');
+  assert.equal(config.Instructions, '[TODO: instructions shown above the ranking list on the ballot page]');
   assert.equal(config.Footer, '[TODO: footer text, e.g. deadline or sponsoring group]');
   assert.equal(config.Contact, '[TODO: contact name/email for questions]');
   assert.equal(config['Accept-New'], 'TRUE');
-  assert.equal(config.Info, '');
+  assert.equal(config['Add-Instructions'], '[TODO: instructions shown above the "+ Add New" button, if enabled]');
+  assert.equal(config['Admin-Only-Notes'], '');
 
-  // Results marker at row 8, Candidates marker/header at 9/10, Responses marker at row
-  // 11, Responses header at row 12. Markers are bracket-decorated ("[Results]", not
+  // Results marker at row 10, Candidates marker/header at 11/12, Responses marker at row
+  // 13, Responses header at row 14. Markers are bracket-decorated ("[Results]", not
   // "Results") so a survey candidate literally named "Results"/"Candidates"/"Responses"
-  // can never be mistaken for the real marker; the Candidates header (row 10) starts
+  // can never be mistaken for the real marker; the Candidates header (row 12) starts
   // at col B (col A stays blank/reserved) so candidate data is never in the
   // marker-scanned column.
-  assert.equal(sheet.getRange(8, 1).getValue(), '[Results]');
-  assert.equal(sheet.getRange(9, 1).getValue(), '[Candidates]');
-  assert.equal(sheet.getRange(10, 1).getValue(), ''); // col A reserved, always blank here
-  assert.deepEqual(sheet.getRange(10, 2, 1, 2).getValues()[0], ['Name', 'Details']);
-  assert.equal(sheet.getRange(11, 1).getValue(), '[Responses]');
-  assert.deepEqual(sheet.getRange(12, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
+  assert.equal(sheet.getRange(10, 1).getValue(), '[Results]');
+  assert.equal(sheet.getRange(11, 1).getValue(), '[Candidates]');
+  assert.equal(sheet.getRange(12, 1).getValue(), ''); // col A reserved, always blank here
+  assert.deepEqual(sheet.getRange(12, 2, 1, 2).getValues()[0], ['Name', 'Details']);
+  assert.equal(sheet.getRange(13, 1).getValue(), '[Responses]');
+  assert.deepEqual(sheet.getRange(14, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
 }
 
 function testListSurveyIdsAndFindSurveySheet() {
@@ -76,13 +78,13 @@ function testWriteThenReadConfigRoundTrips() {
 }
 
 /**
- * Simulates a sheet created by a PRE-"Info" version of createSurveySheet_ (5 config
- * rows, a blank spacer at row 6, Results at row 7, Responses at row 9) to confirm
- * writeSurveyConfig_ reuses that blank spacer row for "Info" on first save rather
- * than silently dropping the value (or needlessly inserting a new row and shifting
- * Results/Responses).
+ * Simulates a sheet created by a PRE-"Admin-Only-Notes" version of createSurveySheet_
+ * (5 config rows, a blank spacer at row 6, Results at row 7, Responses at row 9) to
+ * confirm writeSurveyConfig_ reuses that blank spacer row for "Admin-Only-Notes" on
+ * first save rather than silently dropping the value (or needlessly inserting a new
+ * row and shifting Results/Responses).
  */
-function testWriteSurveyConfigSelfHealsMissingInfoRowOnOldSheet() {
+function testWriteSurveyConfigSelfHealsMissingAdminOnlyNotesRowOnOldSheet() {
   const { SM, ss } = loadSurveyModel();
   const sheet = ss.insertSheet('Survey-OldFormat');
   sheet.getRange(1, 1, 5, 2).setValues([
@@ -102,19 +104,19 @@ function testWriteSurveyConfigSelfHealsMissingInfoRowOnOldSheet() {
     Footer: 'Old Footer',
     Contact: 'old@example.com',
     'Accept-New': 'TRUE',
-    Info: 'newly added notes',
+    'Admin-Only-Notes': 'newly added notes',
   });
 
   const config = SM.readSurveyConfig_(sheet);
-  assert.equal(config.Info, 'newly added notes');
+  assert.equal(config['Admin-Only-Notes'], 'newly added notes');
   assert.equal(config.Title, 'Old Title'); // pre-existing keys untouched
 
-  // Info reused the existing blank spacer row (6) — Results/Responses/header stay put.
-  // The bare "Results" text this test seeded gets migrated to "[Results]" in place the
-  // moment writeSurveyConfig_ looks it up (via _findMarkerRow_); "Responses" is never
-  // looked up in this test, so it's left as-is — legacy text is only ever migrated on
-  // actual use, not proactively.
-  assert.equal(sheet.getRange(6, 1).getValue(), 'Info');
+  // Admin-Only-Notes reused the existing blank spacer row (6) — Results/Responses/
+  // header stay put. The bare "Results" text this test seeded gets migrated to
+  // "[Results]" in place the moment writeSurveyConfig_ looks it up (via
+  // _findMarkerRow_); "Responses" is never looked up in this test, so it's left
+  // as-is — legacy text is only ever migrated on actual use, not proactively.
+  assert.equal(sheet.getRange(6, 1).getValue(), 'Admin-Only-Notes');
   assert.equal(sheet.getRange(7, 1).getValue(), '[Results]');
   assert.equal(sheet.getRange(9, 1).getValue(), 'Responses');
   assert.deepEqual(sheet.getRange(10, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
@@ -137,18 +139,39 @@ function testWriteSurveyConfigInsertsRowWhenNoBlankSpacerExists() {
   sheet.getRange(7, 1).setValue('Responses');
   sheet.getRange(8, 1, 1, 4).setValues([['Date', 'Name', 'Weight', 'Comment']]);
 
-  SM.writeSurveyConfig_(sheet, { Title: 'T', Info: 'notes' });
+  SM.writeSurveyConfig_(sheet, { Title: 'T', 'Admin-Only-Notes': 'notes' });
 
   const config = SM.readSurveyConfig_(sheet);
-  assert.equal(config.Info, 'notes');
+  assert.equal(config['Admin-Only-Notes'], 'notes');
 
   // A new row was inserted at row 5 (just above Results), shifting Results/Responses/
   // header down by one row each. Results migrates to "[Results]" (looked up by
   // writeSurveyConfig_); Responses is never looked up here, so stays bare.
-  assert.equal(sheet.getRange(5, 1).getValue(), 'Info');
+  assert.equal(sheet.getRange(5, 1).getValue(), 'Admin-Only-Notes');
   assert.equal(sheet.getRange(6, 1).getValue(), '[Results]');
   assert.equal(sheet.getRange(8, 1).getValue(), 'Responses');
   assert.deepEqual(sheet.getRange(9, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
+}
+
+/**
+ * Confirms the old "Info" config key is recognized as a legacy alias for
+ * "Admin-Only-Notes" and migrated to the new key name in place the first time
+ * readSurveyConfig_ scans it — covers a sheet that hasn't yet been touched since
+ * the Info->Admin-Only-Notes rename.
+ */
+function testLegacyInfoKeyMigratesToAdminOnlyNotes() {
+  const { SM, ss } = loadSurveyModel();
+  const sheet = ss.insertSheet('Survey-LegacyInfo');
+  sheet.getRange(1, 1, 6, 2).setValues([
+    ['Title', 'T'], ['Description', 'D'], ['Footer', 'F'],
+    ['Contact', 'C'], ['Accept-New', 'TRUE'], ['Info', 'old notes'],
+  ]);
+  sheet.getRange(8, 1).setValue('[Results]');
+
+  const config = SM.readSurveyConfig_(sheet);
+  assert.equal(config['Admin-Only-Notes'], 'old notes');
+  assert.equal(config.Info, undefined);
+  assert.equal(sheet.getRange(6, 1).getValue(), 'Admin-Only-Notes'); // migrated in place
 }
 
 function testCandidatesAndSubmitResponseRoundTrip() {
@@ -181,6 +204,60 @@ function testCandidatesAndSubmitResponseRoundTrip() {
   assert.equal(rows2.length, 1);
   assert.equal(rows2[0].comment, 'updated');
   assert.deepEqual(rows2[0].ranks, [1, 2, 3]);
+}
+
+/**
+ * countUniqueSurveyRespondents_ counts distinct respondents (case-insensitive name),
+ * collapsing duplicate rows for the same person down to one. Normal re-submission
+ * never creates a duplicate row (submitSurveyResponse_ overwrites in place), so this
+ * simulates the one way a duplicate can still appear: a hand-edited sheet or legacy
+ * data imported outside the app.
+ */
+function testCountUniqueSurveyRespondents() {
+  const { SM, ss } = loadSurveyModel();
+  const sheet = SM.createNewSurvey_(ss, 'DupeCheck');
+
+  SM.addSurveyCandidate_(sheet, 'Alice');
+  SM.addSurveyCandidate_(sheet, 'Bob');
+  SM.submitSurveyResponse_('DupeCheck', 'Voter One', ['Alice', 'Bob'], '');
+  SM.submitSurveyResponse_('DupeCheck', 'Voter Two', ['Bob', 'Alice'], '');
+  assert.equal(SM.readSurveyResponseRows_(sheet).length, 2);
+  assert.equal(SM.countUniqueSurveyRespondents_(sheet), 2);
+
+  // Manually append a second row for "voter one" (different case), simulating a
+  // hand-edited duplicate that submitSurveyResponse_'s own overwrite-in-place logic
+  // would never produce.
+  const lastRow = sheet.getLastRow();
+  sheet.getRange(lastRow + 1, 1, 1, 6).setValues([[new Date(), 'voter one', 1, 'dup', 2, 1]]);
+
+  assert.equal(SM.readSurveyResponseRows_(sheet).length, 3);
+  assert.equal(SM.countUniqueSurveyRespondents_(sheet), 2);
+}
+
+/**
+ * findRespondentsWithNewCandidates_ flags a respondent whose last submission
+ * predates a candidate added afterward — detected via the blank rank cell left
+ * under that candidate's newly-appended Responses column (_reconcileCandidatesWithResponses_
+ * never backfills old rows). A respondent who re-submits after the new candidate
+ * exists ranks it too, so they drop off the stale list.
+ */
+function testFindRespondentsWithNewCandidates() {
+  const { SM, ss } = loadSurveyModel();
+  const sheet = SM.createNewSurvey_(ss, 'StaleCheck');
+
+  SM.addSurveyCandidate_(sheet, 'Alice');
+  SM.addSurveyCandidate_(sheet, 'Bob');
+  SM.submitSurveyResponse_('StaleCheck', 'Voter One', ['Alice', 'Bob'], '');
+  SM.submitSurveyResponse_('StaleCheck', 'Voter Two', ['Bob', 'Alice'], '');
+
+  assert.deepEqual(SM.findRespondentsWithNewCandidates_(sheet), []);
+
+  SM.addSurveyCandidate_(sheet, 'Carol'); // added after both respondents' submissions
+  assert.deepEqual(SM.findRespondentsWithNewCandidates_(sheet), ['Voter One', 'Voter Two']);
+
+  // Voter One re-ranks including Carol — no longer stale. Voter Two still is.
+  SM.submitSurveyResponse_('StaleCheck', 'Voter One', ['Carol', 'Alice', 'Bob'], '');
+  assert.deepEqual(SM.findRespondentsWithNewCandidates_(sheet), ['Voter Two']);
 }
 
 /**
@@ -452,9 +529,12 @@ function run() {
   testCreateNewSurveyCreatesSkeleton();
   testListSurveyIdsAndFindSurveySheet();
   testWriteThenReadConfigRoundTrips();
-  testWriteSurveyConfigSelfHealsMissingInfoRowOnOldSheet();
+  testWriteSurveyConfigSelfHealsMissingAdminOnlyNotesRowOnOldSheet();
   testWriteSurveyConfigInsertsRowWhenNoBlankSpacerExists();
+  testLegacyInfoKeyMigratesToAdminOnlyNotes();
   testCandidatesAndSubmitResponseRoundTrip();
+  testCountUniqueSurveyRespondents();
+  testFindRespondentsWithNewCandidates();
   testGetSurveyForRespondentIncludesItemDetails();
   testAddSurveyCandidateTracksDetailsPositionAligned();
   testSaveSurveyCandidatesRenamesAndUpdatesDetailsWithoutDisturbingResponses();

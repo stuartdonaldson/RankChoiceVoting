@@ -7,8 +7,8 @@
  *   APP_DEPLOY_TARGET  — 'SIT', 'PROD', or 'NUUC'
  * Do not hand-edit; commit whatever the tool last stamped.
  */
-const APP_VERSION       = '0.0.3';
-const APP_VERSION_DATE  = '2026-07-07T01:11:02.896Z';
+const APP_VERSION       = '0.0.12';
+const APP_VERSION_DATE  = '2026-07-07T03:44:57.548Z';
 const APP_DEPLOY_TARGET = 'NUUC';
 const APP_AUTHOR        = 'Stuart Donaldson';
 const APP_CONTACT       = 'stuart.donaldson@gmail.com';

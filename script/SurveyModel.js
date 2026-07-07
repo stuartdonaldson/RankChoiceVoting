@@ -4,11 +4,15 @@
  * Sheet-layout model for "Survey-<name>" sheets. Each survey lives entirely in
  * one sheet, top to bottom:
  *
- *   Row 1..6   Config (key in col A, value in col B): Title, Description,
- *              Footer, Contact, Accept-New, Info
- *   Row 7      blank
- *   Row 8      "[Results]" marker (col A)
- *   Row 9+     Analysis output — cleared and rewritten by runSurveyAnalysis_
+ *   Row 1..8   Config (key in col A, value in col B): Title, Description,
+ *              Instructions, Footer, Contact, Accept-New, Add-Instructions, Admin-Only-Notes
+ *              — Description is the landing-page intro (shown before a respondent
+ *              enters their name); Instructions is shown above the ranking list on
+ *              the ballot page instead; Add-Instructions is shown above the "+ Add
+ *              New" button, only when Accept-New is on.
+ *   Row 9      blank
+ *   Row 10     "[Results]" marker (col A)
+ *   Row 11+    Analysis output — cleared and rewritten by runSurveyAnalysis_
  *   Row M      "[Candidates]" marker (col A)
  *   Row M+1    Candidates header: (col A blank) Name (col B) | Details (col C)
  *   Row M+2+   One row per candidate — name/details start at col B, position-aligned
@@ -29,9 +33,11 @@
  * only closes the hole entirely; the bracket decoration is defense in depth against
  * any future mistake (or a sheet hand-edited outside the app) reintroducing it.
  *
- * "Info" is admin-only free-text notes about the survey (e.g. purpose, audience,
- * scheduling context) — shown in the admin list as a per-row disclosure, never
- * exposed to respondents (see getSurveyForRespondent_, which omits it).
+ * "Admin-Only-Notes" (config key; formerly "Info" — _findMarkerRow_-style legacy
+ * migration in readSurveyConfig_ upgrades old sheets on first read) is free-text
+ * notes about the survey (e.g. purpose, audience, scheduling context) — shown in
+ * the admin list as a per-row disclosure, never exposed to respondents (see
+ * getSurveyForRespondent_, which omits it).
  *
  * The Candidates table is the PRIMARY identification of candidates — it is the
  * source of truth for who is a candidate, including ones pre-populated there ahead
@@ -68,7 +74,10 @@ var _SURVEY_LEGACY_MARKER_TEXT_ = {
   '[Candidates]': ['Candidates', '[Items]', 'Items'],
   '[Responses]': ['Responses']
 };
-var _SURVEY_CONFIG_ROWS = ['Title', 'Description', 'Footer', 'Contact', 'Accept-New', 'Info'];
+var _SURVEY_CONFIG_ROWS = ['Title', 'Description', 'Instructions', 'Footer', 'Contact', 'Accept-New', 'Add-Instructions', 'Admin-Only-Notes'];
+// Legacy config key recognized by readSurveyConfig_ purely to migrate older sheets in
+// place, same pattern as _SURVEY_LEGACY_MARKER_TEXT_ above.
+var _SURVEY_LEGACY_CONFIG_KEYS_ = { 'Admin-Only-Notes': ['Info'] };
 // Fixed Responses columns before the candidate columns begin (col 5 / E).
 var _SURVEY_RESPONSE_FIXED_COLS = ['Date', 'Name', 'Weight', 'Comment'];
 var _SURVEY_FIRST_CANDIDATE_COL = _SURVEY_RESPONSE_FIXED_COLS.length + 1; // 5
@@ -121,20 +130,22 @@ function findSurveySheet_(ss, id) {
  */
 function createSurveySheet_(ss, id) {
   var sheet = ss.insertSheet(getSurveySheetName_(id));
-  sheet.getRange(1, 1, 6, 2).setValues([
+  sheet.getRange(1, 1, 8, 2).setValues([
     ['Title', '[TODO: survey title shown to respondents]'],
-    ['Description', '[TODO: description/instructions shown above the ranking list]'],
+    ['Description', '[TODO: intro text shown before respondents enter their name]'],
+    ['Instructions', '[TODO: instructions shown above the ranking list on the ballot page]'],
     ['Footer', '[TODO: footer text, e.g. deadline or sponsoring group]'],
     ['Contact', '[TODO: contact name/email for questions]'],
     ['Accept-New', 'TRUE'],
-    ['Info', '']
+    ['Add-Instructions', '[TODO: instructions shown above the "+ Add New" button, if enabled]'],
+    ['Admin-Only-Notes', '']
   ]);
-  sheet.getRange(8, 1).setValue(_SURVEY_RESULTS_MARKER);
-  sheet.getRange(9, 1).setValue(_SURVEY_CANDIDATES_MARKER);
-  sheet.getRange(10, _SURVEY_CANDIDATES_FIRST_COL, 1, _SURVEY_CANDIDATES_HEADER.length).setValues([_SURVEY_CANDIDATES_HEADER]);
-  sheet.getRange(11, 1).setValue(_SURVEY_RESPONSES_MARKER);
-  sheet.getRange(12, 1, 1, _SURVEY_RESPONSE_FIXED_COLS.length).setValues([_SURVEY_RESPONSE_FIXED_COLS]);
-  sheet.setFrozenRows(12);
+  sheet.getRange(10, 1).setValue(_SURVEY_RESULTS_MARKER);
+  sheet.getRange(11, 1).setValue(_SURVEY_CANDIDATES_MARKER);
+  sheet.getRange(12, _SURVEY_CANDIDATES_FIRST_COL, 1, _SURVEY_CANDIDATES_HEADER.length).setValues([_SURVEY_CANDIDATES_HEADER]);
+  sheet.getRange(13, 1).setValue(_SURVEY_RESPONSES_MARKER);
+  sheet.getRange(14, 1, 1, _SURVEY_RESPONSE_FIXED_COLS.length).setValues([_SURVEY_RESPONSE_FIXED_COLS]);
+  sheet.setFrozenRows(14);
   _highlightSectionMarkers_(sheet);
   return sheet;
 }
@@ -297,13 +308,13 @@ function createNewSurvey_(ss, id) {
  * Overwrites the config key/value rows for a survey. Keys already present are
  * matched by scanning column A rather than assuming fixed row numbers, so it
  * tolerates a sheet whose config rows have been manually reordered. Any update
- * key with no existing row (e.g. a config field — like "Info" — added to the
- * model after this particular sheet was created) is appended as a new row,
+ * key with no existing row (e.g. a config field — like "Admin-Only-Notes" — added
+ * to the model after this particular sheet was created) is appended as a new row,
  * inserted just above the Results marker, so older sheets self-heal on first
  * save instead of silently dropping the value.
  *
  * @param {Sheet} sheet
- * @param {Object} updates e.g. {Title, Description, Footer, Contact, 'Accept-New', Info}
+ * @param {Object} updates e.g. {Title, Description, Instructions, Footer, Contact, 'Accept-New', 'Add-Instructions', 'Admin-Only-Notes'}
  */
 function writeSurveyConfig_(sheet, updates) {
   var resultsRow = _findMarkerRow_(sheet, _SURVEY_RESULTS_MARKER);
@@ -372,7 +383,7 @@ function _findMarkerRow_(sheet, marker) {
  * Results marker).
  *
  * @param {Sheet} sheet
- * @return {Object} e.g. {Title, Description, Footer, Contact, 'Accept-New'}
+ * @return {Object} e.g. {Title, Description, Instructions, Footer, Contact, 'Accept-New', 'Add-Instructions'}
  */
 function readSurveyConfig_(sheet) {
   var resultsRow = _findMarkerRow_(sheet, _SURVEY_RESULTS_MARKER);
@@ -380,9 +391,16 @@ function readSurveyConfig_(sheet) {
   var config = {};
   if (lastConfigRow < 1) return config;
   var values = sheet.getRange(1, 1, lastConfigRow, 2).getValues();
-  values.forEach(function (row) {
+  values.forEach(function (row, i) {
     var key = String(row[0] || '').trim();
-    if (key) config[key] = row[1];
+    if (!key) return;
+    Object.keys(_SURVEY_LEGACY_CONFIG_KEYS_).forEach(function (currentKey) {
+      if (_SURVEY_LEGACY_CONFIG_KEYS_[currentKey].indexOf(key) !== -1) {
+        sheet.getRange(i + 1, 1).setValue(currentKey); // one-time upgrade to the current key name
+        key = currentKey;
+      }
+    });
+    config[key] = row[1];
   });
   return config;
 }
@@ -486,6 +504,57 @@ function readSurveyResponseRows_(sheet) {
 }
 
 /**
+ * Collapses response rows down to one per respondent (case-insensitive name
+ * match), keeping only the last-written row for each — sheet rows are in
+ * top-to-bottom submission order, and a re-submission is meant to supersede
+ * that respondent's earlier ranking entirely (see submitSurveyResponse_, which
+ * normally overwrites the existing row in place via _findSurveyResponseRowForName_;
+ * this dedup is what makes counts/analysis correct even if duplicate rows for
+ * the same name exist anyway, e.g. from a hand-edited sheet).
+ *
+ * @param {Array<{name:string}>} rows as returned by readSurveyResponseRows_
+ * @return {Array} one entry per distinct respondent, in first-seen order
+ */
+function _latestResponseByRespondent_(rows) {
+  var latestByLowerName = {};
+  var order = [];
+  rows.forEach(function (r) {
+    var key = r.name.toLowerCase();
+    if (!latestByLowerName.hasOwnProperty(key)) order.push(key);
+    latestByLowerName[key] = r;
+  });
+  return order.map(function (key) { return latestByLowerName[key]; });
+}
+
+/**
+ * @param {Sheet} sheet
+ * @return {number} count of distinct respondents (case-insensitive name), i.e.
+ *   how many people voted — a respondent who re-voted still counts once.
+ */
+function countUniqueSurveyRespondents_(sheet) {
+  return _latestResponseByRespondent_(readSurveyResponseRows_(sheet)).length;
+}
+
+/**
+ * Finds respondents whose latest submitted ranking predates one or more of the
+ * survey's current candidates, so they may want to come back and rank the new
+ * addition(s). Detected via a blank rank cell: _reconcileCandidatesWithResponses_
+ * only ever appends new candidate columns and never backfills existing rows, so
+ * a response row written before a candidate existed has a genuinely empty cell
+ * under that candidate's column — there's no other way a rank cell goes blank,
+ * since submitSurveyResponse_ always writes every candidate known at submit time.
+ *
+ * @param {Sheet} sheet
+ * @return {Array<string>} respondent names (as last submitted), one per stale respondent
+ */
+function findRespondentsWithNewCandidates_(sheet) {
+  var rows = _latestResponseByRespondent_(readSurveyResponseRows_(sheet));
+  return rows
+    .filter(function (r) { return r.ranks.some(function (v) { return v === '' || v === null || v === undefined; }); })
+    .map(function (r) { return r.name; });
+}
+
+/**
  * Finds the last response row for a respondent (case-insensitive), so a
  * re-submission overwrites their existing row instead of adding a duplicate.
  *
@@ -563,9 +632,11 @@ function getSurveyForRespondent_(id, name) {
     id: id,
     title: config.Title || '',
     description: config.Description || '',
+    instructions: config.Instructions || '',
     footer: config.Footer || '',
     contact: config.Contact || '',
     acceptNew: _surveyAcceptsNew_(config),
+    addInstructions: config['Add-Instructions'] || '',
     candidates: candidates,
     itemDetails: itemDetails,
     comment: '',
@@ -827,6 +898,9 @@ if (typeof module !== 'undefined' && module.exports) {
     readSurveyConfig_: readSurveyConfig_,
     readSurveyCandidates_: readSurveyCandidates_,
     readSurveyResponseRows_: readSurveyResponseRows_,
+    countUniqueSurveyRespondents_: countUniqueSurveyRespondents_,
+    _latestResponseByRespondent_: _latestResponseByRespondent_,
+    findRespondentsWithNewCandidates_: findRespondentsWithNewCandidates_,
     addSurveyCandidate_: addSurveyCandidate_,
     getSurveyForRespondent_: getSurveyForRespondent_,
     addSurveyCandidateForId_: addSurveyCandidateForId_,

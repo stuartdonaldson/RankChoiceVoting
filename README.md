@@ -1,117 +1,95 @@
-# Rank Choice Voting (RCV) Google Apps Script Project
+# Rank Choice Voting (RCV) Google Apps Script Web App
 
-This project provides a complete solution for running Ranked Choice Voting (RCV) and multiple Condorcet voting methods using Google Sheets and Google Forms. It includes scripts to generate a ranked-choice voting form, process the results, and display step-by-step elimination rounds and Condorcet analyses.
+A multi-survey Ranked Choice Voting (RCV) and Condorcet analysis tool built on Google Sheets and Google Apps Script. Everything — creating a survey, collecting votes, and running analysis — happens through one deployed web app; there is no separate Google Form.
 
-## Features
+## How it works, in one picture
 
-- **Google Sheets Add-on Menu:**  
-  Adds a custom "Voting and Ballot Tools" menu to your Google Sheet for creating forms and processing results.
+One Google Spreadsheet holds any number of surveys. Each survey is its own sheet, named `Survey-<id>`, laid out top to bottom in four sections:
 
-- **Automated Google Form Creation:**  
-  Generates a Google Form for voters to rank candidates. Candidate names and descriptions are automatically pulled from your sheet and displayed in the form to help voters make informed choices.
+```
+Row 1..8   Config          Title, Description, Instructions, Footer, Contact,
+                            Accept-New, Add-Instructions, Admin-Only-Notes
+Row 10     [Results]        marker
+Row 11+                     analysis output — overwritten each time analysis runs
+Row M      [Candidates]     marker
+Row M+1                     header: Name | Details
+Row M+2+                     one row per candidate
+Row N      [Responses]      marker
+Row N+1                     header: Date | Name | Weight | Comment | <candidate columns...>
+Row N+2+                     one row per respondent
+```
 
-- **RCV Processing:**  
-  Processes form responses using the Ranked Choice Voting method, including:
-  - Multi-round elimination with vote redistribution
-  - Automatic tie-breakers (second-choice and last-place votes)
-  - Comprehensive candidate status tracking
-  - Visual HTML results table with elimination details
+- **Candidates** is the source of truth for who's running. The Responses section's candidate columns are a derived, position-aligned mirror that vote rows key their ranks off of — it's kept in sync automatically whenever candidates are read.
+- **Responses** holds one row per respondent, keyed by name (case-insensitive). **Voting again with the same name overwrites that respondent's existing row** rather than adding a second one — only their most recent ranking ever counts. This is also why the admin survey list shows both a raw response-row count and a smaller (or equal) unique-respondent count: they only diverge if someone's name was typed inconsistently, or a sheet was hand-edited to include a genuine duplicate. Analysis always dedupes the same way before computing results.
+- **Results** is overwritten every time you run analysis on that survey — it's a snapshot of the last run, not a log.
+- Column A is reserved for section markers/config keys only — it is never used for candidate names or respondent data, so a candidate can safely be named anything (including "Responses" or "Results") without corrupting the sheet layout.
 
-- **Condorcet Methods:**  
-  Supports multiple Condorcet voting methods with integrated UI dialogs, including:
-  - **Basic Condorcet (pairwise comparison)** — Identifies a candidate who beats every other candidate in head-to-head matchups. If no such candidate exists due to a cycle (A beats B, B beats C, C beats A), no winner is declared.
-  - **Schulze Method** — Uses the "strongest path" algorithm to resolve cycles by finding the candidate with the strongest chain of victories. Particularly robust for handling complex voting patterns.
-  - **Ranked Pairs (Tideman)** — Locks in pairwise victories in order of strength (largest margin first) while avoiding cycles. Creates a definitive ranking by building an acyclic graph of victories.
-  - **Minimax (Simpson)** — Selects the candidate whose worst pairwise defeat is the smallest. Minimizes maximum opposition, making it resistant to strategic voting.
-  
-  Results are displayed in a formatted dialog for easy comparison across methods.
+## The web app
 
-- **Step-by-Step Results:**  
-  Outputs detailed elimination rounds to a dedicated "RCV Processing" sheet for transparency.
+Deployed once as a Google Apps Script Web App, the same URL serves three views:
 
-- **Dialog Results:**  
-  Shows the winner(s) or tie status in a user-friendly dialog, including:
-  - Winner announcement or tie notification
-  - HTML-formatted candidate summary table
-  - Status, vote counts, and elimination details for all candidates
-  - Works for both RCV and Condorcet analyses
-  
-## Setup
+| URL | Purpose |
+|---|---|
+| `<url>` or `<url>?cmd=admin` | Survey list — create a survey, and for each existing one: view it, edit it, or run analysis |
+| `<url>?cmd=admin&action=edit&id=<id>` | Edit a survey: a live preview styled exactly like the real ballot, with a pencil icon on every editable field. Each field saves immediately (no page-wide Save) |
+| `<url>?cmd=survey&id=<id>` | The respondent-facing ballot — what you share with voters |
 
-1. **Clone or copy this repository to your local machine.**
+From the spreadsheet itself, **Voting and Ballot Tools > Open Survey Admin Page** opens the admin list, and **About** shows the deployed web app URL plus a direct link to every survey.
 
-2. **Prepare your Google Sheet:**
-   - Create a sheet named `Candidates` with the following columns:
-     - **Column 1:** Candidate Name
-     - **Column 2:** Candidate Description (including book title, if applicable) - This will be displayed in the form to help voters make informed choices
-   - Create a sheet named `RCV Processing` for detailed elimination round logs
-   - Optionally, add more sheets as needed.
+### Creating and configuring a survey
 
-3. **Deploy scripts:**
-   - Use [clasp](https://github.com/google/clasp) to push the scripts to your Apps Script project, or copy them into the Apps Script editor attached to your Google Sheet.
+1. From the admin page, create a new survey with an id (used in the URL and the `Survey-<id>` sheet name).
+2. Open its edit page and use the pencil icons to set:
+   - **Title / Description** — shown on the landing page before a respondent enters their name.
+   - **Instructions** — shown above the ranking list on the ballot page itself (replaces Description there).
+   - **Footer / Contact** — shown at the bottom of the ballot page.
+   - **Candidates** — add candidates and an optional admin-only "Details" note shown to respondents.
+   - **Accept new candidates from respondents** — if on, respondents can add a candidate themselves from the ballot page; **Add-Instructions** is the text shown above that button.
+   - **Admin-Only Notes** — free-text notes for your own reference (purpose, audience, scheduling); never shown to respondents.
+3. Share the `?cmd=survey&id=<id>` link with voters.
 
-4. **Open your Google Sheet.**
-   - You should see a new menu: **Voting and Ballot Tools**.
+### Voting
 
-## Usage
+A respondent enters their name, drag-reorders the candidate list (most preferred on top), optionally adds a candidate (if enabled) or leaves feedback, and submits. Returning with the same name loads their previous ranking for review or change — submitting again replaces it.
 
-1. **Create the RCV Form:**
-   - From the **Voting and Ballot Tools** menu, select **Create Ballot Form**.
-   - A dialog will appear with a link to the generated Google Form.
-   - The form will include candidate descriptions to help voters make informed choices.
-   - Share this link with your voters.
+If a candidate is added after someone has already voted, the admin survey list flags that respondent (they may want to come back and rank the addition) — their existing ranking is otherwise left as-is.
 
-2. **Collect Votes:**
-   - Voters fill out the form, ranking all candidates.
+### Running analysis
 
-3. **Run RCV Analysis:**
-   - Once voting is complete, select **Run RCV Analysis** from the menu.
-   - A dialog will display:
-     - The winner (or tie status if unresolved)
-     - A comprehensive candidate summary table showing:
-       - Current status (Winner, Active, Eliminated, No Votes)
-       - Vote counts
-       - Elimination round (if applicable)
-       - Reason for elimination
-   - For step-by-step ballot redistribution details, view the **RCV Processing** sheet.
+From the admin list, **Run Analysis** computes and displays:
 
-4. **Run Condorcet Analysis:**
-   - Select **Run Condorcet Analysis** from the menu to see results for all supported Condorcet methods.
-   - Results are displayed in an easy-to-read dialog format showing winners for each method:
-     - Basic Condorcet (pairwise comparison)
-     - Schulze Method
-     - Ranked Pairs (Tideman)
-     - Minimax (Simpson)
-   - Useful for comparing different voting method outcomes on the same ballot data.
+- **Ranked Choice Voting (RCV)** — multi-round elimination with vote redistribution, automatic tie-breakers, and a full candidate status/round summary.
+- **Condorcet methods** — Basic Condorcet (pairwise), Schulze (strongest path), Ranked Pairs (Tideman), and Minimax (Simpson), for comparing outcomes across methods when there's no unambiguous pairwise winner.
+
+Each run also overwrites the survey sheet's own `[Results]` section with the same summary, so the sheet always reflects the last analysis you ran.
 
 ## Files
 
-- `onOpen.js` — Adds the custom menu and handles UI dialogs for RCV and Condorcet results.
-- `createRCVform.js` — Builds the Google Form from your candidate list, including helper functions `loadCandidates()` and `loadBallots()` for data loading.
-- `processRCV.js` — Processes the RCV results with comprehensive tie-breakers, elimination logic, and candidate status tracking.
-- `processCondorcet.js` — Implements and analyzes four Condorcet voting methods.
-- `cleanResponses.js` — Utility functions for cleaning up old forms and response sheets.
-- `testRCV.js` — Contains test cases for validating the RCV logic.
-- `.claspignore` — Specifies files/folders to ignore when pushing with clasp.
-- `.gitignore` — Specifies files/folders to ignore in Git.
-- `README.md` — This file.
+- `script/WebApp.js` — `doGet`/`doPost` router (`cmd=survey`, `cmd=admin`).
+- `script/SurveyModel.js` — the sheet-layout model described above; every other file reads/writes surveys through this module.
+- `script/webAdmin.js` — admin survey list, create-survey form, and analysis view.
+- `script/webAdminEditPage.html` — the live-preview survey editor.
+- `script/webSurvey.js` / `script/webSurveyPage.html` — the respondent-facing ballot page and its RPCs.
+- `script/processRCV.js` — RCV elimination logic and tie-breakers.
+- `script/processCondorcet.js` — the four Condorcet methods.
+- `script/onOpen.js` — the spreadsheet's custom menu and About dialog.
+- `script/GasLogger.js` — structured logging (see its header for setup).
+- `script/version.js` — stamped automatically by `tools/manage-deployments.js` on every deploy.
+- `test/` — Node-based unit tests that exercise the sheet model against a fake Sheets API (`test/fakeGas.js`), so core logic is tested without needing a live Apps Script deployment.
+- `tools/` — deployment (`manage-deployments.js`) and smoke-test (`smokeTest.js`, `callWebapp.js`) scripts.
 
-## Customization
+## Setup
 
-- **Candidate Descriptions:**  
-  Edit the `Candidates` sheet to update candidate names and descriptions. Descriptions are displayed in the voting form to help voters make informed decisions.
-
-- **Tie-breaker Logic:**  
-  The script uses second-choice votes (fewest) and last-place votes (most) as sequential tie-breakers. You can modify the `breakTie()` function in `processRCV.js` to adjust this logic.
-
-- **Form Appearance:**  
-  Modify the form title, description, and layout in `createRCVform.js` to customize the voting experience.
+1. **Clone this repository.**
+2. **Install [clasp](https://github.com/google/clasp)** and authenticate it against your Google account.
+3. Push `script/` to an Apps Script project bound to your target Google Sheet: `clasp push`.
+4. **Deploy as a Web App** (Deploy > New deployment > Web app), or use `tools/manage-deployments.js` if you're using this project's deployment pipeline — it also stamps `script/version.js` and the `WEBAPP_URL` script property used to build in-app links.
+5. Open the spreadsheet — you should see the **Voting and Ballot Tools** menu.
 
 ## Requirements
 
 - Google Sheets
-- Google Apps Script (via the Script Editor or clasp)
-- Google Forms (created automatically by the script)
+- Google Apps Script (via `clasp` or the Script Editor)
 
 ## License
 
@@ -119,12 +97,6 @@ MIT License
 
 ---
 
-**Questions or issues?**  
-Open an issue or submit a pull request!
-
----
-
-**Note:**  
-This project was developed with the assistance of GitHub Copilot AI.
+**Questions or issues?** Open an issue or submit a pull request!
 
 &copy; Stuart Donaldson (F3 Little John - Puget Sound region)

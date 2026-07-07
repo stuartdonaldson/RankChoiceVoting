@@ -131,6 +131,7 @@
     #status { color: #5f6368; min-height: 1.2em; margin-top: 8px; }
     #status.error { color: #d93025; }
     footer.survey-footer { color: #5f6368; font-size: 0.85em; margin-top: 24px; }
+    p.survey-contact { color: #5f6368; font-size: 0.85em; margin-top: 4px; }
     footer.app-version-footer { color: #9aa0a6; font-size: 0.75em; margin-top: 8px; }
   </style>
 </head>
@@ -155,7 +156,11 @@
     <p class="sub">Drag items to order them, most preferred on top.</p>
     <ul id="topicList"></ul>
 
+    <button id="submitBtn">Submit</button>
+    <button id="backBtn" class="secondary">Back</button>
+
     <div id="addSection">
+      <p class="sub" id="addInstructionsText"></p>
       <button id="addNewBtn" type="button" class="secondary">+ Add New</button>
       <div id="addPanel" class="add-panel" hidden>
         <label for="newItemInput">Name</label>
@@ -169,11 +174,14 @@
       </div>
     </div>
 
-    <label for="commentInput">Feedback (optional)</label>
-    <textarea id="commentInput" rows="4" placeholder="Any feedback you'd like to add?"></textarea>
+    <div id="feedbackSection">
+      <button id="feedbackToggleBtn" type="button" class="secondary">+ Add Feedback</button>
+      <div id="feedbackPanel" class="add-panel" hidden>
+        <label for="commentInput">Feedback (optional)</label>
+        <textarea id="commentInput" rows="4" placeholder="Any feedback you'd like to add?"></textarea>
+      </div>
+    </div>
 
-    <button id="submitBtn">Submit</button>
-    <button id="backBtn" class="secondary">Back</button>
     <div id="status2"></div>
   </div>
 
@@ -183,6 +191,7 @@
   </div>
 
   <footer class="survey-footer" id="pageFooter"></footer>
+  <p class="survey-contact" id="pageContact"></p>
   <footer class="app-version-footer" id="appVersionFooter"></footer>
 
   <script>
@@ -190,6 +199,12 @@
     var currentName = '';
     var acceptNew = true;
     var itemDetailsByName = {}; // set from config.itemDetails — per-item notes, either admin-authored or added by a respondent via the Details field on Add New
+    // pageDescription's text is step-dependent: config.description (the landing-page
+    // intro) on step-name, config.instructions (the ballot instructions) on step-rank —
+    // the two settings share that one slot rather than stacking, so Instructions reads
+    // as replacing Description once a respondent moves from name entry to the ballot.
+    var surveyDescription = '';
+    var surveyInstructions = '';
     var _SURVEY_NAME_STORAGE_KEY_PREFIX = 'rcvSurveyName:';
 
     function loadSavedName() {
@@ -203,6 +218,7 @@
     var pageTitle = document.getElementById('pageTitle');
     var pageDescription = document.getElementById('pageDescription');
     var pageFooter = document.getElementById('pageFooter');
+    var pageContact = document.getElementById('pageContact');
     var appVersionFooter = document.getElementById('appVersionFooter');
     var stepNoSurvey = document.getElementById('step-noSurvey');
     var stepName = document.getElementById('step-name');
@@ -214,10 +230,14 @@
     var status2 = document.getElementById('status2');
     var topicList = document.getElementById('topicList');
     var addSection = document.getElementById('addSection');
+    var addInstructionsText = document.getElementById('addInstructionsText');
     var addNewBtn = document.getElementById('addNewBtn');
     var addPanel = document.getElementById('addPanel');
     var newItemInput = document.getElementById('newItemInput');
     var newItemDetailsInput = document.getElementById('newItemDetailsInput');
+    var feedbackSection = document.getElementById('feedbackSection');
+    var feedbackToggleBtn = document.getElementById('feedbackToggleBtn');
+    var feedbackPanel = document.getElementById('feedbackPanel');
     var commentInput = document.getElementById('commentInput');
     var addBtn = document.getElementById('addBtn');
     var addCancelBtn = document.getElementById('addCancelBtn');
@@ -229,6 +249,7 @@
     function showStep(el) {
       [stepNoSurvey, stepName, stepRank, stepDone].forEach(function (s) { s.classList.remove('visible'); });
       el.classList.add('visible');
+      pageDescription.textContent = (el === stepRank) ? surveyInstructions : surveyDescription;
     }
 
     function setStatus(el, msg, isError) {
@@ -357,14 +378,18 @@
     function applyBranding(config) {
       pageTitle.textContent = config.title || 'RankChoiceVoting Survey';
       document.title = config.title || 'RankChoiceVoting Survey';
-      pageDescription.textContent = config.description || '';
+      surveyDescription = config.description || '';
+      surveyInstructions = config.instructions || '';
       pageFooter.textContent = config.footer || '';
+      pageContact.textContent = config.contact ? 'Contact: ' + config.contact : '';
       appVersionFooter.textContent = config.appVersion
         ? 'v' + config.appVersion + (config.appDeployTarget ? ' (' + config.appDeployTarget + ')' : '')
         : '';
       itemDetailsByName = config.itemDetails || {};
       acceptNew = !!config.acceptNew;
       addSection.style.display = acceptNew ? 'block' : 'none';
+      addInstructionsText.textContent = config.addInstructions || '';
+      addInstructionsText.style.display = config.addInstructions ? 'block' : 'none';
     }
 
     function loadSurvey(name) {
@@ -379,6 +404,7 @@
           saveName(name);
           renderTopics(result.candidates);
           commentInput.value = result.comment || '';
+          if (commentInput.value) openFeedbackPanel(); else closeFeedbackPanel();
           showStep(stepRank);
         })
         .withFailureHandler(function (err) {
@@ -400,6 +426,18 @@
     nameInput.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') startBtn.click();
     });
+
+    function openFeedbackPanel() {
+      feedbackPanel.hidden = false;
+      feedbackToggleBtn.hidden = true;
+    }
+
+    function closeFeedbackPanel() {
+      feedbackPanel.hidden = true;
+      feedbackToggleBtn.hidden = false;
+    }
+
+    feedbackToggleBtn.addEventListener('click', openFeedbackPanel);
 
     function openAddPanel() {
       addPanel.hidden = false;

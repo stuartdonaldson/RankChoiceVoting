@@ -7,8 +7,8 @@
  *   1. Bootstrap sitAdminSecret if not already saved locally.
  *   2. createSurvey a uniquely-named test survey.
  *   3. listSheets / getSheet — assert the Survey-<id> sheet exists with the
- *      expected config skeleton (Title/Description/Footer/Contact/Accept-New,
- *      Results marker, Responses header).
+ *      expected config skeleton (Title/Description/Instructions/Footer/Contact/
+ *      Accept-New/Add-Instructions, Results marker, Responses header).
  *   4. setSheet — seed one response row.
  *   5. getSheet — verify the seeded row round-trips.
  *   6. deleteSheet — clean up.
@@ -114,11 +114,11 @@ async function main() {
     record_('getSheet shows config skeleton', hasConfigSkeleton, hasConfigSkeleton ? '' : csv1.slice(0, 300));
     if (!hasConfigSkeleton) throw new Error('config skeleton missing from getSheet csv');
 
-    // 4. setSheet — seed one response row directly below the Responses header (row 10 -> row 11).
+    // 4. setSheet — seed one response row directly below the Responses header (row 14 -> row 15).
     const seededComment = 'seeded by smokeTest ' + id;
     const setResult = await post(url_(deploymentId), payload_('setSheet', {
       sheetName,
-      row: 11,
+      row: 15,
       col: 1,
       rows: [[new Date().toISOString(), 'Smoke Voter', 1, seededComment]],
     }, adminSecret));

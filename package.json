@@ -1,6 +1,6 @@
 {
   "name": "rankchoicevoting",
-  "version": "0.0.3",
+  "version": "0.0.12",
   "build": 0,
   "private": true,
   "scripts": {

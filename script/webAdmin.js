@@ -14,10 +14,12 @@
 
 /**
  * ?cmd=admin                          — list all surveys, with a create-new-survey form
- * ?cmd=admin&action=create&id=<id>    — create a new Survey-<id> sheet, then open its edit form
- * ?cmd=admin&action=edit&id=<id>      — edit a survey's Title/Description/Footer/Contact/Accept-New/Candidates
- * ?cmd=admin&action=save&id=<id>&...  — save the edit form
- * ?cmd=admin&action=saveCandidates&id=...  — rename/re-describe candidates and/or add a new one
+ * ?cmd=admin&action=create&id=<id>    — create a new Survey-<id> sheet, then open its edit page
+ * ?cmd=admin&action=edit&id=<id>      — edit a survey: a live ballot preview (webAdminEditPage.html)
+ *                                        with a pencil icon per editable field. Each field saves
+ *                                        itself immediately via google.script.run (see the
+ *                                        adminSave... / adminAddCandidate RPCs below) — there
+ *                                        is no page-wide Save, only Back.
  * ?cmd=admin&action=analyze&id=<id>   — run analysis on one survey and show results
  *
  * @param {Object} e doGet event.
@@ -30,22 +32,26 @@ function _handleAdmin(e) {
   GasLogger.log('webapp.admin', { action: action, id: params.id || '' });
   GasLogger.flush();
 
+  if (action === 'create') {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    try {
+      createNewSurvey_(ss, params.id);
+    } catch (err) {
+      return HtmlService.createHtmlOutput(_ADMIN_STYLE_ + _renderAdminList_(err.message, params.id) + _versionFooterHtml_())
+        .setTitle('Survey Admin')
+        .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1');
+    }
+    return _renderAdminEditPage_();
+  }
+
+  if (action === 'edit') {
+    return _renderAdminEditPage_();
+  }
+
   var body;
   switch (action) {
     case 'analyze':
       body = params.id ? _renderAdminAnalysis_(params.id) : _renderAdminList_();
-      break;
-    case 'create':
-      body = _handleAdminCreate_(params);
-      break;
-    case 'edit':
-      body = _renderAdminEdit_(params.id, null);
-      break;
-    case 'save':
-      body = _handleAdminSave_(params);
-      break;
-    case 'saveCandidates':
-      body = _handleAdminSaveCandidates_(params);
       break;
     default:
       body = _renderAdminList_();
@@ -56,6 +62,17 @@ function _handleAdmin(e) {
     // GAS wraps webapp output in an outer frame that only reliably honors a mobile
     // viewport when set via addMetaTag — a plain <meta viewport> tag inside the page's
     // own HTML is not enough (same reason webSurvey.js's _handleSurvey sets it this way).
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1');
+}
+
+/**
+ * @return {HtmlOutput} the webAdminEditPage.html template — it reads id (and, right after
+ *   a create, action=create for a one-time banner) from google.script.url.getLocation()
+ *   client-side, same pattern as webSurveyPage.html, then fetches data via getAdminEditData.
+ */
+function _renderAdminEditPage_() {
+  return HtmlService.createHtmlOutputFromFile('webAdminEditPage')
+    .setTitle('Edit Survey')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1');
 }
 
@@ -88,9 +105,6 @@ var _ADMIN_STYLE_ =
   '.survey-info{margin-top:10px;}' +
   '.survey-info summary{cursor:pointer;color:#1a73e8;font-size:0.9em;padding:6px 0;min-height:44px;display:flex;align-items:center;}' +
   '.survey-info p{margin:4px 0 0;color:#3c4043;font-size:0.9em;white-space:pre-wrap;}' +
-  '.candidate-row{border:1px solid #dadce0;border-radius:6px;padding:10px 12px;margin-bottom:10px;}' +
-  '.candidate-row label{margin-top:6px;}' +
-  '.candidate-row label:first-child{margin-top:0;}' +
   '.app-version-footer{color:#9aa0a6;font-size:0.75em;margin-top:24px;}' +
   '@media (max-width:420px){button,a.btn{width:100%;}}' +
   '</style>';
@@ -131,14 +145,19 @@ function _renderAdminList_(createError, prefillId) {
   ids.forEach(function (id) {
     var sheet = findSurveySheet_(ss, id);
     var config = readSurveyConfig_(sheet);
+    var candidateCount = readSurveyCandidates_(sheet).length;
     var responseCount = readSurveyResponseRows_(sheet).length;
+    var uniqueRespondentCount = countUniqueSurveyRespondents_(sheet);
+    var staleRespondents = findRespondentsWithNewCandidates_(sheet);
     var surveyUrl = baseUrl + '?cmd=survey&id=' + encodeURIComponent(id);
-    var info = String(config.Info || '').trim();
+    var adminNotes = String(config['Admin-Only-Notes'] || '').trim();
 
     html += '<div class="survey-card">' +
       '<h3>' + _escapeHtml_(config.Title || id) + '</h3>' +
       '<div class="survey-id">' + _escapeHtml_(id) + '</div>' +
-      '<div class="survey-meta">' + responseCount + ' response' + (responseCount === 1 ? '' : 's') + '</div>' +
+      '<div class="survey-meta">' + candidateCount + ' candidate' + (candidateCount === 1 ? '' : 's') +
+      ' &middot; ' + responseCount + ' response' + (responseCount === 1 ? '' : 's') +
+      ' (' + uniqueRespondentCount + ' unique respondent' + (uniqueRespondentCount === 1 ? '' : 's') + ')' + '</div>' +
       '<div class="survey-actions">' +
       '<a class="btn" target="_blank" href="' + _escapeHtml_(surveyUrl) + '">View Survey</a>' +
       '<a class="btn" target="_top" href="' + _escapeHtml_(baseUrl) + '?cmd=admin&action=edit&id=' + encodeURIComponent(id) + '">Edit</a>' +
@@ -148,9 +167,20 @@ function _renderAdminList_(createError, prefillId) {
     // A <details>/<summary> disclosure is used instead of a title="" tooltip because
     // tooltips have no reliable trigger on touch devices — <details> opens on tap or
     // click alike, needs no JS, and is screen-reader friendly out of the box. Omitted
-    // entirely when there's no Info text, so the list stays uncluttered by default.
-    if (info) {
-      html += '<details class="survey-info"><summary>ℹ️ More info</summary><p>' + _escapeHtml_(info) + '</p></details>';
+    // entirely when there's no Admin-Only-Notes text, so the list stays uncluttered
+    // by default.
+    if (adminNotes) {
+      html += '<details class="survey-info"><summary>ℹ️ More info</summary><p>' + _escapeHtml_(adminNotes) + '</p></details>';
+    }
+
+    // Flags respondents whose last submission predates a since-added candidate — see
+    // findRespondentsWithNewCandidates_ for how "stale" is detected. Omitted when
+    // empty for the same reason as the Admin-Only-Notes disclosure above.
+    if (staleRespondents.length) {
+      html += '<details class="survey-info"><summary>⚠️ ' + staleRespondents.length +
+        ' respondent' + (staleRespondents.length === 1 ? '' : 's') +
+        ' may want to review (candidates added since they responded)</summary><p>' +
+        _escapeHtml_(staleRespondents.join(', ')) + '</p></details>';
     }
 
     html += '</div>';
@@ -184,169 +214,138 @@ function _renderCreateForm_(error, prefillId) {
 }
 
 /**
- * @param {Object} params
- * @return {string} HTML for the resulting page (edit form on success, list w/ error on failure).
- */
-function _handleAdminCreate_(params) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  try {
-    createNewSurvey_(ss, params.id);
-  } catch (err) {
-    return _renderAdminList_(err.message, params.id);
-  }
-  return _renderAdminEdit_(params.id, 'Survey created — fill in the details below and Save. Add candidates using the Candidates section below, or let respondents add them if Accept-New is checked.');
-}
-
-/**
+ * RPC: called once by webAdminEditPage.html on load (after reading the survey id from
+ * google.script.url.getLocation) to fetch everything the edit-mode ballot preview needs
+ * to render. Field names match what the client displays/edits, not the sheet's config
+ * key spelling — see SurveyModel.js for the underlying "Title"/"Accept-New"/etc. keys.
+ *
  * @param {string} id
- * @param {?string} message success/info banner text
- * @return {string}
+ * @return {Object} or {error:'no_survey'} if the id doesn't match a survey sheet.
  */
-function _renderAdminEdit_(id, message, errorMessage) {
+function getAdminEditData(id) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = findSurveySheet_(ss, id);
-  var baseUrl = _getWebAppUrl_();
-  var back = '<p><a target="_top" href="' + _escapeHtml_(baseUrl) + '?cmd=admin">&larr; Back to survey list</a></p>';
-  if (!sheet) return back + '<p>No survey found for id "' + _escapeHtml_(id) + '".</p>';
+  if (!sheet) return { error: 'no_survey' };
 
   // Self-heals older sheets: adds the section-marker highlighting and the Candidates
   // section (if missing) the first time an admin opens this survey to edit it.
   _highlightSectionMarkers_(sheet);
 
   var config = readSurveyConfig_(sheet);
-  var acceptNew = _surveyAcceptsNew_(config);
-  var surveyUrl = baseUrl + '?cmd=survey&id=' + encodeURIComponent(id);
-
-  var html = back + '<h1>Edit Survey: ' + _escapeHtml_(id) + '</h1>';
-  if (message) html += '<p style="color:#188038;">' + _escapeHtml_(message) + '</p>';
-  if (errorMessage) html += '<p style="color:#d93025;">' + _escapeHtml_(errorMessage) + '</p>';
-  html += '<p>Survey link: <a href="' + _escapeHtml_(surveyUrl) + '" target="_blank">' + _escapeHtml_(surveyUrl) + '</a></p>';
-
-  html += '<form method="get" target="_top" action="' + _escapeHtml_(baseUrl) + '">' +
-    '<input type="hidden" name="cmd" value="admin">' +
-    '<input type="hidden" name="action" value="save">' +
-    '<input type="hidden" name="id" value="' + _escapeHtml_(id) + '">' +
-    '<label for="cfgTitle">Title</label>' +
-    '<input type="text" id="cfgTitle" name="Title" value="' + _escapeHtml_(config.Title || '') + '">' +
-    '<label for="cfgDescription">Description</label>' +
-    '<textarea id="cfgDescription" name="Description" rows="3">' + _escapeHtml_(config.Description || '') + '</textarea>' +
-    '<label for="cfgFooter">Footer</label>' +
-    '<input type="text" id="cfgFooter" name="Footer" value="' + _escapeHtml_(config.Footer || '') + '">' +
-    '<label for="cfgContact">Contact</label>' +
-    '<input type="text" id="cfgContact" name="Contact" value="' + _escapeHtml_(config.Contact || '') + '">' +
-    '<label><input type="checkbox" name="AcceptNew" value="TRUE"' + (acceptNew ? ' checked' : '') + '> Accept new candidates from respondents</label>' +
-    '<label for="cfgInfo">Info (admin-only notes — shown as a "More info" disclosure in the survey list, never shown to respondents)</label>' +
-    '<textarea id="cfgInfo" name="Info" rows="3">' + _escapeHtml_(config.Info || '') + '</textarea>' +
-    '<button type="submit">Save</button>' +
-    '</form>';
-
-  html += _renderCandidatesForm_(id, sheet, baseUrl);
-
-  return html;
-}
-
-/**
- * Renders the Candidates management form: one Name/Details field pair per existing
- * candidate (rename + describe in place, position-aligned — see SurveyModel.js's
- * saveSurveyCandidates_) plus a section to add one new candidate with its own details.
- * Both submit together as a single form so a multi-candidate edit round-trips as one save.
- *
- * @param {string} id
- * @param {Sheet} sheet
- * @param {string} baseUrl
- * @return {string}
- */
-function _renderCandidatesForm_(id, sheet, baseUrl) {
   var candidates = readSurveyCandidates_(sheet);
   var candidateRows = readSurveyCandidateDetails_(sheet);
   // Backfill any candidate that predates the Candidates table (or predates having its
-  // own row yet) so every candidate always has a field pair to edit.
+  // own row yet) so every candidate always has a name/details pair to edit.
   while (candidateRows.length < candidates.length) {
     candidateRows.push({ name: candidates[candidateRows.length], details: '' });
   }
 
-  var html = '<h2>Candidates</h2>';
-  html += '<form method="get" target="_top" action="' + _escapeHtml_(baseUrl) + '">' +
-    '<input type="hidden" name="cmd" value="admin">' +
-    '<input type="hidden" name="action" value="saveCandidates">' +
-    '<input type="hidden" name="id" value="' + _escapeHtml_(id) + '">' +
-    '<input type="hidden" name="candidateCount" value="' + candidates.length + '">';
-
-  if (!candidates.length) {
-    html += '<p><em>No candidates yet — add the first one below.</em></p>';
-  }
-
-  candidates.forEach(function (name, i) {
-    html += '<div class="candidate-row">' +
-      '<label for="candidateName' + i + '">Name</label>' +
-      '<input type="text" id="candidateName' + i + '" name="candidate_name_' + i + '" value="' + _escapeHtml_(candidateRows[i].name || name) + '">' +
-      '<label for="candidateDetails' + i + '">Details</label>' +
-      '<textarea id="candidateDetails' + i + '" name="candidate_details_' + i + '" rows="2">' + _escapeHtml_(candidateRows[i].details || '') + '</textarea>' +
-      '</div>';
-  });
-
-  html += '<h3>Add a new candidate</h3>' +
-    '<div class="candidate-row">' +
-    '<label for="newCandidateName">Name</label>' +
-    '<input type="text" id="newCandidateName" name="newCandidateName">' +
-    '<label for="newCandidateDetails">Details</label>' +
-    '<textarea id="newCandidateDetails" name="newCandidateDetails" rows="2"></textarea>' +
-    '</div>' +
-    '<button type="submit">Save Candidates</button>' +
-    '</form>';
-
-  return html;
+  var baseUrl = _getWebAppUrl_();
+  return {
+    id: id,
+    title: config.Title || '',
+    description: config.Description || '',
+    instructions: config.Instructions || '',
+    footer: config.Footer || '',
+    contact: config.Contact || '',
+    acceptNew: _surveyAcceptsNew_(config),
+    addInstructions: config['Add-Instructions'] || '',
+    adminOnlyNotes: config['Admin-Only-Notes'] || '',
+    candidates: candidateRows,
+    surveyUrl: baseUrl + '?cmd=survey&id=' + encodeURIComponent(id),
+    adminListUrl: baseUrl + '?cmd=admin',
+    appVersion: (typeof APP_VERSION !== 'undefined' && APP_VERSION) || '',
+    appDeployTarget: (typeof APP_DEPLOY_TARGET !== 'undefined' && APP_DEPLOY_TARGET) || ''
+  };
 }
 
 /**
- * @param {Object} params
- * @return {string}
+ * @param {string} id
+ * @param {Object} updates passed straight through to writeSurveyConfig_
+ * @return {{ok:boolean}}
  */
-function _handleAdminSaveCandidates_(params) {
+function _adminWriteConfig_(id, updates) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = findSurveySheet_(ss, params.id);
-  if (!sheet) return _renderAdminList_('No survey found for id "' + params.id + '".');
+  var sheet = findSurveySheet_(ss, id);
+  if (!sheet) throw new Error('No survey found for id "' + id + '".');
+  writeSurveyConfig_(sheet, updates);
+  return { ok: true };
+}
 
-  try {
-    var count = parseInt(params.candidateCount, 10) || 0;
-    var candidateRows = [];
-    for (var i = 0; i < count; i++) {
-      candidateRows.push({ name: params['candidate_name_' + i] || '', details: params['candidate_details_' + i] || '' });
-    }
-    if (candidateRows.length) {
-      saveSurveyCandidatesForId_(params.id, candidateRows);
-    }
+/** RPC: saves the Title field's pencil-icon editor. @return {{ok:boolean}} */
+function adminSaveTitle(id, value) { return _adminWriteConfig_(id, { Title: String(value || '') }); }
 
-    var newName = String(params.newCandidateName || '').trim();
-    if (newName) {
-      addSurveyCandidateForAdmin_(params.id, newName, params.newCandidateDetails || '');
-    }
-  } catch (err) {
-    return _renderAdminEdit_(params.id, null, err.message);
-  }
+/** RPC: saves the landing-page Description field's pencil-icon editor. @return {{ok:boolean}} */
+function adminSaveDescription(id, value) { return _adminWriteConfig_(id, { Description: String(value || '') }); }
 
-  return _renderAdminEdit_(params.id, 'Candidates saved.');
+/** RPC: saves the ballot-page Instructions field's pencil-icon editor. @return {{ok:boolean}} */
+function adminSaveInstructions(id, value) { return _adminWriteConfig_(id, { Instructions: String(value || '') }); }
+
+/** RPC: saves the Footer field's pencil-icon editor. @return {{ok:boolean}} */
+function adminSaveFooter(id, value) { return _adminWriteConfig_(id, { Footer: String(value || '') }); }
+
+/** RPC: saves the Contact field's pencil-icon editor. @return {{ok:boolean}} */
+function adminSaveContact(id, value) { return _adminWriteConfig_(id, { Contact: String(value || '') }); }
+
+/** RPC: saves the Admin-Only Notes field's pencil-icon editor. @return {{ok:boolean}} */
+function adminSaveAdminOnlyNotes(id, value) { return _adminWriteConfig_(id, { 'Admin-Only-Notes': String(value || '') }); }
+
+/**
+ * RPC: saves the combined "Adding New Candidates" editor (Accept-New checkbox +
+ * Add-Instructions text) in one call, since they're edited together as one field group.
+ *
+ * @param {string} id
+ * @param {boolean} acceptNew
+ * @param {string} addInstructions
+ * @return {{ok:boolean}}
+ */
+function adminSaveAddSettings(id, acceptNew, addInstructions) {
+  return _adminWriteConfig_(id, {
+    'Accept-New': acceptNew ? 'TRUE' : 'FALSE',
+    'Add-Instructions': String(addInstructions || '')
+  });
 }
 
 /**
- * @param {Object} params
- * @return {string}
+ * RPC: saves one existing candidate's name/details from its pencil-icon editor.
+ * saveSurveyCandidatesForId_ requires the full candidate list (it throws if the count
+ * changed since the page loaded), so this re-reads the current rows and replaces just
+ * the edited one, position-aligned by index — matching how the old combined form saved
+ * candidate edits.
+ *
+ * @param {string} id
+ * @param {number} index
+ * @param {string} name
+ * @param {string} details
+ * @return {{ok:boolean, name:string, details:string}}
  */
-function _handleAdminSave_(params) {
+function adminSaveCandidate(id, index, name, details) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = findSurveySheet_(ss, params.id);
-  if (!sheet) return _renderAdminList_('No survey found for id "' + params.id + '".');
+  var sheet = findSurveySheet_(ss, id);
+  if (!sheet) throw new Error('No survey found for id "' + id + '".');
 
-  writeSurveyConfig_(sheet, {
-    Title: params.Title || '',
-    Description: params.Description || '',
-    Footer: params.Footer || '',
-    Contact: params.Contact || '',
-    'Accept-New': params.AcceptNew === 'TRUE' ? 'TRUE' : 'FALSE',
-    Info: params.Info || ''
-  });
+  var candidates = readSurveyCandidates_(sheet);
+  var rows = readSurveyCandidateDetails_(sheet);
+  while (rows.length < candidates.length) {
+    rows.push({ name: candidates[rows.length], details: '' });
+  }
+  if (index < 0 || index >= rows.length) throw new Error('Invalid candidate index.');
 
-  return _renderAdminEdit_(params.id, 'Saved.');
+  rows[index] = { name: String(name || '').trim(), details: String(details || '') };
+  saveSurveyCandidatesForId_(id, rows);
+  return { ok: true, name: rows[index].name, details: rows[index].details };
+}
+
+/**
+ * RPC: adds a new candidate from the "+ Add Candidate" panel.
+ *
+ * @param {string} id
+ * @param {string} name
+ * @param {string=} details
+ * @return {{candidate:string}}
+ */
+function adminAddCandidate(id, name, details) {
+  return addSurveyCandidateForAdmin_(id, name, details);
 }
 
 /**
@@ -395,7 +394,9 @@ function _renderAdminAnalysis_(id) {
  */
 function runSurveyAnalysis_(sheet) {
   var candidateNames = readSurveyCandidates_(sheet);
-  var responseRows = readSurveyResponseRows_(sheet);
+  // Deduped to one ballot per respondent (case-insensitive name, latest wins) — a
+  // respondent who re-voted must only count once, using their most recent ranking.
+  var responseRows = _latestResponseByRespondent_(readSurveyResponseRows_(sheet));
 
   if (candidateNames.length < 2) {
     return { error: 'Survey needs at least two candidates before it can be analyzed.' };
