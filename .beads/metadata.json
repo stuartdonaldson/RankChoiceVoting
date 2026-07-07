@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "RankChoiceVoting",
+  "project_id": "6a46a925-a55f-4d71-bbc2-43d2d558e10c"
+}
