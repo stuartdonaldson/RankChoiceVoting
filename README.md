@@ -1,6 +1,25 @@
 # Rank Choice Voting (RCV) Google Apps Script Web App
 
+## Status
+
+_Last updated: 2026-07-07_
+
+| Target | Version | Purpose | Candidate-link feature |
+|---|---|---|---|
+| **SIT** | `0.1.2.2` | Staging / test | Yes (latest code) |
+| **NUUC** | `0.1.2` | Live ballot for NUUC preference voting | No — intentionally held back; not needed here right now |
+| **PROD (f3-ABC)** | _not yet deployed_ | Production for f3-ABC | Yes — this feature is intended for f3-ABC |
+
+Notes:
+- The candidate **Link Text / Link URL** feature (added after `0.1.2`) is not deployed to NUUC and is not needed there for now. It is intended for the **PROD (f3-ABC)** deployment.
+- NUUC's `0.1.2` uses the 2-column `Name | Details` Candidates header; the Responses-header alignment fix that shipped alongside the link feature applies only to the wider 4-column header, so NUUC is unaffected by that bug.
+- PROD (f3-ABC) still requires a one-time manual run of `authorizeExternalRequestScope()` in its Script Editor when first deployed.
+
+## Overview
+
 A multi-ballot Ranked Choice Voting (RCV) and Condorcet analysis tool built on Google Sheets and Google Apps Script. Everything — creating a ballot, collecting votes, and running analysis — happens through one deployed web app; there is no separate Google Form.
+
+One deployed web app serves ballot administration (create / edit / analyze) and the respondent-facing voting page from a single URL. All state lives in one Google Spreadsheet, with each ballot stored as its own `Ballot-<id>` sheet. Voters rank candidates by drag-and-drop; analysis produces both an RCV multi-round result and four Condorcet methods for cross-checking the outcome.
 
 ## How it works, in one picture
 
