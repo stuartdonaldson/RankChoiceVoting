@@ -367,3 +367,12 @@ Rationale: countTieWinners.countByRank in script/processRCV.js incremented count
 Outcome [developer-facing]: countByRank now adds (ballot.weight || 1) instead of incrementing by 1; documented in JSDoc that counts are weighted and that rank position is taken over all candidates on the ballot including already-eliminated ones.
 Outcome [user-facing]: Verified with the issue's repro (candidates A/B/C, weighted ballots producing an A/B tie at 3 votes each) that A is now eliminated with reason "fewest second choice votes" instead of B, matching acceptance criteria; confirmed pre-fix behavior incorrectly eliminated B by temporarily stashing the fix.
 Outcome [developer-facing]: Added regression test testTieBreakUsesBallotWeightNotBallotCount to test/test_voting_algorithms.js; npm test passes (5 suites, including the new voting-algorithms case).
+
+## 2026-07-14 08:23:08
+_session 7ece7206 · v3 · 07-14_
+
+### Objective 1: Fix Ranked Pairs order-dependent winner on cycles and pairwise ties (rcballot-vi6)
+Rationale: `findRankedPairsWinner` in processCondorcet.js locked equal-margin pairs in candidate-enumeration order and returned the first graph source it found by index, so a perfect 3-candidate cycle or a dead pairwise tie silently produced a winner that depended purely on candidate list order, unlike Condorcet/Schulze/Minimax which correctly report no winner for the same inputs.
+Outcome [developer-facing]: `findRankedPairsWinner` now collects all sources of the locked graph, and additionally re-locks with each equal-margin pair group reversed to detect order-dependent ambiguity; when more than one source is found across these trials it returns `{winner: null, tie: [...]}` matching the `{winner, tie}` shape used by `runRankedChoiceVoting`, instead of silently picking the lowest-indexed candidate.
+Outcome [user-facing]: The admin-dialog HTML (onOpen.js `generateCondorcetResultsHtml`) and the results-sheet rows (webAdmin.js `_buildResultsRows_`) now render "tie between: X, Y" instead of a bare "None (cycle)" when Ranked Pairs cannot resolve a winner.
+Outcome [developer-facing]: Added three regression tests to test/test_voting_algorithms.js covering the perfect-cycle repro, the dead pairwise-tie repro, and an unambiguous-winner case to confirm the fix doesn't turn every result into a tie. `npm test` passes.

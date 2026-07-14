@@ -123,6 +123,11 @@ function findSchulzeWinner(ballots, candidateNames) {
 
 /**
  * Ranked Pairs (Tideman)
+ *
+ * Note: pairs with an equal margin are locked in candidate-enumeration order
+ * (Array.sort is stable and pairs are pushed in i,j index order), so which
+ * pair gets locked first in a tie is arbitrary and depends on candidateNames
+ * order. This can affect which edges survive when locking order matters.
  */
 function findRankedPairsWinner(ballots, candidateNames) {
   const n = candidateNames.length;
@@ -136,21 +141,67 @@ function findRankedPairsWinner(ballots, candidateNames) {
         pairs.push({ winner: i, loser: j, margin: d[i][j] - d[j][i] });
   pairs.sort((a, b) => b.margin - a.margin);
 
-  // Lock pairs without creating cycles
-  const locked = Array.from({ length: n }, () => Array(n).fill(false));
-  function createsCycle(winner, loser, visited = []) {
-    if (winner === loser) return true;
-    visited[loser] = true;
-    for (let i = 0; i < n; i++) {
-      if (locked[loser][i] && (!visited[i]) && createsCycle(winner, i, visited.slice())) {
-        return true;
+  // Lock the given pair ordering without creating cycles, returning the
+  // resulting locked matrix and the set of source candidates (no incoming
+  // locked edges). Used both for the primary (stable-sorted) order and for
+  // alternate orderings of equal-margin groups, so ambiguity from arbitrary
+  // tie-breaking can be detected below.
+  function lockPairs(orderedPairs) {
+    const locked = Array.from({ length: n }, () => Array(n).fill(false));
+    function createsCycle(winner, loser, visited = []) {
+      if (winner === loser) return true;
+      visited[loser] = true;
+      for (let i = 0; i < n; i++) {
+        if (locked[loser][i] && (!visited[i]) && createsCycle(winner, i, visited.slice())) {
+          return true;
+        }
       }
+      return false;
     }
-    return false;
+    orderedPairs.forEach(({ winner, loser }) => {
+      if (!createsCycle(winner, loser)) locked[winner][loser] = true;
+    });
+
+    const sources = [];
+    for (let i = 0; i < n; i++) {
+      let isSource = true;
+      for (let j = 0; j < n; j++) {
+        if (locked[j][i]) {
+          isSource = false;
+          break;
+        }
+      }
+      if (isSource) sources.push(i);
+    }
+    return { locked, sources };
   }
-  pairs.forEach(({ winner, loser }) => {
-    if (!createsCycle(winner, loser)) locked[winner][loser] = true;
-  });
+
+  const primary = lockPairs(pairs);
+
+  // Equal-margin pairs are locked in whatever order Array.sort's stable sort
+  // (i.e. candidate-enumeration order) happens to leave them in. That order
+  // is not based on any margin-strength justification, so if reversing an
+  // equal-margin group changes which candidates end up as sources, the
+  // result is order-dependent/arbitrary rather than a genuine Ranked Pairs
+  // winner. Detect this by re-locking with each equal-margin group reversed
+  // and unioning the source sets observed.
+  const sourceIndexSet = new Set(primary.sources);
+  let start = 0;
+  while (start < pairs.length) {
+    let end = start;
+    while (end + 1 < pairs.length && pairs[end + 1].margin === pairs[start].margin) end++;
+    if (end > start) {
+      const altOrder = pairs.slice(0, start)
+        .concat(pairs.slice(start, end + 1).slice().reverse())
+        .concat(pairs.slice(end + 1));
+      const alt = lockPairs(altOrder);
+      alt.sources.forEach((i) => sourceIndexSet.add(i));
+    }
+    start = end + 1;
+  }
+
+  const sources = Array.from(sourceIndexSet).sort((a, b) => a - b);
+  const locked = primary.locked;
 
   // Calculate ranking based on topological sort depth (fewer incoming edges = higher rank)
   const incomingEdges = Array(n).fill(0);
@@ -163,31 +214,23 @@ function findRankedPairsWinner(ballots, candidateNames) {
       }
     }
   }
-  
+
   // Score = outgoing edges - incoming edges (higher is better)
   const rankings = [];
   for (let i = 0; i < n; i++) {
-    rankings.push({ 
-      candidate: candidateNames[i], 
-      score: outgoingEdges[i] - incomingEdges[i] 
+    rankings.push({
+      candidate: candidateNames[i],
+      score: outgoingEdges[i] - incomingEdges[i]
     });
   }
-  
+
   // Sort by score (descending)
   const rankedCandidates = rankings.sort((a, b) => b.score - a.score);
-  
-  // Find source of the graph (no arrows pointing to them)
-  for (let i = 0; i < n; i++) {
-    let isSource = true;
-    for (let j = 0; j < n; j++) {
-      if (locked[j][i]) {
-        isSource = false;
-        break;
-      }
-    }
-    if (isSource) return { winner: candidateNames[i], matrix: d, locked: locked, rankedCandidates };
+
+  if (sources.length === 1) {
+    return { winner: candidateNames[sources[0]], tie: null, matrix: d, locked: locked, rankedCandidates };
   }
-  return { winner: null, matrix: d, locked: locked, rankedCandidates };
+  return { winner: null, tie: sources.map((i) => candidateNames[i]), matrix: d, locked: locked, rankedCandidates };
 }
 
 /**

@@ -129,6 +129,8 @@ function generateCondorcetResultsHtml(results) {
   html += '<h3>Ranked Pairs (Tideman)</h3>';
   if (results.rankedPairs.winner) {
     html += '<p>Ranked Pairs winner: <strong>' + results.rankedPairs.winner + '</strong></p>';
+  } else if (results.rankedPairs.tie && results.rankedPairs.tie.length) {
+    html += '<p>No Ranked Pairs winner (tie between: <strong>' + results.rankedPairs.tie.join(', ') + '</strong>).</p>';
   } else {
     html += '<p>No Ranked Pairs winner (cycle detected).</p>';
   }

@@ -455,7 +455,10 @@ function _buildResultsRows_(rcv, condorcet) {
   rows.push(['Condorcet Analysis', 'Winner']);
   rows.push(['Basic Condorcet', condorcet.condorcet.winner || 'None (cycle)']);
   rows.push(['Schulze', condorcet.schulze.winner || 'None (cycle)']);
-  rows.push(['Ranked Pairs', condorcet.rankedPairs.winner || 'None (cycle)']);
+  rows.push(['Ranked Pairs', condorcet.rankedPairs.winner ||
+    (condorcet.rankedPairs.tie && condorcet.rankedPairs.tie.length
+      ? 'Tie: ' + condorcet.rankedPairs.tie.join(', ')
+      : 'None (cycle)')]);
   rows.push(['Minimax', condorcet.minimax.winner || 'None (tie/cycle)']);
 
   ['condorcet', 'schulze', 'rankedPairs', 'minimax'].forEach(function (key) {

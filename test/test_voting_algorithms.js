@@ -133,6 +133,63 @@ function testTieBreakUsesBallotWeightNotBallotCount() {
   assert.equal(aRow[4], 'fewest second choice votes');
 }
 
+// Repro from rcballot-vi6: a perfect 3-cycle with equal margins on every
+// locked pair used to hand Ranked Pairs a winner purely because of
+// candidate-enumeration order (the A->B edge got locked first). Every
+// candidate is symmetric here, so no winner should be reported.
+function testRankedPairsPerfectCycleReportsNoWinner() {
+  const { Condorcet } = loadVotingAlgorithms();
+  const candidateNames = ['A', 'B', 'C'];
+  const ballots = makeBallots(candidateNames, [
+    [1, 2, 3], // A>B>C
+    [3, 1, 2], // B>C>A
+    [2, 3, 1], // C>A>B
+  ]);
+
+  const result = Condorcet.findRankedPairsWinner(ballots, candidateNames);
+  assert.equal(result.winner, null);
+  assert.ok(Array.isArray(result.tie) && result.tie.length > 1);
+
+  // Other Condorcet methods correctly see no winner for the same cycle.
+  assert.equal(Condorcet.findCondorcetWinner(ballots, candidateNames).winner, null);
+  assert.equal(Condorcet.findSchulzeWinner(ballots, candidateNames).winner, null);
+  assert.equal(Condorcet.findMinimaxWinner(ballots, candidateNames).winner, null);
+}
+
+// Repro from rcballot-vi6: a dead pairwise tie between A and B (each beats
+// the other on exactly one ballot) locks a graph with two sources. The old
+// code silently returned the lower-indexed source; it must instead report
+// both candidates as tied.
+function testRankedPairsDeadTieReportsBothSources() {
+  const { Condorcet } = loadVotingAlgorithms();
+  const candidateNames = ['A', 'B', 'C'];
+  const ballots = makeBallots(candidateNames, [
+    [1, 2, 3], // A>B>C
+    [2, 1, 3], // B>A>C
+  ]);
+
+  const result = Condorcet.findRankedPairsWinner(ballots, candidateNames);
+  assert.equal(result.winner, null);
+  assert.deepEqual(result.tie.slice().sort(), ['A', 'B']);
+}
+
+// A genuine, unambiguous Ranked Pairs winner (no ties in play) must still
+// report a winner with tie:null, i.e. the fix must not turn every result
+// into a tie.
+function testRankedPairsUnambiguousWinnerStillReported() {
+  const { Condorcet } = loadVotingAlgorithms();
+  const candidateNames = ['A', 'B', 'C'];
+  const ballots = makeBallots(candidateNames, [
+    [1, 2, 3],
+    [1, 2, 3],
+    [1, 3, 2],
+  ]);
+
+  const result = Condorcet.findRankedPairsWinner(ballots, candidateNames);
+  assert.equal(result.winner, 'A');
+  assert.equal(result.tie, null);
+}
+
 function run() {
   testUnrankedCandidateCannotWinRCV();
   testUnrankedCandidateCannotWinCondorcetMethods();
@@ -140,6 +197,9 @@ function run() {
   testUnrankedVsUnrankedAddsNoPreference();
   testPartialBallotsDoNotCorruptRedistribution();
   testTieBreakUsesBallotWeightNotBallotCount();
+  testRankedPairsPerfectCycleReportsNoWinner();
+  testRankedPairsDeadTieReportsBothSources();
+  testRankedPairsUnambiguousWinnerStillReported();
   console.log('test_voting_algorithms: all tests passed');
 }
 
