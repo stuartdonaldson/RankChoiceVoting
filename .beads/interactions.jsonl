@@ -3,3 +3,4 @@
 {"id":"int-45cc08bf","kind":"field_change","created_at":"2026-07-07T05:00:08.034646887Z","actor":"Stuart Donaldson","issue_id":"RankChoiceVoting-9qh","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Implemented, tests updated and passing"}}
 {"id":"int-13148c19","kind":"field_change","created_at":"2026-07-14T03:09:29.498832475Z","actor":"Stuart Donaldson","issue_id":"rcballot-35e","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
 {"id":"int-dc8c2447","kind":"field_change","created_at":"2026-07-14T08:25:31.954145284Z","actor":"Stuart Donaldson","issue_id":"rcballot-c6n","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
+{"id":"int-07e7b31a","kind":"field_change","created_at":"2026-07-14T08:29:04.072723839Z","actor":"Stuart Donaldson","issue_id":"rcballot-vi6","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
