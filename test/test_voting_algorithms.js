@@ -114,12 +114,32 @@ function testPartialBallotsDoNotCorruptRedistribution() {
   assert.notEqual(result.winner, 'D');
 }
 
+// Repro from rcballot-c6n: tie-break must count weighted votes, not raw ballot
+// counts, when comparing second-choice votes among tied candidates.
+function testTieBreakUsesBallotWeightNotBallotCount() {
+  const { RCV } = loadVotingAlgorithms();
+  const candidateNames = ['A', 'B', 'C'];
+  const ballots = [
+    { voterName: 'v1', ranks: [3, 2, 1], weight: 3 },
+    { voterName: 'v2', ranks: [2, 3, 1], weight: 1 },
+    { voterName: 'v3', ranks: [2, 3, 1], weight: 1 },
+    { voterName: 'v4', ranks: [1, 2, 3], weight: 3 },
+    { voterName: 'v5', ranks: [2, 1, 3], weight: 3 },
+  ];
+
+  const result = RCV.runRankedChoiceVoting(candidateNames, ballots, null);
+  const aRow = result.summary.find((row) => row[0] === 'A');
+  assert.equal(aRow[1], 'Eliminated');
+  assert.equal(aRow[4], 'fewest second choice votes');
+}
+
 function run() {
   testUnrankedCandidateCannotWinRCV();
   testUnrankedCandidateCannotWinCondorcetMethods();
   testPairwiseMatrixSemantics();
   testUnrankedVsUnrankedAddsNoPreference();
   testPartialBallotsDoNotCorruptRedistribution();
+  testTieBreakUsesBallotWeightNotBallotCount();
   console.log('test_voting_algorithms: all tests passed');
 }
 

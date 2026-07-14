@@ -353,6 +353,11 @@ function breakTie(candidates, ballots, allCandidates) {
 function countTieWinners(candidates, mode, ballots, allCandidates) {
   function countByRank(rankPosition) {
     // rankPosition is the rank to count, e.g. 2 for second choice, -1 for last place
+    // Counts are weighted by ballot.weight (defaulting to 1) so tie-breaks reflect
+    // votes, not raw ballot counts, consistent with countVotes/_sumBallotWeights.
+    // Rank position is taken over ALL candidates on the ballot (allCandidates),
+    // including ones already eliminated in earlier rounds — e.g. a ballot's
+    // "second choice" may be a candidate no longer in contention.
 
     // initialize counts[candidateName] = 0 for each candidate
     let counts = {};
@@ -373,7 +378,7 @@ function countTieWinners(candidates, mode, ballots, allCandidates) {
         let idx = rankPosition === -1 ? ranked.length - 1 : rankPosition - 1;
         let chosen = ranked[idx];
         if (chosen && counts.hasOwnProperty(chosen.candidate.name)) {
-          counts[chosen.candidate.name]++;
+          counts[chosen.candidate.name] += ballot.weight || 1;
         }
       }
     });

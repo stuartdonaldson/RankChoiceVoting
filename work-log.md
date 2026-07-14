@@ -358,3 +358,12 @@ Outcome [developer-facing]: Added a shared `_isRankedValue(rank)` helper (finite
 Outcome [developer-facing]: `buildPairwiseMatrix` semantics changed to: ranked beats unranked, unranked-vs-unranked contributes to neither side.
 Outcome [developer-facing]: Added `module.exports` to processRCV.js and processCondorcet.js (previously GAS-global-only, unexported) so both are unit-testable under Node/vm, following the existing BallotModel.js export pattern.
 Outcome [developer-facing]: Added test/test_voting_algorithms.js (repro case, partial-ballot/never-ranked-candidate regression, pairwise-matrix semantics) and wired it into `npm test`; full suite passes.
+
+## 2026-07-14 01:25:14
+_session 9d0aaa75-8261-4732-8987-4d07d72bd139 · v3 · 07-14_
+
+### Objective 1: Fix RCV tie-break ignoring ballot weights (rcballot-c6n)
+Rationale: countTieWinners.countByRank in script/processRCV.js incremented counts[name]++ per ballot instead of adding ballot.weight, so second-choice and last-place tie-breakers counted ballots rather than weighted votes, while countVotes and _sumBallotWeights already honored weights - an inconsistency that could flip which candidate gets eliminated in a tie.
+Outcome [developer-facing]: countByRank now adds (ballot.weight || 1) instead of incrementing by 1; documented in JSDoc that counts are weighted and that rank position is taken over all candidates on the ballot including already-eliminated ones.
+Outcome [user-facing]: Verified with the issue's repro (candidates A/B/C, weighted ballots producing an A/B tie at 3 votes each) that A is now eliminated with reason "fewest second choice votes" instead of B, matching acceptance criteria; confirmed pre-fix behavior incorrectly eliminated B by temporarily stashing the fix.
+Outcome [developer-facing]: Added regression test testTieBreakUsesBallotWeightNotBallotCount to test/test_voting_algorithms.js; npm test passes (5 suites, including the new voting-algorithms case).
