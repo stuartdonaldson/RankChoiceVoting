@@ -8,11 +8,14 @@ function buildPairwiseMatrix(ballots, candidateNames) {
   ballots.forEach(({ ranks, weight }) => {
     for (let i = 0; i < n; i++) {
       const rankI = ranks[i];
-      if (isNaN(rankI)) continue;
+      const iRanked = _isRankedValue(rankI);
       for (let j = 0; j < n; j++) {
         if (i === j) continue;
         const rankJ = ranks[j];
-        if (!isNaN(rankJ) && rankI < rankJ) matrix[i][j] += weight || 1;
+        const jRanked = _isRankedValue(rankJ);
+        // I beats J when I is ranked and J isn't (a voter who ranked I but not
+        // J implicitly prefers I), or both are ranked and I's rank is better.
+        if (iRanked && (!jRanked || rankI < rankJ)) matrix[i][j] += weight || 1;
       }
     }
   });
@@ -222,4 +225,14 @@ function findMinimaxWinner(ballots, candidateNames) {
     return { winner: null, matrix: d, scores: scores, rankedCandidates };
   }
   return { winner: candidateNames[winnerIdx], matrix: d, scores: scores, rankedCandidates };
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    buildPairwiseMatrix: buildPairwiseMatrix,
+    findCondorcetWinner: findCondorcetWinner,
+    findSchulzeWinner: findSchulzeWinner,
+    findRankedPairsWinner: findRankedPairsWinner,
+    findMinimaxWinner: findMinimaxWinner,
+  };
 }

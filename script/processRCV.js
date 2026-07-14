@@ -10,6 +10,22 @@
 var processingSheet = null;
 
 /**
+ * A rank cell counts as "ranked" only when it's a finite number > 0.
+ * Blank ballot cells come through as '' (isNaN('') === false, and '' coerces to
+ * 0 in comparisons/sorts), so a naive isNaN() check treats an unranked
+ * candidate as rank 0 - better than every actually-ranked candidate. '' / null /
+ * undefined must be treated as unranked everywhere ranks are compared or counted.
+ *
+ * @param {*} rank
+ * @returns {boolean}
+ */
+function _isRankedValue(rank) {
+  if (rank === "" || rank === null || rank === undefined) return false;
+  var n = Number(rank);
+  return !isNaN(n) && isFinite(n) && n > 0;
+}
+
+/**
  * Core RCV algorithm, run against ballot-driven data sourced by webAdmin.js
  * from a Ballot-<name> sheet's own Responses section.
  *
@@ -72,7 +88,7 @@ function runRankedChoiceVoting(candidateNames, allBallots, sheet) {
       // Collect ranks and their corresponding candidate status, ranks is ordered by candidate index
       for (var c_i = 0; c_i < ballot.ranks.length; c_i++) {
         var rank = ballot.ranks[c_i];
-        if (!isNaN(rank)) {
+        if (_isRankedValue(rank)) {
           ranked.push({ candidate: allCandidates[c_i], rank });
         }
       }
@@ -139,7 +155,7 @@ function runRankedChoiceVoting(candidateNames, allBallots, sheet) {
       var ranked = [];
       for (var i = 0; i < response.ranks.length; i++) {
         var rank = response.ranks[i];
-        if (!isNaN(rank)) {
+        if (_isRankedValue(rank)) {
           ranked.push({ candidate: allCandidates[i], rank });
         }
       }
@@ -202,7 +218,7 @@ function runRankedChoiceVoting(candidateNames, allBallots, sheet) {
     var activeBallots = allBallots.filter((ballot) => {
       // At least one ranked candidate is not eliminated
       return ballot.ranks.some(
-        (rank, i) => !isNaN(rank) && !allCandidates[i].eliminated
+        (rank, i) => _isRankedValue(rank) && !allCandidates[i].eliminated
       );
     });
     var totalVotes = _sumBallotWeights(activeBallots);
@@ -350,7 +366,7 @@ function countTieWinners(candidates, mode, ballots, allCandidates) {
           candidate: allCandidates[i],
           rank: rank,
         }))
-        .filter((e) => !isNaN(e.rank))
+        .filter((e) => _isRankedValue(e.rank))
         .sort((a, b) => a.rank - b.rank);
 
       if (ranked.length > Math.abs(rankPosition) - 1) {
@@ -409,5 +425,15 @@ function logProcess3(a,b,message) {
  */
 function _sumBallotWeights(ballots) {
   return ballots.reduce((sum, b) => sum + (b.weight || 1), 0);
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    runRankedChoiceVoting: runRankedChoiceVoting,
+    breakTie: breakTie,
+    countTieWinners: countTieWinners,
+    _isRankedValue: _isRankedValue,
+    _sumBallotWeights: _sumBallotWeights,
+  };
 }
 

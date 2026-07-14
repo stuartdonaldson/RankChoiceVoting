@@ -334,3 +334,27 @@ Fixed a live data-corruption bug on the SIT `Ballot-ABC-2026-7` sheet: the Respo
 - The fix in the prior entry (`addBallotCandidate_`) addressed only one of two call sites with the identical `sheet.getLastColumn()`-based miscalculation — `_reconcileCandidatesWithResponses_` had the same bug and was the one actually exercised by this ballot (its candidates were pre-populated directly into the `[Candidates]` table without ever calling `addBallotCandidate_`). When a bug pattern is found in one function, grep the file for the same anti-pattern (`getLastColumn()`) rather than assuming a single call site.
 - Because `submitBallotResponse_` always writes vote ranks starting at the fixed `_BALLOT_FIRST_CANDIDATE_COL` regardless of the header's own state, a misaligned Responses header can be repaired in place by compacting the header row alone — the vote data itself was never actually corrupted, only mislabeled.
 - Making the self-heal in `_reconcileCandidatesWithResponses_` run on every read (not just on write) meant the live SIT sheet could be repaired with an ordinary respondent-facing GET request instead of a special admin/repair action — no new server-side surface was needed.
+
+## 2026-07-12 20:10:26
+
+### Summary:
+Relocated repository from /mnt/c/dev/RankChoiceVoting to /home/stuar/proj/RankChoiceVoting. Merged scattered Claude Code history dirs into the new location and
+rewrote the matching ~/.claude.json project references. Performed by the
+move-to-proj tool, not an interactive session.
+
+## 2026-07-13 12:00:00
+_session unknown · v3 · 07-13_
+
+### Objective 1: Rename beads issue prefix from RankChoiceVoting to rcballot
+Rationale: Align the project's issue ID prefix with the new naming convention (RCBallot).
+Outcome [internal]: Successfully renamed all 9 issues from `RankChoiceVoting-*` to `rcballot-*` using `bd rename-prefix rcballot`. The database configuration and all issue references were updated atomically.
+
+## 2026-07-13 19:49:31
+_session 4fe542aa · v3 · 07-13_
+
+### Objective 1: Fix blank ballot ranks being treated as rank 0 (rcballot-35e)
+Rationale: `isNaN('') === false` and `''` coerces to `0` in comparisons, so every site filtering ranks with a bare `isNaN()`/`!isNaN()` check treated an unranked candidate as better than rank 1 — verified repro had a never-ranked candidate C win RCV and all four Condorcet-family methods over a unanimous A>B preference.
+Outcome [developer-facing]: Added a shared `_isRankedValue(rank)` helper (finite number > 0; `''`/null/undefined => unranked) in script/processRCV.js, used at all four flagged sites (`countVotes`, `getEffectiveBallots`, `countTieWinners.countByRank` in processRCV.js; `buildPairwiseMatrix` in processCondorcet.js) plus one additional un-flagged `isNaN` site (`activeBallots` exhausted-ballot filter) that had the same bug pattern.
+Outcome [developer-facing]: `buildPairwiseMatrix` semantics changed to: ranked beats unranked, unranked-vs-unranked contributes to neither side.
+Outcome [developer-facing]: Added `module.exports` to processRCV.js and processCondorcet.js (previously GAS-global-only, unexported) so both are unit-testable under Node/vm, following the existing BallotModel.js export pattern.
+Outcome [developer-facing]: Added test/test_voting_algorithms.js (repro case, partial-ballot/never-ranked-candidate regression, pairwise-matrix semantics) and wired it into `npm test`; full suite passes.
