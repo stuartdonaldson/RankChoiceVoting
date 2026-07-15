@@ -386,3 +386,11 @@ Outcome [developer-facing]: Expanded test/test_voting_algorithms.js (already pre
 
 ### Key Learnings:
 processRCV.js's tie-break `countByRank` tallies second-choice/last-place votes across *all* ballots (not just those cast by the tied candidates' own voters), and last-place is measured per-ballot as the lowest *compressed* rank on that ballot — both had to be reproduced by hand when constructing tie-break test fixtures to get the expected elimination target.
+
+## 2026-07-14 01:50:43
+_session cc14f205 · v3 · 07-14_
+
+### Objective 1: Report true finish order (2nd place+) instead of each method's heuristic display score (rcballot-14e)
+Rationale: Every method's current "ranked candidates" list is a display heuristic scored against the full field (RCV's final-round runner-up, Condorcet's Copeland win count, Schulze's path-strength sum, Ranked Pairs' locked-edge balance, Minimax's worst-defeat score) - none of them reliably predict who finishes 2nd once the winner is removed, as shown by the center-squeeze RCV example in the issue (C wins, but re-running without C gives B, not the final round's A, as true 2nd). Implemented iterative winner-removal: after a method resolves a winner, remove that candidate from candidateNames and every ballot's ranks array and re-run to get the next place, stopping and reporting a tie if a round doesn't resolve to a single winner.
+Outcome [developer-facing]: Added `computeRCVFinishOrder` (processRCV.js) and a shared `_removeCandidateAt` helper reused by a new generic `computeCondorcetFinishOrder` (processCondorcet.js) that works against any of the four find*Winner functions; covered by new tests including the exact center-squeeze repro and cycle/tie cases.
+Outcome [user-facing]: The admin analysis page and the Results sheet now show a "Finish order" per method (RCV + all four Condorcet methods) alongside the existing heuristic ranked-candidates tables, which are now explicitly relabeled as heuristic display scores rather than the finish order.

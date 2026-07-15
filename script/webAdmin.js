@@ -389,9 +389,11 @@ function _renderAdminAnalysis_(id) {
   } else if (results.rcv.tie) {
     html += '<p><b>Tie after all eliminations:</b> ' + results.rcv.tie.map(_escapeHtml_).join(', ') + '</p>';
   }
+  html += '<p><b>Finish order</b> (computed by removing each round\'s winner and re-running RCV on ' +
+    'who\'s left, not the final round\'s runner-up): ' + _escapeHtml_(_formatFinishOrder_(results.rcvFinishOrder)) + '</p>';
   html += formatCandidateSummaryHtml(results.rcv.summary);
 
-  html += generateCondorcetResultsHtml(results.condorcet);
+  html += generateCondorcetResultsHtml(results.condorcet, results.finishOrders);
 
   html += '<p><em>Results have been written to the Results section of the ' +
     _escapeHtml_(getBallotSheetName_(id)) + ' sheet.</em></p>';
@@ -425,6 +427,7 @@ function runBallotAnalysis_(sheet) {
   });
 
   var rcv = runRankedChoiceVoting(candidateNames, ballots, null);
+  var rcvFinishOrder = computeRCVFinishOrder(candidateNames, ballots);
 
   var candidates = candidateNames.map(function (name) { return { name: name }; });
   var condorcet = {
@@ -433,23 +436,49 @@ function runBallotAnalysis_(sheet) {
     rankedPairs: findRankedPairsWinner(ballots, candidateNames),
     minimax: findMinimaxWinner(ballots, candidateNames)
   };
+  var finishOrders = {
+    condorcet: computeCondorcetFinishOrder(findCondorcetWinner, ballots, candidateNames),
+    schulze: computeCondorcetFinishOrder(findSchulzeWinner, ballots, candidateNames),
+    rankedPairs: computeCondorcetFinishOrder(findRankedPairsWinner, ballots, candidateNames),
+    minimax: computeCondorcetFinishOrder(findMinimaxWinner, ballots, candidateNames)
+  };
 
-  writeBallotResults_(sheet, _buildResultsRows_(rcv, condorcet));
+  writeBallotResults_(sheet, _buildResultsRows_(rcv, condorcet, rcvFinishOrder, finishOrders));
 
-  return { rcv: rcv, condorcet: condorcet };
+  return { rcv: rcv, condorcet: condorcet, rcvFinishOrder: rcvFinishOrder, finishOrders: finishOrders };
+}
+
+/**
+ * Renders a finish-order array (as returned by computeRCVFinishOrder /
+ * computeCondorcetFinishOrder) as a single string, e.g. "1. C  2. B  3. A",
+ * with ties for a place shown as "2. (tie) B / A".
+ *
+ * @param {Array<{place:number, names:Array<string>}>} order
+ * @return {string}
+ */
+function _formatFinishOrder_(order) {
+  return order.map(function (entry) {
+    var label = entry.names.length > 1 ? '(tie) ' + entry.names.join(' / ') : entry.names[0];
+    return entry.place + '. ' + label;
+  }).join('  ');
 }
 
 /**
  * @param {Object} rcv result of runRankedChoiceVoting
  * @param {Object} condorcet {condorcet, schulze, rankedPairs, minimax}
+ * @param {Array<{place:number, names:Array<string>}>} rcvFinishOrder
+ * @param {Object} finishOrders {condorcet, schulze, rankedPairs, minimax} finish orders
  * @return {Array<Array>} rows to write into the Results section.
  */
-function _buildResultsRows_(rcv, condorcet) {
+function _buildResultsRows_(rcv, condorcet, rcvFinishOrder, finishOrders) {
   var rows = [];
   rows.push(['Analysis run: ' + new Date().toISOString()]);
   rows.push(['']);
   rows.push(['Ranked Choice Voting (RCV)']);
   rows.push([rcv.winner ? 'Winner: ' + rcv.winner : 'Tie: ' + (rcv.tie || []).join(', ')]);
+  if (rcvFinishOrder) {
+    rows.push(['Finish order (winner-removal, not the final-round runner-up)', _formatFinishOrder_(rcvFinishOrder)]);
+  }
   rcv.summary.forEach(function (row) { rows.push(row); });
   rows.push(['']);
   rows.push(['Condorcet Analysis', 'Winner']);
@@ -461,9 +490,18 @@ function _buildResultsRows_(rcv, condorcet) {
       : 'None (cycle)')]);
   rows.push(['Minimax', condorcet.minimax.winner || 'None (tie/cycle)']);
 
+  if (finishOrders) {
+    rows.push(['']);
+    rows.push(['Condorcet Analysis', 'Finish order (winner-removal)']);
+    rows.push(['Basic Condorcet', _formatFinishOrder_(finishOrders.condorcet)]);
+    rows.push(['Schulze', _formatFinishOrder_(finishOrders.schulze)]);
+    rows.push(['Ranked Pairs', _formatFinishOrder_(finishOrders.rankedPairs)]);
+    rows.push(['Minimax', _formatFinishOrder_(finishOrders.minimax)]);
+  }
+
   ['condorcet', 'schulze', 'rankedPairs', 'minimax'].forEach(function (key) {
     rows.push(['']);
-    rows.push([key + ' — ranked candidates']);
+    rows.push([key + ' — ranked candidates (heuristic display score, not finish order)']);
     rows.push(['Rank', 'Candidate', 'Score']);
     condorcet[key].rankedCandidates.forEach(function (rc, i) {
       rows.push([i + 1, rc.candidate, rc.score]);

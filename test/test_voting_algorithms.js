@@ -560,6 +560,89 @@ function testRankedPairsUnambiguousWinnerStillReported() {
   assert.equal(result.tie, null);
 }
 
+// ---------------------------------------------------------------------------
+// Finish order via iterative winner removal (rcballot-14e)
+// ---------------------------------------------------------------------------
+
+// Center-squeeze example from rcballot-14e: 8x A>B>C, 5x B>C>A, 7x C>B>A.
+// C wins round 1 (A=8, B=5, C=7 -> B eliminated -> C=12 vs A=8). The final
+// round's runner-up is A (8 votes), but re-running RCV without C gives B
+// (12 votes) as the true second place.
+function testRCVFinishOrderCenterSqueezeExample() {
+  const { RCV } = loadVotingAlgorithms();
+  const candidateNames = ['A', 'B', 'C'];
+  const rows = [];
+  for (let i = 0; i < 8; i++) rows.push([1, 2, 3]); // A>B>C
+  for (let i = 0; i < 5; i++) rows.push([3, 1, 2]); // B>C>A
+  for (let i = 0; i < 7; i++) rows.push([3, 2, 1]); // C>B>A
+  const ballots = makeBallots(candidateNames, rows);
+
+  const result = RCV.runRankedChoiceVoting(candidateNames, ballots, null);
+  assert.equal(result.winner, 'C');
+
+  const order = RCV.computeRCVFinishOrder(candidateNames, ballots);
+  assert.equal(order[0].place, 1);
+  assert.deepEqual(order[0].names, ['C']);
+  assert.equal(order[1].place, 2);
+  assert.deepEqual(order[1].names, ['B']);
+  assert.equal(order[2].place, 3);
+  assert.deepEqual(order[2].names, ['A']);
+}
+
+// A dead tie in the first round must be reported as tied for that place,
+// not silently ordered.
+function testRCVFinishOrderReportsUnresolvedTie() {
+  const { RCV } = loadVotingAlgorithms();
+  const candidateNames = ['A', 'B'];
+  const ballots = makeBallots(candidateNames, [
+    [1, 2],
+    [2, 1],
+  ]);
+
+  const order = RCV.computeRCVFinishOrder(candidateNames, ballots);
+  assert.equal(order.length, 1);
+  assert.equal(order[0].place, 1);
+  assert.deepEqual(order[0].names.slice().sort(), ['A', 'B']);
+}
+
+// Each Condorcet-family method's 2nd place must come from re-running the
+// method on the field with the winner removed, not from its own
+// rankedCandidates heuristic score (which can misorder - rcballot-14e).
+function testCondorcetFamilyFinishOrderUsesWinnerRemoval() {
+  const { Condorcet } = loadVotingAlgorithms();
+  const candidateNames = ['Memphis', 'Nashville', 'Chattanooga', 'Knoxville'];
+  const ballots = [
+    { voterName: 'g1', ranks: [1, 2, 3, 4], weight: 42 },
+    { voterName: 'g2', ranks: [4, 1, 2, 3], weight: 26 },
+    { voterName: 'g3', ranks: [4, 3, 1, 2], weight: 15 },
+    { voterName: 'g4', ranks: [4, 3, 2, 1], weight: 17 },
+  ];
+
+  [Condorcet.findCondorcetWinner, Condorcet.findSchulzeWinner, Condorcet.findMinimaxWinner, Condorcet.findRankedPairsWinner]
+    .forEach((finderFn) => {
+      const order = Condorcet.computeCondorcetFinishOrder(finderFn, ballots, candidateNames);
+      assert.equal(order[0].names[0], 'Nashville');
+      assert.equal(order.length, 4);
+      order.forEach((entry, i) => assert.equal(entry.place, i + 1));
+    });
+}
+
+// A perfect 3-cycle with no Condorcet/Schulze/Minimax winner must report all
+// three candidates tied for 1st, not an arbitrary order.
+function testCondorcetFamilyFinishOrderReportsTieOnCycle() {
+  const { Condorcet } = loadVotingAlgorithms();
+  const candidateNames = ['A', 'B', 'C'];
+  const ballots = makeBallots(candidateNames, [
+    [1, 2, 3],
+    [3, 1, 2],
+    [2, 3, 1],
+  ]);
+
+  const order = Condorcet.computeCondorcetFinishOrder(Condorcet.findCondorcetWinner, ballots, candidateNames);
+  assert.equal(order.length, 1);
+  assert.deepEqual(order[0].names.slice().sort(), ['A', 'B', 'C']);
+}
+
 function run() {
   // RCV core outcomes
   testMajorityWinnerRound1();
@@ -596,6 +679,12 @@ function run() {
   testRankedPairsPerfectCycleReportsNoWinner();
   testRankedPairsDeadTieReportsBothSources();
   testRankedPairsUnambiguousWinnerStillReported();
+
+  // Finish order via iterative winner removal
+  testRCVFinishOrderCenterSqueezeExample();
+  testRCVFinishOrderReportsUnresolvedTie();
+  testCondorcetFamilyFinishOrderUsesWinnerRemoval();
+  testCondorcetFamilyFinishOrderReportsTieOnCycle();
 
   console.log('test_voting_algorithms: all tests passed');
 }

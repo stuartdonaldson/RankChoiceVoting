@@ -98,8 +98,26 @@ function showAdminPage() {
   SpreadsheetApp.getUi().showModalDialog(html, 'Ballot Admin');
 }
 
+// Renders a finish-order array (as returned by computeCondorcetFinishOrder /
+// computeRCVFinishOrder) as HTML, e.g. "1. C  2. B  3. A", with ties for a
+// place shown as "(tie) B / A".
+function _formatFinishOrderHtml_(order) {
+  if (!order || !order.length) return '';
+  return order.map(function (entry) {
+    var label = entry.names.length > 1 ? '(tie) ' + entry.names.join(' / ') : entry.names[0];
+    return entry.place + '. ' + label;
+  }).join('&nbsp;&nbsp;');
+}
+
 // generate html output for the results of runBallotAnalysis_() (webAdmin.js)
-function generateCondorcetResultsHtml(results) {
+// finishOrders is the {condorcet, schulze, rankedPairs, minimax} map of
+// computeCondorcetFinishOrder() results - the true finish order, computed by
+// removing each method's winner and re-running on who's left. It is not the
+// same as rankedCandidates below, which is each method's own display
+// heuristic scored against the full field (see rcballot-14e).
+function generateCondorcetResultsHtml(results, finishOrders) {
+  finishOrders = finishOrders || {};
+
   // Basic Condorcet
   var html = '<h3>Basic Condorcet</h3>';
   if (results.condorcet.winner) {
@@ -107,7 +125,10 @@ function generateCondorcetResultsHtml(results) {
   } else {
     html += '<p>No Condorcet winner (cycle detected).</p>';
   }
-  html += '<p><strong>Ranked Results:</strong></p>';
+  if (finishOrders.condorcet) {
+    html += '<p><strong>Finish order:</strong> ' + _formatFinishOrderHtml_(finishOrders.condorcet) + '</p>';
+  }
+  html += '<p><strong>Heuristic display score (not the finish order):</strong></p>';
   html += '<p style="font-size: 0.9em; margin-top: 5px; margin-bottom: 5px;"><em>Score = Number of head-to-head victories</em></p>';
   html += formatRankedCandidates(results.condorcet.rankedCandidates);
  // html += '<pre>' + JSON.stringify(results.condorcet.matrix, null, 2) + '</pre>';
@@ -119,7 +140,10 @@ function generateCondorcetResultsHtml(results) {
   } else {
     html += '<p>No Schulze winner (cycle detected).</p>';
   }
-  html += '<p><strong>Ranked Results:</strong></p>';
+  if (finishOrders.schulze) {
+    html += '<p><strong>Finish order:</strong> ' + _formatFinishOrderHtml_(finishOrders.schulze) + '</p>';
+  }
+  html += '<p><strong>Heuristic display score (not the finish order):</strong></p>';
   html += '<p style="font-size: 0.9em; margin-top: 5px; margin-bottom: 5px;"><em>Score = Sum of strongest path strengths over all opponents</em></p>';
   html += formatRankedCandidates(results.schulze.rankedCandidates);
 //  html += '<pre>' + JSON.stringify(results.schulze.matrix, null, 2) + '</pre>';
@@ -134,7 +158,10 @@ function generateCondorcetResultsHtml(results) {
   } else {
     html += '<p>No Ranked Pairs winner (cycle detected).</p>';
   }
-  html += '<p><strong>Ranked Results:</strong></p>';
+  if (finishOrders.rankedPairs) {
+    html += '<p><strong>Finish order:</strong> ' + _formatFinishOrderHtml_(finishOrders.rankedPairs) + '</p>';
+  }
+  html += '<p><strong>Heuristic display score (not the finish order):</strong></p>';
   html += '<p style="font-size: 0.9em; margin-top: 5px; margin-bottom: 5px;"><em>Score = Net locked edges (outgoing minus incoming)</em></p>';
   html += formatRankedCandidates(results.rankedPairs.rankedCandidates);
 //  html += '<pre>' + JSON.stringify(results.rankedPairs.matrix, null, 2) + '</pre>';
@@ -147,7 +174,10 @@ function generateCondorcetResultsHtml(results) {
   } else {
     html += '<p>No Minimax winner (tie or cycle detected).</p>';
   }
-  html += '<p><strong>Ranked Results:</strong></p>';
+  if (finishOrders.minimax) {
+    html += '<p><strong>Finish order:</strong> ' + _formatFinishOrderHtml_(finishOrders.minimax) + '</p>';
+  }
+  html += '<p><strong>Heuristic display score (not the finish order):</strong></p>';
   html += '<p style="font-size: 0.9em; margin-top: 5px; margin-bottom: 5px;"><em>Score = Worst pairwise defeat (lower is better)</em></p>';
   html += formatRankedCandidates(results.minimax.rankedCandidates);
 //  html += '<pre>' + JSON.stringify(results.minimax.matrix, null, 2) + '</pre>';

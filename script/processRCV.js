@@ -432,6 +432,75 @@ function _sumBallotWeights(ballots) {
   return ballots.reduce((sum, b) => sum + (b.weight || 1), 0);
 }
 
+/**
+ * Removes one candidate (by index) from candidateNames and from every
+ * ballot's ranks array, without mutating the inputs. Shared by RCV and the
+ * Condorcet family (processCondorcet.js) for computing a true finish order:
+ * a method's winner is not reliably the top of any of its own heuristic
+ * displays, so getting 2nd place (and beyond) means removing the winner and
+ * re-running the method on what's left (rcballot-14e). Ranks may end up with
+ * gaps after removal (e.g. [1,'',3] -> [1,3]); runRankedChoiceVoting
+ * re-compresses on every call, and the Condorcet family only compares
+ * relative rank order, so gaps are harmless to both.
+ *
+ * @param {Array<string>} candidateNames
+ * @param {Array<{voterName:string, ranks:Array, weight:number}>} ballots
+ * @param {number} index
+ * @returns {{candidateNames:Array<string>, ballots:Array<Object>}}
+ */
+function _removeCandidateAt(candidateNames, ballots, index) {
+  var newNames = candidateNames.slice();
+  newNames.splice(index, 1);
+  var newBallots = ballots.map(function (b) {
+    var ranks = b.ranks.slice();
+    ranks.splice(index, 1);
+    return { voterName: b.voterName, ranks: ranks, weight: b.weight };
+  });
+  return { candidateNames: newNames, ballots: newBallots };
+}
+
+/**
+ * Computes the true RCV finish order by iterative winner removal: run RCV,
+ * record the winner as the next place, remove them from the field, and
+ * re-run on what's left. The final round's runner-up is only a heuristic
+ * (see rcballot-14e's center-squeeze example) and is not used here.
+ *
+ * Stops and reports all remaining candidates tied for the current place as
+ * soon as a round can't resolve to a single winner, rather than guessing an
+ * order among them.
+ *
+ * @param {Array<string>} candidateNames
+ * @param {Array<{voterName:string, ranks:Array, weight:number}>} allBallots
+ * @returns {Array<{place:number, names:Array<string>}>}
+ */
+function computeRCVFinishOrder(candidateNames, allBallots) {
+  var names = candidateNames.slice();
+  var ballots = allBallots.map(function (b) {
+    return { voterName: b.voterName, ranks: b.ranks.slice(), weight: b.weight };
+  });
+  var order = [];
+  var place = 1;
+
+  while (names.length > 0) {
+    if (names.length === 1) {
+      order.push({ place: place, names: names.slice() });
+      break;
+    }
+    var result = runRankedChoiceVoting(names, ballots, null);
+    if (!result.winner) {
+      order.push({ place: place, names: result.tie.slice() });
+      break;
+    }
+    order.push({ place: place, names: [result.winner] });
+    var idx = names.indexOf(result.winner);
+    var removed = _removeCandidateAt(names, ballots, idx);
+    names = removed.candidateNames;
+    ballots = removed.ballots;
+    place++;
+  }
+  return order;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     runRankedChoiceVoting: runRankedChoiceVoting,
@@ -439,6 +508,8 @@ if (typeof module !== 'undefined' && module.exports) {
     countTieWinners: countTieWinners,
     _isRankedValue: _isRankedValue,
     _sumBallotWeights: _sumBallotWeights,
+    _removeCandidateAt: _removeCandidateAt,
+    computeRCVFinishOrder: computeRCVFinishOrder,
   };
 }
 

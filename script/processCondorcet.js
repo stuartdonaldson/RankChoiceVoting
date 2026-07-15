@@ -270,6 +270,55 @@ function findMinimaxWinner(ballots, candidateNames) {
   return { winner: candidateNames[winnerIdx], matrix: d, scores: scores, rankedCandidates };
 }
 
+/**
+ * Generic finish-order computation for any Condorcet-family finder
+ * (findCondorcetWinner, findSchulzeWinner, findRankedPairsWinner,
+ * findMinimaxWinner). Each finder's rankedCandidates score is a display
+ * heuristic (win count / path-strength sum / locked-edge balance / worst
+ * defeat) computed against the FULL field, so #2 by that score is not
+ * necessarily who wins once the winner is removed (rcballot-14e). This
+ * mirrors computeRCVFinishOrder (processRCV.js): repeatedly find the winner,
+ * remove them via the shared _removeCandidateAt, and re-run on what's left.
+ *
+ * A finder result with no single winner (a cycle, or an explicit .tie from
+ * Ranked Pairs) means the remaining candidates can't be ordered further -
+ * stop and report them all tied for the current place instead of falling
+ * back to the heuristic score.
+ *
+ * @param {function} finderFn one of the find*Winner functions above
+ * @param {Array<Object>} ballots
+ * @param {Array<string>} candidateNames
+ * @returns {Array<{place:number, names:Array<string>}>}
+ */
+function computeCondorcetFinishOrder(finderFn, ballots, candidateNames) {
+  var names = candidateNames.slice();
+  var currentBallots = ballots.map(function (b) {
+    return { voterName: b.voterName, ranks: b.ranks.slice(), weight: b.weight };
+  });
+  var order = [];
+  var place = 1;
+
+  while (names.length > 0) {
+    if (names.length === 1) {
+      order.push({ place: place, names: names.slice() });
+      break;
+    }
+    var result = finderFn(currentBallots, names);
+    if (!result.winner) {
+      var tieNames = (result.tie && result.tie.length) ? result.tie.slice() : names.slice();
+      order.push({ place: place, names: tieNames });
+      break;
+    }
+    order.push({ place: place, names: [result.winner] });
+    var idx = names.indexOf(result.winner);
+    var removed = _removeCandidateAt(names, currentBallots, idx);
+    names = removed.candidateNames;
+    currentBallots = removed.ballots;
+    place++;
+  }
+  return order;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     buildPairwiseMatrix: buildPairwiseMatrix,
@@ -277,5 +326,6 @@ if (typeof module !== 'undefined' && module.exports) {
     findSchulzeWinner: findSchulzeWinner,
     findRankedPairsWinner: findRankedPairsWinner,
     findMinimaxWinner: findMinimaxWinner,
+    computeCondorcetFinishOrder: computeCondorcetFinishOrder,
   };
 }
