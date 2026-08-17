@@ -9,7 +9,15 @@
  * Reachable both from the web app URL directly and from the spreadsheet's
  * "Voting and Ballot Tools > Open Ballot Admin Page" menu (onOpen.js).
  *
- * Entry point: _handleAdmin(e), wired from WebApp.js doGet (cmd === 'admin').
+ * STATIC-PAGES MIGRATION: doGet (WebApp.js) no longer calls _handleAdmin — cmd=admin now
+ * redirects to the static front end (static-pages/src/index.html, see ApiBridge.js's
+ * _renderStaticRedirect_), which renders the list/edit/analyze views itself and calls this
+ * file's RPCs via doPost ?cmd=api (ApiBridge.js's whitelist) instead of google.script.run.
+ * _handleAdmin/_renderAdminList_/_renderAdminEditPage_/_renderAdminAnalysis_/_ADMIN_STYLE_/
+ * _renderCreateForm_ below are kept only as unreachable legacy code (no test coverage depends
+ * on them) — safe to delete in a follow-up once the static pages have been live a while. The
+ * RPCs (getAdminEditData, adminSave*, adminAddCandidate) and the new getAdminListData_/
+ * createBallotForAdmin_/getAdminAnalysisData_ are the live code paths now.
  */
 
 /**
@@ -214,6 +222,74 @@ function _renderCreateForm_(error, prefillId) {
 }
 
 /**
+ * JSON data source for the static admin list view (static-pages/src/index.html), reached via
+ * ApiBridge.js's ?cmd=api dispatcher. Same fields/logic _renderAdminList_ used to render
+ * server-side as HTML — ballotUrl/editUrl/analyzeUrl are deliberately NOT included here; the
+ * static client builds those itself (same-origin relative links off its own location), so this
+ * function only returns data, not navigation.
+ *
+ * @return {Array<{id:string, title:string, candidateCount:number, responseCount:number,
+ *   uniqueRespondentCount:number, adminNotes:string, staleRespondents:Array<string>}>}
+ */
+function getAdminListData_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ids = listBallotIds_(ss);
+  return ids.map(function (id) {
+    var sheet = findBallotSheet_(ss, id);
+    var config = readBallotConfig_(sheet);
+    return {
+      id: id,
+      title: config.Title || id,
+      candidateCount: readBallotCandidates_(sheet).length,
+      responseCount: readBallotResponseRows_(sheet).length,
+      uniqueRespondentCount: countUniqueBallotRespondents_(sheet),
+      adminNotes: String(config['Admin-Only-Notes'] || '').trim(),
+      staleRespondents: findRespondentsWithNewCandidates_(sheet)
+    };
+  });
+}
+
+/**
+ * RPC: creates a new ballot from the static list view's "Create New Ballot" form (replaces the
+ * old GET-form-submit-to-doGet flow — see _renderCreateForm_, now unreachable from doGet). On
+ * success, the client switches straight to the edit view with the "just created" banner.
+ *
+ * @param {string} id
+ * @return {{ok:boolean, id:string}} throws (surfaced as {error} by handleApiPost_) on an
+ *   invalid/duplicate id, same as createNewBallot_.
+ */
+function createBallotForAdmin_(id) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  createNewBallot_(ss, id);
+  return { ok: true, id: id };
+}
+
+/**
+ * JSON data source for the static admin analysis view. Runs the same analysis
+ * _renderAdminAnalysis_ used to render as an HTML string (and still writes the Results section
+ * back to the sheet, same as before) but returns the raw result for the client to render.
+ *
+ * @param {string} id
+ * @return {Object} {rcv, rcvFinishOrder, condorcet, finishOrders, sheetName} or {error}.
+ */
+function getAdminAnalysisData_(id) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = findBallotSheet_(ss, id);
+  if (!sheet) return { error: 'no_ballot' };
+
+  var results = runBallotAnalysis_(sheet);
+  if (results.error) return { error: results.error };
+
+  return {
+    rcv: results.rcv,
+    rcvFinishOrder: results.rcvFinishOrder,
+    condorcet: results.condorcet,
+    finishOrders: results.finishOrders,
+    sheetName: getBallotSheetName_(id)
+  };
+}
+
+/**
  * RPC: called once by webAdminEditPage.html on load (after reading the ballot id from
  * google.script.url.getLocation) to fetch everything the edit-mode ballot preview needs
  * to render. Field names match what the client displays/edits, not the sheet's config
@@ -383,6 +459,12 @@ function _renderAdminAnalysis_(id) {
     return html + '<p><em>' + _escapeHtml_(results.error) + '</em></p>';
   }
 
+  html += '<p><em>Method note: every "Finish order" below (RCV and each Condorcet ' +
+    'method) is computed by winner-removal — find the winner, remove them from the ' +
+    'field, and re-run the method on who\'s left, repeating for each place. It is not ' +
+    'derived from a single run\'s elimination order or ranked-candidates score, both of ' +
+    'which can disagree with a re-run (see rcballot-14e).</em></p>';
+
   html += '<h2>Ranked Choice Voting</h2>';
   if (results.rcv.winner) {
     html += '<p><b>Winner: ' + _escapeHtml_(results.rcv.winner) + '</b></p>';
@@ -473,6 +555,10 @@ function _formatFinishOrder_(order) {
 function _buildResultsRows_(rcv, condorcet, rcvFinishOrder, finishOrders) {
   var rows = [];
   rows.push(['Analysis run: ' + new Date().toISOString()]);
+  rows.push(['Method note: every Finish order below (RCV and each Condorcet method) is ' +
+    'computed by winner-removal - find the winner, remove them, and re-run on who\'s ' +
+    'left for each place - not from a single run\'s elimination order or ranked-candidates ' +
+    'score (see rcballot-14e).']);
   rows.push(['']);
   rows.push(['Ranked Choice Voting (RCV)']);
   rows.push([rcv.winner ? 'Winner: ' + rcv.winner : 'Tie: ' + (rcv.tie || []).join(', ')]);

@@ -1,0 +1,1299 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>RankChoiceVoting</title>
+<style>
+  /* Combined styles for all four views (list/edit/analyze/ballot) — deliberately kept close to
+     the original GAS-rendered pages' look (webAdmin.js's _ADMIN_STYLE_, webAdminEditPage.html,
+     webBallotPage.html) so this reads as the same app, not a redesign. */
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    font-family: Arial, sans-serif;
+    max-width: 640px;
+    margin: 24px auto;
+    padding: 0 16px;
+    color: #202124;
+  }
+  h1 { font-size: 1.4rem; }
+  a { color: #1a73e8; }
+  form { margin-bottom: 24px; }
+  label { display: block; font-weight: bold; margin: 10px 0 6px; }
+  input[type="text"], input[type="url"], textarea {
+    width: 100%;
+    font-size: 1rem;
+    padding: 10px;
+    border: 1px solid #dadce0;
+    border-radius: 6px;
+    font-family: inherit;
+  }
+  textarea { resize: vertical; }
+  button, a.btn {
+    font-size: 1rem;
+    padding: 10px 16px;
+    min-height: 44px; /* WCAG 2.5.5 touch-target minimum — no hover fallback on touch */
+    border: none;
+    border-radius: 6px;
+    background: #1a73e8;
+    color: #fff;
+    cursor: pointer;
+    text-decoration: none;
+    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+  }
+  button { width: 100%; margin-top: 12px; }
+  button:disabled { background: #c7c7c7; cursor: default; }
+  button.secondary, a.btn.secondary { background: #f1f3f4; color: #202124; }
+  .hidden { display: none !important; }
+  .app-version-footer { color: #9aa0a6; font-size: 0.75em; margin-top: 24px; }
+
+  /* --- List view --- */
+  .ballot-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
+  .ballot-card { border: 1px solid #dadce0; border-radius: 8px; padding: 12px 16px; }
+  .ballot-card h3 { margin: 0 0 2px; font-size: 1.05rem; }
+  .ballot-card .ballot-id { color: #5f6368; font-size: 0.85em; margin-bottom: 6px; }
+  .ballot-card .ballot-meta { color: #5f6368; font-size: 0.9em; margin-bottom: 10px; }
+  .ballot-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ballot-actions a.btn { flex: 1 1 auto; min-width: 100px; }
+  .ballot-info { margin-top: 10px; }
+  .ballot-info summary { cursor: pointer; color: #1a73e8; font-size: 0.9em; padding: 6px 0; min-height: 44px; display: flex; align-items: center; }
+  .ballot-info p { margin: 4px 0 0; color: #3c4043; font-size: 0.9em; white-space: pre-wrap; }
+  @media (max-width: 420px) { button, a.btn { width: 100%; } }
+
+  /* --- Edit view --- */
+  p.sub { color: #5f6368; margin: 0; }
+  #createdBanner { background: #e6f4ea; color: #188038; border-radius: 6px; padding: 10px 12px; margin-bottom: 16px; }
+  .edit-instructions { background: #e8f0fe; border-radius: 6px; padding: 12px 14px; color: #174ea6; font-size: 0.9em; margin-bottom: 20px; }
+  .edit-instructions p { margin: 0 0 6px; }
+  .edit-instructions p:last-child { margin-bottom: 0; }
+  .section-divider { color: #9aa0a6; font-size: 0.8em; text-align: center; margin: 32px 0 4px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: bold; }
+  .subsection-header { font-size: 0.95rem; font-weight: bold; margin: 24px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #dadce0; }
+  .subsection-header .optional-tag { font-weight: normal; font-size: 0.8em; color: #5f6368; margin-left: 6px; }
+  .field-block { margin: 18px 0; }
+  .field-row { display: flex; align-items: flex-start; gap: 4px; justify-content: space-between; }
+  .pencil-btn { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 6px 8px; min-width: 44px; min-height: 44px; flex: 0 0 auto; }
+  .field-panel { margin-top: 10px; padding: 12px; border: 1px solid #dadce0; border-radius: 6px; background: #f8f9fa; }
+  .field-help { margin: 0 0 10px; color: #5f6368; font-size: 0.9em; }
+  .field-panel-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .field-panel-actions button { flex: 1; }
+  .field-status { min-height: 1.2em; margin-top: 8px; font-size: 0.9em; color: #5f6368; }
+  .field-status.error { color: #d93025; }
+  .static-block { border-left: 3px dashed #bdc1c6; padding: 6px 0 6px 12px; margin: 14px 0; }
+  .static-label { display: block; font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.04em; color: #9aa0a6; font-weight: bold; margin-bottom: 4px; }
+  .static-block p, .static-block label { color: #80868b; }
+  .static-block button, .static-block input, .static-block textarea { opacity: 0.75; }
+  .admin-only-section { margin-top: 32px; padding: 14px; border: 1px dashed #f9ab00; border-radius: 8px; background: #fef7e0; }
+  .admin-only-section .subsection-header { border-bottom: none; margin-top: 0; }
+  .admin-only-badge { display: inline-block; background: #f9ab00; color: #202124; font-size: 0.65em; font-weight: bold; text-transform: uppercase; padding: 2px 6px; border-radius: 10px; margin-left: 8px; vertical-align: middle; }
+
+  /* --- Candidate/topic rows (shared by edit + ballot views) --- */
+  ul#candidateList, ul#topicList { list-style: none; padding: 0; margin: 12px 0; }
+  ul#candidateList li, ul#topicList li { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; }
+  ul#topicList li { display: flex; flex-direction: column; user-select: none; }
+  ul#topicList li.dragging { position: relative; z-index: 10; background: #e8f0fe; box-shadow: 0 4px 10px rgba(0,0,0,0.15); }
+  .topic-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
+  .handle { font-size: 1.1rem; color: #5f6368; padding: 10px 4px; min-height: 44px; display: flex; align-items: center; }
+  #topicList .handle { cursor: grab; touch-action: none; }
+  .topic-text { min-width: 0; overflow-wrap: break-word; font-weight: bold; }
+  #topicList .topic-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: normal; }
+  .topic-text.has-details { cursor: pointer; }
+  .topic-text.has-details, .info-toggle, .topic-info-content { touch-action: manipulation; }
+  .info-toggle { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 6px 8px; min-width: 44px; min-height: 44px; }
+  .topic-info-content { margin-top: 4px; padding-left: 34px; color: #3c4043; font-size: 0.9em; white-space: pre-wrap; }
+  .topic-info-content.empty { font-style: italic; color: #9aa0a6; }
+  .topic-info-link { display: block; margin-top: 4px; padding-left: 34px; font-size: 0.9em; }
+  .candidate-edit-panel { margin-top: 8px; }
+  .add-panel { margin-top: 12px; padding: 12px; border: 1px solid #dadce0; border-radius: 6px; background: #f8f9fa; }
+  .add-panel textarea { margin-top: 10px; }
+  .add-panel-actions { display: flex; gap: 8px; }
+  .add-panel-actions button { flex: 1; }
+  footer.ballot-footer { color: #5f6368; font-size: 0.85em; margin-top: 24px; }
+  p.ballot-contact { color: #5f6368; font-size: 0.85em; margin-top: 4px; }
+  #status, #status2 { color: #5f6368; min-height: 1.2em; margin-top: 8px; }
+  #status.error, #status2.error { color: #d93025; }
+
+  /* --- Analyze view --- */
+  .method-note { background: #e8f0fe; color: #174ea6; font-size: 0.9em; padding: 10px 12px; border-radius: 6px; margin-bottom: 16px; }
+  table.results-table { border-collapse: collapse; margin-bottom: 15px; width: 100%; }
+  table.results-table th, table.results-table td { border: 1px solid #dadce0; padding: 6px 8px; }
+  table.results-table th { background: #f8f9fa; text-align: left; }
+  table.results-table td.center { text-align: center; }
+</style>
+</head>
+<body>
+
+  <!-- ============================= LIST VIEW ============================= -->
+  <div id="view-list" class="hidden">
+    <h1>Ballot Admin</h1>
+    <h2>Create New Ballot</h2>
+    <p id="createError" class="field-status error hidden"></p>
+    <form id="createForm">
+      <label for="newBallotId">Ballot ID (used in the ballot link and sheet name — letters, numbers, "-", "_" only)</label>
+      <input type="text" id="newBallotId" required>
+      <button type="submit">Create Ballot</button>
+    </form>
+    <p id="listStatus">Loading…</p>
+    <div id="ballotList" class="ballot-list"></div>
+  </div>
+
+  <!-- ============================= EDIT VIEW ============================= -->
+  <div id="view-edit" class="hidden">
+    <p><a id="backLink" href="?cmd=admin">&larr; Back to ballot list</a></p>
+    <div id="createdBanner" class="hidden">Ballot created — fill in the fields below using the pencil icons.</div>
+    <p id="editLoadStatus">Loading…</p>
+
+    <div id="editRoot" class="hidden">
+      <div class="edit-instructions">
+        <p><strong>Editing this ballot:</strong> below is the landing page immediately followed by the ballot page, laid out and styled exactly as respondents see them.</p>
+        <p>Fields with a pencil (✏️) are editable — tap it, make your change, and Save; it applies immediately, so there's nothing else to save. Text with a dashed border is fixed page copy shown for context only — it's already there, so there's no need to add it again.</p>
+        <p>When you're done, use "&larr; Back to ballot list" below.</p>
+      </div>
+
+      <p class="section-divider">Landing Page</p>
+
+      <div class="field-block">
+        <div class="field-row">
+          <h1 id="titleDisplay"></h1>
+          <button type="button" class="pencil-btn" id="titleEditBtn" aria-label="Edit Title">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="titlePanel">
+          <p class="field-help">Shown as the page title everywhere — landing page and ballot page.</p>
+          <label for="titleInput">Title</label>
+          <input type="text" id="titleInput">
+          <div class="field-panel-actions">
+            <button type="button" id="titleSaveBtn">Save</button>
+            <button type="button" class="secondary" id="titleCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="titleStatus"></div>
+        </div>
+      </div>
+
+      <div class="field-block">
+        <div class="field-row">
+          <p class="sub" id="descriptionDisplay"></p>
+          <button type="button" class="pencil-btn" id="descriptionEditBtn" aria-label="Edit Description">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="descriptionPanel">
+          <p class="field-help">Shown on the landing page, before a respondent enters their name.</p>
+          <label for="descriptionInput">Description</label>
+          <textarea id="descriptionInput" rows="3"></textarea>
+          <div class="field-panel-actions">
+            <button type="button" id="descriptionSaveBtn">Save</button>
+            <button type="button" class="secondary" id="descriptionCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="descriptionStatus"></div>
+        </div>
+      </div>
+
+      <div class="static-block">
+        <span class="static-label">Fixed text — not editable</span>
+        <p class="sub">Enter your name to start or resume ranking.</p>
+        <p class="sub">If you've already been here, your previous answers will be loaded so you can review or change them.</p>
+        <label for="staticNameInput">Your name</label>
+        <input type="text" id="staticNameInput" disabled placeholder="(respondent types their name here)">
+        <button type="button" disabled style="margin-top:10px;">Continue</button>
+      </div>
+
+      <p class="section-divider">Ballot Page</p>
+
+      <div class="field-block">
+        <div class="field-row">
+          <p class="sub" id="instructionsDisplay"></p>
+          <button type="button" class="pencil-btn" id="instructionsEditBtn" aria-label="Edit Ballot Instructions">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="instructionsPanel">
+          <p class="field-help">Shown above the ranking list on the ballot page — replaces the landing description above once a respondent starts ranking.</p>
+          <label for="instructionsInput">Ballot Instructions</label>
+          <textarea id="instructionsInput" rows="3"></textarea>
+          <div class="field-panel-actions">
+            <button type="button" id="instructionsSaveBtn">Save</button>
+            <button type="button" class="secondary" id="instructionsCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="instructionsStatus"></div>
+        </div>
+      </div>
+
+      <div class="static-block">
+        <span class="static-label">Fixed text — not editable</span>
+        <p class="sub">Drag items to order them, most preferred on top.</p>
+      </div>
+
+      <p class="subsection-header">Candidates</p>
+      <ul id="candidateList"></ul>
+
+      <div class="field-block">
+        <button type="button" class="secondary" id="addCandidateBtn">+ Add Candidate</button>
+        <div class="field-panel hidden" id="addCandidatePanel">
+          <p class="field-help">Adds a new candidate to the ballot.</p>
+          <label for="newCandidateNameInput">Name</label>
+          <input type="text" id="newCandidateNameInput">
+          <label for="newCandidateDetailsInput">Details (optional)</label>
+          <textarea id="newCandidateDetailsInput" rows="2"></textarea>
+          <label for="newCandidateLinkTextInput">Link Text (optional)</label>
+          <input type="text" id="newCandidateLinkTextInput">
+          <label for="newCandidateLinkUrlInput">Link URL (optional)</label>
+          <input type="url" id="newCandidateLinkUrlInput" placeholder="https://…">
+          <div class="field-panel-actions">
+            <button type="button" id="addCandidateSaveBtn">Add</button>
+            <button type="button" class="secondary" id="addCandidateCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="addCandidateStatus"></div>
+        </div>
+      </div>
+
+      <div class="static-block">
+        <span class="static-label">Fixed text — not editable</span>
+        <button type="button" disabled>Submit</button>
+        <button type="button" class="secondary" disabled style="margin-top:8px;">Back</button>
+      </div>
+
+      <p class="subsection-header">Add New Candidates <span class="optional-tag">(only shown to respondents when enabled)</span></p>
+
+      <div class="field-block">
+        <div class="field-row">
+          <p class="sub" id="addSettingsDisplay"></p>
+          <button type="button" class="pencil-btn" id="addSettingsEditBtn" aria-label="Edit Adding New Candidates settings">✏️</button>
+        </div>
+        <p class="sub" id="addInstructionsDisplay"></p>
+        <div class="field-panel hidden" id="addSettingsPanel">
+          <p class="field-help">Controls whether respondents can add their own candidate from the ballot page, and what instructions they see above the "+ Add New" button.</p>
+          <label><input type="checkbox" id="acceptNewInput"> Accept new candidates from respondents</label>
+          <label for="addInstructionsInput">Instructions to Add</label>
+          <textarea id="addInstructionsInput" rows="2"></textarea>
+          <div class="field-panel-actions">
+            <button type="button" id="addSettingsSaveBtn">Save</button>
+            <button type="button" class="secondary" id="addSettingsCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="addSettingsStatus"></div>
+        </div>
+      </div>
+
+      <div class="static-block" id="addNewButtonPreview">
+        <span class="static-label">Fixed text — not editable</span>
+        <button type="button" disabled>+ Add New</button>
+      </div>
+
+      <p class="subsection-header">Feedback</p>
+
+      <div class="static-block">
+        <span class="static-label">Fixed text — not editable — respondent-entered, so there's nothing to configure</span>
+        <button type="button" disabled>+ Add Feedback</button>
+        <label for="staticFeedbackInput" style="margin-top:10px;">Feedback (optional)</label>
+        <textarea id="staticFeedbackInput" rows="3" disabled placeholder="Any feedback you'd like to add?"></textarea>
+      </div>
+
+      <div class="field-block">
+        <div class="field-row">
+          <p id="footerDisplay"></p>
+          <button type="button" class="pencil-btn" id="footerEditBtn" aria-label="Edit Footer">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="footerPanel">
+          <p class="field-help">Shown at the bottom of the ballot page.</p>
+          <label for="footerInput">Footer</label>
+          <input type="text" id="footerInput">
+          <div class="field-panel-actions">
+            <button type="button" id="footerSaveBtn">Save</button>
+            <button type="button" class="secondary" id="footerCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="footerStatus"></div>
+        </div>
+      </div>
+
+      <div class="field-block">
+        <div class="field-row">
+          <p id="contactDisplay"></p>
+          <button type="button" class="pencil-btn" id="contactEditBtn" aria-label="Edit Contact">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="contactPanel">
+          <p class="field-help">Shown at the bottom of the ballot page, below the footer, as "Contact: ...".</p>
+          <label for="contactInput">Contact</label>
+          <input type="text" id="contactInput">
+          <div class="field-panel-actions">
+            <button type="button" id="contactSaveBtn">Save</button>
+            <button type="button" class="secondary" id="contactCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="contactStatus"></div>
+        </div>
+      </div>
+
+      <div class="admin-only-section">
+        <p class="subsection-header">Admin-Only Notes <span class="admin-only-badge">Admin only</span></p>
+        <div class="field-block">
+          <div class="field-row">
+            <p id="adminOnlyNotesDisplay"></p>
+            <button type="button" class="pencil-btn" id="adminOnlyNotesEditBtn" aria-label="Edit Admin-Only Notes">✏️</button>
+          </div>
+          <div class="field-panel hidden" id="adminOnlyNotesPanel">
+            <p class="field-help">Never shown to respondents — shown as a "More info" disclosure in the ballot list.</p>
+            <label for="adminOnlyNotesInput">Admin-Only Notes</label>
+            <textarea id="adminOnlyNotesInput" rows="3"></textarea>
+            <div class="field-panel-actions">
+              <button type="button" id="adminOnlyNotesSaveBtn">Save</button>
+              <button type="button" class="secondary" id="adminOnlyNotesCancelBtn">Cancel</button>
+            </div>
+            <div class="field-status" id="adminOnlyNotesStatus"></div>
+          </div>
+        </div>
+      </div>
+
+      <p style="margin-top:24px;"><a id="backLinkBottom" href="?cmd=admin">&larr; Back to ballot list</a></p>
+    </div>
+  </div>
+
+  <!-- ============================= ANALYZE VIEW ============================= -->
+  <div id="view-analyze" class="hidden">
+    <p><a href="?cmd=admin">&larr; Back to ballot list</a></p>
+    <p id="analyzeStatus">Loading…</p>
+    <div id="analyzeRoot" class="hidden"></div>
+  </div>
+
+  <!-- ============================= BALLOT VIEW ============================= -->
+  <div id="view-ballot" class="hidden">
+    <h1 id="pageTitle">RankChoiceVoting Ballot</h1>
+    <p class="sub" id="pageDescription"></p>
+
+    <div id="step-noBallot" class="hidden">
+      <p>No ballot is currently available at this link. If you were given a link with a ballot name in it (e.g. <code>?cmd=ballot&amp;id=my-ballot</code>), double check it's correct.</p>
+    </div>
+
+    <div id="step-name" class="hidden">
+      <p class="sub">Enter your name to start or resume ranking.</p>
+      <p class="sub">If you've already been here, your previous answers will be loaded so you can review or change them.</p>
+      <label for="nameInput">Your name</label>
+      <input type="text" id="nameInput" autocomplete="name">
+      <button id="startBtn">Continue</button>
+      <div id="status"></div>
+    </div>
+
+    <div id="step-rank" class="hidden">
+      <p class="sub">Drag items to order them, most preferred on top.</p>
+      <ul id="topicList"></ul>
+
+      <button id="submitBtn">Submit</button>
+      <button id="backBtn" class="secondary">Back</button>
+
+      <div id="addSection">
+        <p class="sub" id="addInstructionsText"></p>
+        <button id="addNewBtn" type="button" class="secondary">+ Add New</button>
+        <div id="addPanel" class="add-panel hidden">
+          <label for="newItemInput">Name</label>
+          <input type="text" id="newItemInput">
+          <label for="newItemDetailsInput">Details (optional)</label>
+          <textarea id="newItemDetailsInput" rows="2" placeholder="Anything voters should know about this item"></textarea>
+          <div class="add-panel-actions">
+            <button id="addBtn" type="button">Add</button>
+            <button id="addCancelBtn" type="button" class="secondary">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="feedbackSection">
+        <button id="feedbackToggleBtn" type="button" class="secondary">+ Add Feedback</button>
+        <div id="feedbackPanel" class="add-panel hidden">
+          <label for="commentInput">Feedback (optional)</label>
+          <textarea id="commentInput" rows="4" placeholder="Any feedback you'd like to add?"></textarea>
+        </div>
+      </div>
+
+      <div id="status2"></div>
+    </div>
+
+    <div id="step-done" class="hidden">
+      <p>Thanks, <span id="doneName"></span>! Your ranking has been saved.</p>
+      <button id="editAgainBtn" class="secondary">Re-rank</button>
+    </div>
+
+    <footer class="ballot-footer" id="pageFooter"></footer>
+    <p class="ballot-contact" id="pageContact"></p>
+  </div>
+
+  <footer class="app-version-footer" id="appVersionFooter"></footer>
+
+<script>
+  // Stamped by tools/build-static-pages.js per env — see that file's header. Left null here so
+  // this source file also runs unbuilt (local/manual testing with ?webapp= — see resolveWebappUrl_).
+  var STATIC_BUILD_VERSION_ = null;
+  var STATIC_WEBAPP_URL_ = null;
+
+  var params = new URLSearchParams(window.location.search);
+  var cmd = params.get('cmd') || 'admin';
+  var action = params.get('action') || '';
+  var ballotId = params.get('id') || '';
+
+  // A ?webapp= query param always overrides the baked-in default — lets static-pages/src be
+  // opened directly (unbuilt) against any deployment for manual testing, same convention as
+  // F3Go30's static client.
+  function resolveWebappUrl_() {
+    return params.get('webapp') || STATIC_WEBAPP_URL_ || '';
+  }
+  var webappUrl_ = resolveWebappUrl_();
+
+  /**
+   * Calls a whitelisted GAS RPC (see ApiBridge.js's _API_WHITELIST_) via doPost ?cmd=api.
+   * POSTs as text/plain (not application/json) so the browser treats this as a CORS "simple
+   * request" and skips a preflight OPTIONS — Apps Script web apps don't implement OPTIONS, so a
+   * real application/json POST would otherwise fail outright cross-origin.
+   *
+   * @param {string} name RPC name.
+   * @param {...*} args passed straight through to the GAS function.
+   * @return {Promise<*>} resolves with the RPC's return value, rejects with an Error on any
+   *   {error} response (mirrors google.script.run's withSuccessHandler/withFailureHandler).
+   */
+  function callApi_(name) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    if (!webappUrl_) return Promise.reject(new Error('No backend configured (missing STATIC_WEBAPP_URL_/?webapp=).'));
+    return fetch(webappUrl_ + '?cmd=api', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ name: name, args: args })
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (json) {
+        if (json && json.error) throw new Error(json.error);
+        return json && json.result;
+      });
+  }
+
+  function escapeHtml_(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function setAppVersionFooter_(appVersion, appDeployTarget) {
+    var el = document.getElementById('appVersionFooter');
+    el.textContent = appVersion ? 'v' + appVersion + (appDeployTarget ? ' (' + appDeployTarget + ')' : '') : '';
+  }
+
+  // ======================================================================
+  // LIST VIEW
+  // ======================================================================
+  (function () {
+    var listStatus = document.getElementById('listStatus');
+    var ballotListEl = document.getElementById('ballotList');
+    var createForm = document.getElementById('createForm');
+    var createError = document.getElementById('createError');
+    var newBallotIdInput = document.getElementById('newBallotId');
+
+    function buildCard(b) {
+      var card = document.createElement('div');
+      card.className = 'ballot-card';
+
+      var html = '<h3>' + escapeHtml_(b.title) + '</h3>' +
+        '<div class="ballot-id">' + escapeHtml_(b.id) + '</div>' +
+        '<div class="ballot-meta">' + b.candidateCount + ' candidate' + (b.candidateCount === 1 ? '' : 's') +
+        ' &middot; ' + b.responseCount + ' response' + (b.responseCount === 1 ? '' : 's') +
+        ' (' + b.uniqueRespondentCount + ' unique respondent' + (b.uniqueRespondentCount === 1 ? '' : 's') + ')' + '</div>' +
+        '<div class="ballot-actions">' +
+        '<a class="btn" target="_blank" href="?cmd=ballot&id=' + encodeURIComponent(b.id) + '">View Ballot</a>' +
+        '<a class="btn" href="?cmd=admin&action=edit&id=' + encodeURIComponent(b.id) + '">Edit</a>' +
+        '<a class="btn" href="?cmd=admin&action=analyze&id=' + encodeURIComponent(b.id) + '">Run Analysis</a>' +
+        '</div>';
+
+      if (b.adminNotes) {
+        html += '<details class="ballot-info"><summary>ℹ️ More info</summary><p>' + escapeHtml_(b.adminNotes) + '</p></details>';
+      }
+      if (b.staleRespondents && b.staleRespondents.length) {
+        html += '<details class="ballot-info"><summary>⚠️ ' + b.staleRespondents.length +
+          ' respondent' + (b.staleRespondents.length === 1 ? '' : 's') +
+          ' may want to review (candidates added since they responded)</summary><p>' +
+          escapeHtml_(b.staleRespondents.join(', ')) + '</p></details>';
+      }
+      card.innerHTML = html;
+      return card;
+    }
+
+    function loadList() {
+      callApi_('getAdminListData_').then(function (ballots) {
+        listStatus.classList.add('hidden');
+        if (!ballots.length) {
+          listStatus.textContent = 'No ballot sheets found yet — create one above.';
+          listStatus.classList.remove('hidden');
+          return;
+        }
+        ballotListEl.innerHTML = '';
+        ballots.forEach(function (b) { ballotListEl.appendChild(buildCard(b)); });
+      }, function (err) {
+        listStatus.textContent = 'Could not load ballots: ' + err.message;
+        listStatus.classList.remove('hidden');
+      });
+    }
+
+    createForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var id = newBallotIdInput.value.trim();
+      if (!id) return;
+      createError.classList.add('hidden');
+      callApi_('createBallotForAdmin_', id).then(function () {
+        window.location.href = '?cmd=admin&action=create&id=' + encodeURIComponent(id);
+      }, function (err) {
+        createError.textContent = err.message;
+        createError.classList.remove('hidden');
+      });
+    });
+
+    window.initListView_ = function () {
+      document.getElementById('view-list').classList.remove('hidden');
+      loadList();
+    };
+  })();
+
+  // ======================================================================
+  // EDIT VIEW
+  // ======================================================================
+  (function () {
+    var fieldData = {};
+    var loadStatus = document.getElementById('editLoadStatus');
+    var createdBanner = document.getElementById('createdBanner');
+    var editRoot = document.getElementById('editRoot');
+    var candidateList = document.getElementById('candidateList');
+    var titleDisplay = document.getElementById('titleDisplay');
+    var descriptionDisplay = document.getElementById('descriptionDisplay');
+    var instructionsDisplay = document.getElementById('instructionsDisplay');
+    var footerDisplay = document.getElementById('footerDisplay');
+    var contactDisplay = document.getElementById('contactDisplay');
+    var adminOnlyNotesDisplay = document.getElementById('adminOnlyNotesDisplay');
+    var addNewButtonPreview = document.getElementById('addNewButtonPreview');
+
+    function setStatus(el, msg, isError) {
+      el.textContent = msg || '';
+      el.className = 'field-status' + (isError ? ' error' : '');
+    }
+
+    function wireSimpleField(key, rpcName) {
+      var display = document.getElementById(key + 'Display');
+      var editBtn = document.getElementById(key + 'EditBtn');
+      var panel = document.getElementById(key + 'Panel');
+      var input = document.getElementById(key + 'Input');
+      var saveBtn = document.getElementById(key + 'SaveBtn');
+      var cancelBtn = document.getElementById(key + 'CancelBtn');
+      var status = document.getElementById(key + 'Status');
+
+      editBtn.addEventListener('click', function () {
+        input.value = fieldData[key] || '';
+        setStatus(status, '', false);
+        panel.classList.remove('hidden');
+      });
+
+      cancelBtn.addEventListener('click', function () { panel.classList.add('hidden'); });
+
+      saveBtn.addEventListener('click', function () {
+        var value = input.value.trim();
+        saveBtn.disabled = true;
+        setStatus(status, 'Saving…', false);
+        callApi_(rpcName, ballotId, value).then(function () {
+          saveBtn.disabled = false;
+          fieldData[key] = value;
+          display.textContent = value;
+          panel.classList.add('hidden');
+          setStatus(status, '', false);
+        }, function (err) {
+          saveBtn.disabled = false;
+          setStatus(status, 'Could not save: ' + err.message, true);
+        });
+      });
+    }
+
+    function renderCandidates(candidates) {
+      candidateList.innerHTML = '';
+      candidates.forEach(function (candidate, i) {
+        candidateList.appendChild(buildCandidateItem(candidate, i));
+      });
+    }
+
+    function buildCandidateItem(candidate, index) {
+      var li = document.createElement('li');
+
+      var row = document.createElement('div');
+      row.className = 'topic-row';
+
+      var handle = document.createElement('span');
+      handle.className = 'handle';
+      handle.textContent = '☰';
+
+      var text = document.createElement('span');
+      text.className = 'topic-text';
+      text.textContent = candidate.name;
+
+      var editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'pencil-btn';
+      editBtn.textContent = '✏️';
+      editBtn.setAttribute('aria-label', 'Edit ' + candidate.name);
+
+      row.appendChild(handle);
+      row.appendChild(text);
+      row.appendChild(editBtn);
+
+      var details = document.createElement('div');
+      details.className = 'topic-info-content' + (candidate.details ? '' : ' empty');
+      details.textContent = candidate.details || 'No details yet.';
+
+      var link = document.createElement('a');
+      link.className = 'topic-info-link';
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.hidden = true;
+
+      var panel = document.createElement('div');
+      panel.className = 'field-panel candidate-edit-panel hidden';
+      panel.innerHTML =
+        '<p class="field-help">What respondents drag-order to rank. Edit this candidate’s name, details, and link below.</p>' +
+        '<label>Name</label><input type="text" class="cand-name-input">' +
+        '<label>Details (optional)</label><textarea rows="2" class="cand-details-input"></textarea>' +
+        '<label>Link Text (optional)</label><input type="text" class="cand-link-text-input">' +
+        '<label>Link URL (optional)</label><input type="url" class="cand-link-url-input" placeholder="https://…">' +
+        '<div class="field-panel-actions">' +
+        '<button type="button" class="cand-save-btn">Save</button>' +
+        '<button type="button" class="secondary cand-cancel-btn">Cancel</button>' +
+        '</div>' +
+        '<div class="field-status cand-status"></div>';
+
+      li.appendChild(row);
+      li.appendChild(details);
+      li.appendChild(link);
+      li.appendChild(panel);
+
+      function renderLink() {
+        if (candidate.linkUrl) {
+          link.href = candidate.linkUrl;
+          link.textContent = candidate.linkText || candidate.linkUrl;
+          link.hidden = false;
+        } else {
+          link.hidden = true;
+        }
+      }
+      renderLink();
+
+      var nameInput = panel.querySelector('.cand-name-input');
+      var detailsInput = panel.querySelector('.cand-details-input');
+      var linkTextInput = panel.querySelector('.cand-link-text-input');
+      var linkUrlInput = panel.querySelector('.cand-link-url-input');
+      var saveBtn = panel.querySelector('.cand-save-btn');
+      var cancelBtn = panel.querySelector('.cand-cancel-btn');
+      var statusEl = panel.querySelector('.cand-status');
+
+      function showDisplay() {
+        row.hidden = false;
+        details.hidden = false;
+        renderLink();
+        panel.classList.add('hidden');
+      }
+
+      editBtn.addEventListener('click', function () {
+        nameInput.value = candidate.name;
+        detailsInput.value = candidate.details || '';
+        linkTextInput.value = candidate.linkText || '';
+        linkUrlInput.value = candidate.linkUrl || '';
+        setStatus(statusEl, '', false);
+        row.hidden = true;
+        details.hidden = true;
+        link.hidden = true;
+        panel.classList.remove('hidden');
+      });
+
+      cancelBtn.addEventListener('click', showDisplay);
+
+      saveBtn.addEventListener('click', function () {
+        var newName = nameInput.value.trim();
+        if (!newName) {
+          setStatus(statusEl, 'Name cannot be empty.', true);
+          return;
+        }
+        var newDetails = detailsInput.value.trim();
+        var newLinkText = linkTextInput.value.trim();
+        var newLinkUrl = linkUrlInput.value.trim();
+        saveBtn.disabled = true;
+        setStatus(statusEl, 'Saving…', false);
+        callApi_('adminSaveCandidate', ballotId, index, newName, newDetails, newLinkText, newLinkUrl).then(function (result) {
+          saveBtn.disabled = false;
+          candidate.name = result.name;
+          candidate.details = result.details;
+          candidate.linkText = result.linkText;
+          candidate.linkUrl = result.linkUrl;
+          text.textContent = candidate.name;
+          details.textContent = candidate.details || 'No details yet.';
+          details.className = 'topic-info-content' + (candidate.details ? '' : ' empty');
+          editBtn.setAttribute('aria-label', 'Edit ' + candidate.name);
+          showDisplay();
+        }, function (err) {
+          saveBtn.disabled = false;
+          setStatus(statusEl, 'Could not save: ' + err.message, true);
+        });
+      });
+
+      return li;
+    }
+
+    var addCandidateBtn = document.getElementById('addCandidateBtn');
+    var addCandidatePanel = document.getElementById('addCandidatePanel');
+    var newCandidateNameInput = document.getElementById('newCandidateNameInput');
+    var newCandidateDetailsInput = document.getElementById('newCandidateDetailsInput');
+    var newCandidateLinkTextInput = document.getElementById('newCandidateLinkTextInput');
+    var newCandidateLinkUrlInput = document.getElementById('newCandidateLinkUrlInput');
+    var addCandidateSaveBtn = document.getElementById('addCandidateSaveBtn');
+    var addCandidateCancelBtn = document.getElementById('addCandidateCancelBtn');
+    var addCandidateStatus = document.getElementById('addCandidateStatus');
+
+    function closeAddCandidatePanel() {
+      addCandidatePanel.classList.add('hidden');
+      addCandidateBtn.hidden = false;
+    }
+
+    addCandidateBtn.addEventListener('click', function () {
+      newCandidateNameInput.value = '';
+      newCandidateDetailsInput.value = '';
+      newCandidateLinkTextInput.value = '';
+      newCandidateLinkUrlInput.value = '';
+      setStatus(addCandidateStatus, '', false);
+      addCandidatePanel.classList.remove('hidden');
+      addCandidateBtn.hidden = true;
+    });
+
+    addCandidateCancelBtn.addEventListener('click', closeAddCandidatePanel);
+
+    addCandidateSaveBtn.addEventListener('click', function () {
+      var name = newCandidateNameInput.value.trim();
+      if (!name) {
+        setStatus(addCandidateStatus, 'Name cannot be empty.', true);
+        return;
+      }
+      var details = newCandidateDetailsInput.value.trim();
+      var linkText = newCandidateLinkTextInput.value.trim();
+      var linkUrl = newCandidateLinkUrlInput.value.trim();
+      addCandidateSaveBtn.disabled = true;
+      setStatus(addCandidateStatus, 'Saving…', false);
+      callApi_('adminAddCandidate', ballotId, name, details, linkText, linkUrl).then(function () {
+        addCandidateSaveBtn.disabled = false;
+        fieldData.candidates.push({ name: name, details: details, linkText: linkText, linkUrl: linkUrl });
+        renderCandidates(fieldData.candidates);
+        closeAddCandidatePanel();
+      }, function (err) {
+        addCandidateSaveBtn.disabled = false;
+        setStatus(addCandidateStatus, 'Could not add: ' + err.message, true);
+      });
+    });
+
+    var addSettingsDisplay = document.getElementById('addSettingsDisplay');
+    var addInstructionsDisplay = document.getElementById('addInstructionsDisplay');
+    var addSettingsEditBtn = document.getElementById('addSettingsEditBtn');
+    var addSettingsPanel = document.getElementById('addSettingsPanel');
+    var acceptNewInput = document.getElementById('acceptNewInput');
+    var addInstructionsInput = document.getElementById('addInstructionsInput');
+    var addSettingsSaveBtn = document.getElementById('addSettingsSaveBtn');
+    var addSettingsCancelBtn = document.getElementById('addSettingsCancelBtn');
+    var addSettingsStatus = document.getElementById('addSettingsStatus');
+
+    function renderAddSettingsDisplay() {
+      addSettingsDisplay.textContent = fieldData.acceptNew
+        ? 'On — respondents can add their own candidate.'
+        : 'Off — respondents cannot add candidates.';
+      addInstructionsDisplay.textContent = fieldData.addInstructions
+        ? 'Instructions shown to respondents: "' + fieldData.addInstructions + '"'
+        : '';
+      addInstructionsDisplay.hidden = !fieldData.addInstructions;
+      addNewButtonPreview.hidden = !fieldData.acceptNew;
+    }
+
+    addSettingsEditBtn.addEventListener('click', function () {
+      acceptNewInput.checked = !!fieldData.acceptNew;
+      addInstructionsInput.value = fieldData.addInstructions || '';
+      setStatus(addSettingsStatus, '', false);
+      addSettingsPanel.classList.remove('hidden');
+    });
+
+    addSettingsCancelBtn.addEventListener('click', function () { addSettingsPanel.classList.add('hidden'); });
+
+    addSettingsSaveBtn.addEventListener('click', function () {
+      var accept = acceptNewInput.checked;
+      var instructions = addInstructionsInput.value.trim();
+      addSettingsSaveBtn.disabled = true;
+      setStatus(addSettingsStatus, 'Saving…', false);
+      callApi_('adminSaveAddSettings', ballotId, accept, instructions).then(function () {
+        addSettingsSaveBtn.disabled = false;
+        fieldData.acceptNew = accept;
+        fieldData.addInstructions = instructions;
+        renderAddSettingsDisplay();
+        addSettingsPanel.classList.add('hidden');
+        setStatus(addSettingsStatus, '', false);
+      }, function (err) {
+        addSettingsSaveBtn.disabled = false;
+        setStatus(addSettingsStatus, 'Could not save: ' + err.message, true);
+      });
+    });
+
+    wireSimpleField('title', 'adminSaveTitle');
+    wireSimpleField('description', 'adminSaveDescription');
+    wireSimpleField('instructions', 'adminSaveInstructions');
+    wireSimpleField('footer', 'adminSaveFooter');
+    wireSimpleField('contact', 'adminSaveContact');
+    wireSimpleField('adminOnlyNotes', 'adminSaveAdminOnlyNotes');
+
+    window.initEditView_ = function (id, justCreated) {
+      document.getElementById('view-edit').classList.remove('hidden');
+      createdBanner.classList.toggle('hidden', !justCreated);
+      callApi_('getAdminEditData', id).then(function (data) {
+        if (!data || data.error) {
+          loadStatus.textContent = 'No ballot found for id "' + id + '".';
+          return;
+        }
+        fieldData = data;
+        titleDisplay.textContent = data.title;
+        descriptionDisplay.textContent = data.description;
+        instructionsDisplay.textContent = data.instructions;
+        footerDisplay.textContent = data.footer;
+        contactDisplay.textContent = data.contact;
+        adminOnlyNotesDisplay.textContent = data.adminOnlyNotes;
+        renderAddSettingsDisplay();
+        renderCandidates(data.candidates);
+        setAppVersionFooter_(data.appVersion, data.appDeployTarget);
+        loadStatus.classList.add('hidden');
+        editRoot.classList.remove('hidden');
+      }, function (err) {
+        loadStatus.textContent = 'Could not load ballot: ' + err.message;
+      });
+    };
+  })();
+
+  // ======================================================================
+  // ANALYZE VIEW — ports webAdmin.js's _formatFinishOrder_/_buildResultsRows_ table shape
+  // and onOpen.js's generateCondorcetResultsHtml/formatCandidateSummaryHtml/
+  // formatRankedCandidates client-side, since doGet no longer renders that HTML server-side.
+  // ======================================================================
+  (function () {
+    var analyzeStatus = document.getElementById('analyzeStatus');
+    var analyzeRoot = document.getElementById('analyzeRoot');
+
+    function formatFinishOrder(order) {
+      if (!order || !order.length) return '';
+      return order.map(function (entry) {
+        var label = entry.names.length > 1 ? '(tie) ' + entry.names.join(' / ') : entry.names[0];
+        return entry.place + '. ' + escapeHtml_(label);
+      }).join('&nbsp;&nbsp;');
+    }
+
+    function summaryTable(summary) {
+      var html = '<table class="results-table"><tr>';
+      summary[0].forEach(function (h) { html += '<th>' + escapeHtml_(h) + '</th>'; });
+      html += '</tr>';
+      for (var i = 1; i < summary.length; i++) {
+        html += '<tr>';
+        summary[i].forEach(function (cell, j) {
+          html += '<td' + (j === 0 ? '' : ' class="center"') + '>' + escapeHtml_(cell) + '</td>';
+        });
+        html += '</tr>';
+      }
+      return html + '</table>';
+    }
+
+    function rankedCandidatesTable(rankedCandidates) {
+      var html = '<table class="results-table"><tr><th>Rank</th><th>Candidate</th><th>Score</th></tr>';
+      rankedCandidates.forEach(function (rc, i) {
+        html += '<tr><td class="center">' + (i + 1) + '</td><td>' + escapeHtml_(rc.candidate) +
+          '</td><td class="center">' + escapeHtml_(rc.score) + '</td></tr>';
+      });
+      return html + '</table>';
+    }
+
+    function condorcetMethodHtml(label, result, finishOrder, scoreExplanation) {
+      var html = '<h3>' + escapeHtml_(label) + '</h3>';
+      if (result.winner) {
+        html += '<p>' + escapeHtml_(label) + ' winner: <strong>' + escapeHtml_(result.winner) + '</strong></p>';
+      } else if (result.tie && result.tie.length) {
+        html += '<p>No ' + escapeHtml_(label) + ' winner (tie between: <strong>' + escapeHtml_(result.tie.join(', ')) + '</strong>).</p>';
+      } else {
+        html += '<p>No ' + escapeHtml_(label) + ' winner (cycle detected).</p>';
+      }
+      if (finishOrder) {
+        html += '<p><strong>Finish order:</strong> ' + formatFinishOrder(finishOrder) + '</p>';
+      }
+      html += '<p><strong>Heuristic display score (not the finish order):</strong></p>';
+      html += '<p style="font-size:0.9em;margin:5px 0;"><em>' + escapeHtml_(scoreExplanation) + '</em></p>';
+      html += rankedCandidatesTable(result.rankedCandidates);
+      return html;
+    }
+
+    window.initAnalyzeView_ = function (id) {
+      document.getElementById('view-analyze').classList.remove('hidden');
+      callApi_('getAdminAnalysisData_', id).then(function (data) {
+        analyzeStatus.classList.add('hidden');
+        if (!data || data.error) {
+          analyzeStatus.textContent = data && data.error === 'no_ballot'
+            ? 'No ballot found for id "' + id + '".'
+            : (data ? data.error : 'Could not load analysis.');
+          analyzeStatus.classList.remove('hidden');
+          return;
+        }
+
+        var html = '<h1>' + escapeHtml_(id) + ' — Analysis Results</h1>';
+        html += '<p class="method-note"><em>Method note: every "Finish order" below (RCV and each ' +
+          'Condorcet method) is computed by winner-removal — find the winner, remove them from ' +
+          'the field, and re-run the method on who’s left, repeating for each place. It is not ' +
+          'derived from a single run’s elimination order or ranked-candidates score, both of ' +
+          'which can disagree with a re-run (see rcballot-14e).</em></p>';
+
+        html += '<h2>Ranked Choice Voting</h2>';
+        if (data.rcv.winner) {
+          html += '<p><b>Winner: ' + escapeHtml_(data.rcv.winner) + '</b></p>';
+        } else if (data.rcv.tie) {
+          html += '<p><b>Tie after all eliminations:</b> ' + escapeHtml_(data.rcv.tie.join(', ')) + '</p>';
+        }
+        html += '<p><b>Finish order</b> (computed by removing each round’s winner and ' +
+          're-running RCV on who’s left, not the final round’s runner-up): ' +
+          formatFinishOrder(data.rcvFinishOrder) + '</p>';
+        html += summaryTable(data.rcv.summary);
+
+        html += condorcetMethodHtml('Basic Condorcet', data.condorcet.condorcet, data.finishOrders.condorcet,
+          'Score = Number of head-to-head victories');
+        html += condorcetMethodHtml('Schulze Method', data.condorcet.schulze, data.finishOrders.schulze,
+          'Score = Sum of strongest path strengths over all opponents');
+        html += condorcetMethodHtml('Ranked Pairs (Tideman)', data.condorcet.rankedPairs, data.finishOrders.rankedPairs,
+          'Score = Net locked edges (outgoing minus incoming)');
+        html += condorcetMethodHtml('Minimax (Simpson)', data.condorcet.minimax, data.finishOrders.minimax,
+          'Score = Worst pairwise defeat (lower is better)');
+
+        html += '<p><em>Results have been written to the Results section of the ' +
+          escapeHtml_(data.sheetName) + ' sheet.</em></p>';
+
+        analyzeRoot.innerHTML = html;
+        analyzeRoot.classList.remove('hidden');
+      }, function (err) {
+        analyzeStatus.textContent = 'Could not load analysis: ' + err.message;
+      });
+    };
+  })();
+
+  // ======================================================================
+  // BALLOT VIEW
+  // ======================================================================
+  (function () {
+    var currentName = '';
+    var acceptNew = true;
+    var itemDetailsByName = {};
+    var ballotDescription = '';
+    var ballotInstructions = '';
+    var _BALLOT_NAME_STORAGE_KEY_PREFIX = 'rcvBallotName:';
+
+    function loadSavedName() {
+      try { return localStorage.getItem(_BALLOT_NAME_STORAGE_KEY_PREFIX + ballotId) || ''; } catch (err) { return ''; }
+    }
+    function saveName(name) {
+      try { localStorage.setItem(_BALLOT_NAME_STORAGE_KEY_PREFIX + ballotId, name); } catch (err) {}
+    }
+
+    var pageTitle = document.getElementById('pageTitle');
+    var pageDescription = document.getElementById('pageDescription');
+    var pageFooter = document.getElementById('pageFooter');
+    var pageContact = document.getElementById('pageContact');
+    var stepNoBallot = document.getElementById('step-noBallot');
+    var stepName = document.getElementById('step-name');
+    var stepRank = document.getElementById('step-rank');
+    var stepDone = document.getElementById('step-done');
+    var nameInput = document.getElementById('nameInput');
+    var startBtn = document.getElementById('startBtn');
+    var status = document.getElementById('status');
+    var status2 = document.getElementById('status2');
+    var topicList = document.getElementById('topicList');
+    var addSection = document.getElementById('addSection');
+    var addInstructionsText = document.getElementById('addInstructionsText');
+    var addNewBtn = document.getElementById('addNewBtn');
+    var addPanel = document.getElementById('addPanel');
+    var newItemInput = document.getElementById('newItemInput');
+    var newItemDetailsInput = document.getElementById('newItemDetailsInput');
+    var feedbackToggleBtn = document.getElementById('feedbackToggleBtn');
+    var feedbackPanel = document.getElementById('feedbackPanel');
+    var commentInput = document.getElementById('commentInput');
+    var addBtn = document.getElementById('addBtn');
+    var addCancelBtn = document.getElementById('addCancelBtn');
+    var submitBtn = document.getElementById('submitBtn');
+    var backBtn = document.getElementById('backBtn');
+    var editAgainBtn = document.getElementById('editAgainBtn');
+    var doneName = document.getElementById('doneName');
+
+    function showStep(el) {
+      [stepNoBallot, stepName, stepRank, stepDone].forEach(function (s) { s.classList.add('hidden'); });
+      el.classList.remove('hidden');
+      pageDescription.textContent = (el === stepRank) ? ballotInstructions : ballotDescription;
+    }
+
+    function setStatus(el, msg, isError) {
+      el.textContent = msg || '';
+      el.className = isError ? 'error' : '';
+    }
+
+    function renderTopics(topics) {
+      topicList.innerHTML = '';
+      topics.forEach(function (topic) { topicList.appendChild(buildItem(topic)); });
+    }
+
+    function buildItem(topic) {
+      var li = document.createElement('li');
+      li.dataset.topic = topic;
+
+      var row = document.createElement('div');
+      row.className = 'topic-row';
+
+      var handle = document.createElement('span');
+      handle.className = 'handle';
+      handle.textContent = '☰';
+
+      var text = document.createElement('span');
+      text.className = 'topic-text';
+      text.textContent = topic;
+
+      row.appendChild(handle);
+      row.appendChild(text);
+
+      var info = itemDetailsByName[topic];
+      if (info && (info.details || info.linkUrl)) {
+        text.classList.add('has-details');
+
+        var infoContent = document.createElement('div');
+        infoContent.className = 'topic-info-content';
+        if (info.details) infoContent.appendChild(document.createTextNode(info.details));
+        infoContent.hidden = true;
+
+        if (info.linkUrl) {
+          var infoLink = document.createElement('a');
+          infoLink.className = 'topic-info-link';
+          infoLink.href = info.linkUrl;
+          infoLink.target = '_blank';
+          infoLink.rel = 'noopener noreferrer';
+          infoLink.textContent = info.linkText || info.linkUrl;
+          infoContent.appendChild(infoLink);
+        }
+
+        var infoBtn = document.createElement('button');
+        infoBtn.type = 'button';
+        infoBtn.className = 'info-toggle';
+        infoBtn.textContent = 'ℹ️';
+        infoBtn.setAttribute('aria-label', 'Show details for ' + topic);
+        infoBtn.setAttribute('aria-expanded', 'false');
+
+        var toggleInfo = function () {
+          infoContent.hidden = !infoContent.hidden;
+          infoBtn.setAttribute('aria-expanded', String(!infoContent.hidden));
+        };
+        infoBtn.addEventListener('click', toggleInfo);
+        text.addEventListener('click', toggleInfo);
+
+        row.appendChild(infoBtn);
+        li.appendChild(row);
+        li.appendChild(infoContent);
+      } else {
+        li.appendChild(row);
+      }
+
+      attachDrag(li, handle);
+      return li;
+    }
+
+    function attachDrag(li, handle) {
+      var startY = 0;
+
+      function onMove(e) {
+        var clientY = e.clientY;
+        var dy = clientY - startY;
+        li.style.transform = 'translateY(' + dy + 'px)';
+
+        var items = Array.prototype.slice.call(topicList.children);
+        var draggedIndex = items.indexOf(li);
+
+        for (var i = 0; i < items.length; i++) {
+          var sib = items[i];
+          if (sib === li) continue;
+          var rect = sib.getBoundingClientRect();
+          var sibCenter = rect.top + rect.height / 2;
+          var sibIndex = items.indexOf(sib);
+
+          if (clientY < sibCenter && sibIndex < draggedIndex) {
+            topicList.insertBefore(li, sib);
+            startY = clientY;
+            li.style.transform = 'translateY(0px)';
+            return;
+          }
+          if (clientY > sibCenter && sibIndex > draggedIndex) {
+            topicList.insertBefore(li, sib.nextSibling);
+            startY = clientY;
+            li.style.transform = 'translateY(0px)';
+            return;
+          }
+        }
+      }
+
+      function onUp(e) {
+        li.style.transform = '';
+        li.classList.remove('dragging');
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        try { handle.releasePointerCapture(e.pointerId); } catch (err) {}
+        autosaveRanking();
+      }
+
+      handle.addEventListener('pointerdown', function (e) {
+        startY = e.clientY;
+        li.classList.add('dragging');
+        try { handle.setPointerCapture(e.pointerId); } catch (err) {}
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+        e.preventDefault();
+      });
+    }
+
+    function applyBranding(config) {
+      pageTitle.textContent = config.title || 'RankChoiceVoting Ballot';
+      document.title = config.title || 'RankChoiceVoting Ballot';
+      ballotDescription = config.description || '';
+      ballotInstructions = config.instructions || '';
+      pageFooter.textContent = config.footer || '';
+      pageContact.textContent = config.contact ? 'Contact: ' + config.contact : '';
+      setAppVersionFooter_(config.appVersion, config.appDeployTarget);
+      itemDetailsByName = config.itemDetails || {};
+      acceptNew = !!config.acceptNew;
+      addSection.style.display = acceptNew ? 'block' : 'none';
+      addInstructionsText.textContent = config.addInstructions || '';
+      addInstructionsText.style.display = config.addInstructions ? 'block' : 'none';
+    }
+
+    function loadBallot(name) {
+      setStatus(status, 'Loading…', false);
+      startBtn.disabled = true;
+      callApi_('getBallotForName', ballotId, name).then(function (result) {
+        startBtn.disabled = false;
+        setStatus(status, '', false);
+        applyBranding(result);
+        currentName = name;
+        saveName(name);
+        renderTopics(result.candidates);
+        commentInput.value = result.comment || '';
+        if (commentInput.value) openFeedbackPanel(); else closeFeedbackPanel();
+        showStep(stepRank);
+      }, function (err) {
+        startBtn.disabled = false;
+        setStatus(status, 'Could not load ballot: ' + err.message, true);
+      });
+    }
+
+    startBtn.addEventListener('click', function () {
+      var name = nameInput.value.trim();
+      if (!name) {
+        setStatus(status, 'Please enter your name.', true);
+        return;
+      }
+      loadBallot(name);
+    });
+
+    nameInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') startBtn.click(); });
+
+    function openFeedbackPanel() {
+      feedbackPanel.classList.remove('hidden');
+      feedbackToggleBtn.hidden = true;
+    }
+    function closeFeedbackPanel() {
+      feedbackPanel.classList.add('hidden');
+      feedbackToggleBtn.hidden = false;
+    }
+    feedbackToggleBtn.addEventListener('click', openFeedbackPanel);
+
+    function openAddPanel() {
+      addPanel.classList.remove('hidden');
+      addNewBtn.hidden = true;
+      newItemInput.focus();
+    }
+    function closeAddPanel() {
+      newItemInput.value = '';
+      newItemDetailsInput.value = '';
+      addPanel.classList.add('hidden');
+      addNewBtn.hidden = false;
+    }
+
+    function addTopic() {
+      var phrase = newItemInput.value.trim();
+      if (!phrase) return;
+      var details = newItemDetailsInput.value.trim();
+      addBtn.disabled = true;
+      callApi_('addBallotTopic', ballotId, phrase, details).then(function (result) {
+        addBtn.disabled = false;
+        if (details) itemDetailsByName[result.candidate] = details;
+        topicList.insertBefore(buildItem(result.candidate), topicList.firstChild);
+        closeAddPanel();
+      }, function (err) {
+        addBtn.disabled = false;
+        setStatus(status2, 'Could not add item: ' + err.message, true);
+      });
+    }
+
+    addNewBtn.addEventListener('click', openAddPanel);
+    addCancelBtn.addEventListener('click', closeAddPanel);
+    addBtn.addEventListener('click', addTopic);
+    newItemInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); addTopic(); }
+    });
+
+    function getOrderedTopics() {
+      return Array.prototype.map.call(topicList.children, function (li) { return li.dataset.topic; });
+    }
+
+    function autosaveRanking() {
+      if (!currentName) return;
+      setStatus(status2, 'Saving…', false);
+      callApi_('submitBallotRanking', ballotId, currentName, getOrderedTopics(), commentInput.value.trim())
+        .then(function () { setStatus(status2, 'Saved', false); },
+          function (err) { setStatus(status2, 'Could not save: ' + err.message, true); });
+    }
+
+    submitBtn.addEventListener('click', function () {
+      submitBtn.disabled = true;
+      setStatus(status2, 'Saving…', false);
+      callApi_('submitBallotRanking', ballotId, currentName, getOrderedTopics(), commentInput.value.trim()).then(function () {
+        submitBtn.disabled = false;
+        setStatus(status2, '', false);
+        doneName.textContent = currentName;
+        showStep(stepDone);
+      }, function (err) {
+        submitBtn.disabled = false;
+        setStatus(status2, 'Could not save: ' + err.message, true);
+      });
+    });
+
+    backBtn.addEventListener('click', function () { showStep(stepName); });
+    editAgainBtn.addEventListener('click', function () { loadBallot(currentName); });
+
+    window.initBallotView_ = function (id) {
+      document.getElementById('view-ballot').classList.remove('hidden');
+      if (!id) {
+        showStep(stepNoBallot);
+        return;
+      }
+      callApi_('getBallotConfig', id).then(function (config) {
+        if (!config || config.error) {
+          showStep(stepNoBallot);
+          return;
+        }
+        applyBranding(config);
+        nameInput.value = loadSavedName();
+        showStep(stepName);
+      }, function () { showStep(stepNoBallot); });
+    };
+  })();
+
+  // ======================================================================
+  // ROUTER — cmd/action/id read from the URL once, at the top of this file.
+  // ======================================================================
+  if (cmd === 'ballot') {
+    initBallotView_(ballotId);
+  } else if (action === 'edit' || action === 'create') {
+    initEditView_(ballotId, action === 'create');
+  } else if (action === 'analyze') {
+    initAnalyzeView_(ballotId);
+  } else {
+    initListView_();
+  }
+</script>
+</body>
+</html>

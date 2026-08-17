@@ -15,19 +15,26 @@ function onOpen() {
  */
 function showAbout() {
   var url = _getWebAppUrl_();
+  // The admin/ballot UI lives on the static front end now (static-pages/src/index.html,
+  // published by tools/publish-static-pages.js) — user-facing links point there directly
+  // rather than at the GAS exec URL, which now only serves as a one-tap redirect to it (see
+  // ApiBridge.js's _renderStaticRedirect_). `url` above is still shown separately below as the
+  // backend URL, which is genuinely useful diagnostic info, just not where you want to click.
+  var staticBase = (typeof _staticPagesBaseUrl_ === 'function') ? _staticPagesBaseUrl_() : '';
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var ballotIds = (typeof listBallotIds_ === 'function') ? listBallotIds_(ss) : [];
 
   var ballotLinksHtml;
-  if (!url) {
-    ballotLinksHtml = '<p><em>WEBAPP_URL is not set yet — deploy this project as a web app ' +
-      '(tools/manage-deployments.js sets it automatically after a PROD deploy).</em></p>';
+  if (!staticBase) {
+    ballotLinksHtml = '<p><em>Static hosting is not configured for this deployment ' +
+      '(APP_DEPLOY_TARGET="' + APP_DEPLOY_TARGET + '") — deploy this project ' +
+      '(tools/manage-deployments.js publishes the static pages automatically).</em></p>';
   } else if (!ballotIds.length) {
     ballotLinksHtml = '<p><em>No ballots yet — use the admin page to create one.</em></p>';
   } else {
     ballotLinksHtml = '<ul style="padding-left:18px;">' + ballotIds.map(function (id) {
-      var ballotUrl = url + '?cmd=ballot&id=' + encodeURIComponent(id);
-      var editUrl = url + '?cmd=admin&action=edit&id=' + encodeURIComponent(id);
+      var ballotUrl = staticBase + '?cmd=ballot&id=' + encodeURIComponent(id);
+      var editUrl = staticBase + '?cmd=admin&action=edit&id=' + encodeURIComponent(id);
       return '<li><b>' + id + '</b> — ' +
         '<a href="' + ballotUrl + '" target="_blank">view</a> | ' +
         '<a href="' + editUrl + '" target="_blank">edit</a></li>';
@@ -51,9 +58,9 @@ function showAbout() {
     '<p><span class="label">Author:</span> ' + APP_AUTHOR + '</p>' +
     '<p><span class="label">Contact:</span> <a href="mailto:' + APP_CONTACT + '">' + APP_CONTACT + '</a></p>' +
     '<hr>' +
-    '<p><span class="label">Web app URL:</span></p>' +
+    '<p><span class="label">Web app URL (backend):</span></p>' +
     '<p class="code">' + (url || 'unknown') + '</p>' +
-    (url ? '<p><span class="label">Admin page:</span> <a href="' + url + '?cmd=admin" target="_blank">' + url + '?cmd=admin</a></p>' : '') +
+    (staticBase ? '<p><span class="label">Admin page:</span> <a href="' + staticBase + '?cmd=admin" target="_blank">' + staticBase + '?cmd=admin</a></p>' : '') +
     '<hr>' +
     '<p><span class="label">Ballots:</span></p>' +
     ballotLinksHtml
@@ -80,17 +87,24 @@ function _getWebAppUrl_() {
   }
 }
 
-// Show a dialog with a link to the ballot admin web page.
+/**
+ * Show a dialog with a link to the ballot admin page — the static front end
+ * (static-pages/src/index.html) directly, not the GAS exec URL (which now only redirects
+ * there — see ApiBridge.js's _renderStaticRedirect_). Linking straight to the static page
+ * skips that redirect hop for the one link people actually click from this menu.
+ */
 function showAdminPage() {
-  var url = _getWebAppUrl_();
+  var staticBase = (typeof _staticPagesBaseUrl_ === 'function') ? _staticPagesBaseUrl_() : '';
   var html;
-  if (!url) {
+  if (!staticBase) {
     html = HtmlService.createHtmlOutput(
-      '<p>WEBAPP_URL is not set yet. Deploy this project as a web app (see tools/manage-deployments.js), ' +
-      'which sets the WEBAPP_URL script property automatically after a PROD deploy.</p>'
+      '<p>Static hosting is not configured for this deployment (APP_DEPLOY_TARGET="' +
+      ((typeof APP_DEPLOY_TARGET !== 'undefined' && APP_DEPLOY_TARGET) || '') + '"). ' +
+      'Deploy this project (see tools/manage-deployments.js), which publishes the static admin ' +
+      'page automatically.</p>'
     ).setWidth(420).setHeight(160);
   } else {
-    var adminUrl = url + '?cmd=admin';
+    var adminUrl = staticBase + '?cmd=admin';
     html = HtmlService.createHtmlOutput(
       '<p>Ballot admin page: <a href="' + adminUrl + '" target="_blank">' + adminUrl + '</a></p>'
     ).setWidth(420).setHeight(150);

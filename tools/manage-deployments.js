@@ -275,6 +275,17 @@ function deploy(targetKey, options = {}) {
   } catch (err) {
     console.log(`ℹ️  ${label} admin secret already bootstrapped (or bootstrap failed) — continuing.`);
   }
+
+  // The static front end (static-pages/) shares this deploy's version/build counter
+  // (build-static-pages.js's versionStringFor) — publish it as part of the same deploy rather
+  // than as a separate step, so GAS and the static UI it serves never drift out of sync.
+  // --skip-bump because deploy() already bumped/reset the counter above; publish-static-pages.js
+  // just builds+publishes whatever package.json now says.
+  console.log(`\n📄 Publishing static pages (${targetKey})…\n`);
+  execSync(
+    `node ${path.join(__dirname, 'publish-static-pages.js')} --env ${targetKey} --skip-bump`,
+    { stdio: 'inherit', cwd: ROOT }
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────

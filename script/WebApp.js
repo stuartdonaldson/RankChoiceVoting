@@ -4,18 +4,24 @@
  * doGet/doPost router for the RankChoiceVoting web app. Modeled on F3Go30's
  * WebApp.js, trimmed to this project's needs.
  *
- *   (no cmd)               — home page: list all ballots, with links to view
- *                            results/edit each, plus a create-new-ballot form
- *                            (same content as ?cmd=admin — see webAdmin.js)
- *   ?cmd=ballot&id=<name>  — ballot page + RPCs (see webBallot.js)
- *   ?cmd=admin             — ballot list/create/edit/analyze (see webAdmin.js)
+ * The UI itself is a static front end (static-pages/src/index.html), published via GitHub
+ * Pages by tools/publish-static-pages.js and backed by this deployment's ?cmd=api JSON
+ * endpoint (see ApiBridge.js). GAS no longer renders any page HTML — see doGet below.
+ *
+ *   (no cmd), ?cmd=ballot, ?cmd=admin  — one-tap redirect to the static front end, forwarding
+ *                                        the query string as-is (ApiBridge.js's
+ *                                        _renderStaticRedirect_ / _staticPagesBaseUrl_)
+ *   doPost ?cmd=api                    — generic JSON-RPC bridge the static front end calls
+ *                                        for everything (list/create/edit/analyze a ballot,
+ *                                        vote) — see ApiBridge.js's handleApiPost_
  *
  * doPost ?cmd=admin dispatches a minimal, best-practice set of administrative/
  * diagnostic JSON actions (see handleAdminPost_ below), gated by
  * ADMIN_SHARED_SECRET once bootstrapped. tools/callWebapp.js is the CLI client
  * for this API; it is what the deploy pipeline and integration tests use to
  * stamp WEBAPP_URL, configure script properties (e.g. Axiom credentials), and
- * download/upload sheet data to verify state.
+ * download/upload sheet data to verify state. This is a separate, secret-gated dispatcher
+ * from ?cmd=api above (deploy tooling only, not the ballot/admin UI).
  *
  * Deployed as a Web app (Deploy > New deployment > Web app). The single active
  * named deployment per script project is updated by tools/manage-deployments.js.
@@ -38,16 +44,30 @@ function buildWebAppRequestLog_(e) {
   };
 }
 
+/**
+ * cmd=ballot and cmd=admin (or no cmd) no longer render HtmlService pages here — the UI has
+ * moved to the static front end (static-pages/src/index.html), published via GitHub Pages and
+ * backed by doPost ?cmd=api (ApiBridge.js). doGet now just hands off with a one-tap redirect
+ * (ApiBridge.js's _renderStaticRedirect_) so existing/shared/bookmarked links keep working.
+ * action=data/add/submit under cmd=ballot are the one exception — those are already
+ * JSON-shaped GET routes (pre-dating the static-pages migration) and are left reachable for
+ * back-compat with any direct/non-browser caller, even though the page itself no longer uses
+ * them (see webBallot.js's file header).
+ */
 function doGet(e) {
   return GasLogger.run('doGet', function () {
     GasLogger.log('doGet', buildWebAppRequestLog_(e));
     var cmd = (e && e.parameter && e.parameter.cmd) || '';
+    var action = (e && e.parameter && e.parameter.action) || '';
 
-    if (cmd === 'ballot') {
+    if (cmd === 'ballot' && action && action !== 'page') {
       return _handleBallot(e);
     }
+    if (cmd === 'ballot') {
+      return _renderStaticRedirect_(e && e.queryString, 'Taking you to the ballot…');
+    }
     if (cmd === 'admin' || !cmd) {
-      return _handleAdmin(e);
+      return _renderStaticRedirect_(e && e.queryString, 'Taking you to the ballot admin page…');
     }
 
     return HtmlService.createHtmlOutput(
@@ -64,6 +84,9 @@ function doPost(e) {
 
     if (cmd === 'admin') {
       return handleAdminPost_(e);
+    }
+    if (cmd === 'api') {
+      return handleApiPost_(e);
     }
 
     return jsonOutput_({ ok: false, error: 'unknown_cmd' });

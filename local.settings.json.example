@@ -14,5 +14,7 @@
   "sitAdminSecret":  "<SIT ADMIN_SHARED_SECRET — leave as empty string \"\" and let tools/callWebapp.js bootstrapSecret fill it in>",
   "prodAdminSecret": "<PROD ADMIN_SHARED_SECRET — leave as empty string \"\" and let tools/callWebapp.js bootstrapSecret fill it in>",
   "nuucAdminSecret": "<NUUC ADMIN_SHARED_SECRET — leave as empty string \"\" and let tools/callWebapp.js bootstrapSecret fill it in>",
-  "GAS_LOGGER_PARENT_FOLDER_ID": "<Drive folder ID or URL of the shared log root — set via the admin setScriptProperties action>"
+  "GAS_LOGGER_PARENT_FOLDER_ID": "<Drive folder ID or URL of the shared log root — set via the admin setScriptProperties action>",
+  "staticPagesRepoPath": "<local checkout path of the f3go30/static-pages repo (e.g. ../F3Static) — tools/publish-static-pages.js copies the SIT/PROD static build to ballot/{sit,prod}/ there and pushes>",
+  "nuucStaticPagesRepoPath": "<local checkout path of the nuuc-it/Static repo (e.g. ../Static) — tools/publish-static-pages.js copies the NUUC static build to pub/ballot/ there and pushes>"
 }

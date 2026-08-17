@@ -13,8 +13,15 @@
  * renders generic branding explaining that no ballot is available.
  *
  * Entry point: _handleBallot(e), wired from WebApp.js doGet (cmd === 'ballot').
- * All other functions here are either internal helpers or RPCs called from
- * webBallotPage.html via google.script.run.
+ * All other functions here are either internal helpers or RPCs.
+ *
+ * STATIC-PAGES MIGRATION: doGet no longer renders webBallotPage.html for a plain page request
+ * — cmd=ballot now redirects to the static front end (static-pages/src/index.html, see
+ * ApiBridge.js's _renderStaticRedirect_), which calls getBallotConfig/getBallotForName/
+ * addBallotTopic/submitBallotRanking below via doPost ?cmd=api (ApiBridge.js's whitelist)
+ * instead of google.script.run. The action=config/data/add/submit query-string JSON routes in
+ * _handleBallot below are kept working for back-compat (e.g. direct/test callers) but are no
+ * longer what the page itself uses.
  */
 
 /**
