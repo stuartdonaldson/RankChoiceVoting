@@ -7,14 +7,30 @@ const path = require('path');
 
 const { createFakeSpreadsheet, createFakeGasGlobals } = require('./fakeGas');
 
-/** Loads script/BallotModel.js into a fresh vm context wired to a fresh FakeSpreadsheet. */
+/**
+ * Loads script/BallotCache.js and script/BallotModel.js into one fresh vm context wired to a
+ * fresh FakeSpreadsheet — BallotModel.js's getBallotForRespondent_ calls BallotCache.js's cache
+ * helpers directly (same as they share one global namespace in the real GAS runtime), so both
+ * must be evaluated into the same sandbox for it to resolve. Each file's `module.exports` is
+ * captured and merged separately (rather than loaded via Node's require, which BallotModel.js
+ * itself guards against with its own `typeof module !== 'undefined'` check) since a second
+ * `module.exports = {...}` at file scope would otherwise clobber the first file's exports.
+ */
 function loadBallotModel() {
   const ss = createFakeSpreadsheet();
   const sandbox = Object.assign({ module: { exports: {} } }, createFakeGasGlobals(ss));
   vm.createContext(sandbox);
+
+  const cacheSrc = fs.readFileSync(path.join(__dirname, '..', 'script', 'BallotCache.js'), 'utf8');
+  vm.runInContext(cacheSrc, sandbox, { filename: 'BallotCache.js' });
+  const cacheExports = sandbox.module.exports;
+
+  sandbox.module = { exports: {} };
   const src = fs.readFileSync(path.join(__dirname, '..', 'script', 'BallotModel.js'), 'utf8');
   vm.runInContext(src, sandbox, { filename: 'BallotModel.js' });
-  return { SM: sandbox.module.exports, ss };
+  const modelExports = sandbox.module.exports;
+
+  return { SM: Object.assign({}, cacheExports, modelExports), ss };
 }
 
 function testCreateNewBallotCreatesSkeleton() {

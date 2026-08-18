@@ -236,11 +236,15 @@ function getAdminListData_() {
   var ids = listBallotIds_(ss);
   return ids.map(function (id) {
     var sheet = findBallotSheet_(ss, id);
-    var config = readBallotConfig_(sheet);
+    // Response counts/staleness are inherently dynamic (change on every submission), so
+    // those still read the live sheet — but title/notes come from the cache (BallotCache.js)
+    // when warm, sparing a couple of sheet reads per ballot card on every list-page load.
+    var cached = getCachedBallotData_(id, sheet);
+    var config = cached.config;
     return {
       id: id,
       title: config.Title || id,
-      candidateCount: readBallotCandidates_(sheet).length,
+      candidateCount: cached.candidates.length,
       responseCount: readBallotResponseRows_(sheet).length,
       uniqueRespondentCount: countUniqueBallotRespondents_(sheet),
       adminNotes: String(config['Admin-Only-Notes'] || '').trim(),
@@ -299,22 +303,14 @@ function getAdminAnalysisData_(id) {
  * @return {Object} or {error:'no_ballot'} if the id doesn't match a ballot sheet.
  */
 function getAdminEditData(id) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = findBallotSheet_(ss, id);
-  if (!sheet) return { error: 'no_ballot' };
+  // Served straight from the cache when warm — see BallotCache.js — so opening this
+  // ballot to edit it doesn't need to open the spreadsheet at all. A miss falls back to
+  // reading (and re-caching) the sheet directly, same content as before this cache existed.
+  var cached = getCachedBallotData_(id);
+  if (!cached) return { error: 'no_ballot' };
 
-  // Self-heals older sheets: adds the section-marker highlighting and the Candidates
-  // section (if missing) the first time an admin opens this ballot to edit it.
-  _highlightSectionMarkers_(sheet);
-
-  var config = readBallotConfig_(sheet);
-  var candidates = readBallotCandidates_(sheet);
-  var candidateRows = readBallotCandidateDetails_(sheet);
-  // Backfill any candidate that predates the Candidates table (or predates having its
-  // own row yet) so every candidate always has a name/details/link set to edit.
-  while (candidateRows.length < candidates.length) {
-    candidateRows.push({ name: candidates[candidateRows.length], details: '', linkText: '', linkUrl: '' });
-  }
+  var config = cached.config;
+  var candidateRows = cached.candidates;
 
   var baseUrl = _getWebAppUrl_();
   return {
@@ -345,6 +341,7 @@ function _adminWriteConfig_(id, updates) {
   var sheet = findBallotSheet_(ss, id);
   if (!sheet) throw new Error('No ballot found for id "' + id + '".');
   writeBallotConfig_(sheet, updates);
+  refreshBallotCache_(id, sheet); // keep the cache (BallotCache.js) in sync with this write
   return { ok: true };
 }
 

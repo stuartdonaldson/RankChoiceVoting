@@ -25,6 +25,10 @@ class FakeRange {
     this.numCols = numCols == null ? 1 : numCols;
   }
 
+  getSheet() {
+    return this.sheet;
+  }
+
   getValue() {
     return this.sheet._getCell(this.row, this.col);
   }

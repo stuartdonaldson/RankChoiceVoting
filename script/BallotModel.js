@@ -654,45 +654,33 @@ function addBallotCandidate_(sheet, phrase, details, linkText, linkUrl) {
  * @return {Object|null} null if the ballot id does not exist.
  */
 function getBallotForRespondent_(id, name) {
+  name = String(name || '').trim();
+
+  if (!name) {
+    // No respondent name means nothing below depends on the Responses section (no
+    // ranking to look up), so a cache hit lets this return without ever opening the
+    // spreadsheet — see BallotCache.js. This is the common landing-page-load path.
+    var cached = getCachedBallotData_(id);
+    if (!cached) return null;
+    return _buildRespondentBranding_(id, cached.config, cached.candidates);
+  }
+
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = findBallotSheet_(ss, id);
   if (!sheet) return null;
 
-  var config = readBallotConfig_(sheet);
-  var candidates = readBallotCandidates_(sheet);
-  name = String(name || '').trim();
+  // A name means this respondent's saved ranking (Responses section) is needed, which
+  // always requires the live sheet — read config/candidates fresh here too, rather than
+  // from cache, since readBallotCandidates_'s reconciliation against the Responses
+  // header must run against the real sheet for the rank-column alignment below to be
+  // trustworthy. refreshBallotCache_ also backfills any candidate that predates the
+  // Candidates table, and re-warms the cache from this same read for the next
+  // (nameless) load. `candidates` is name-only, in the same Responses-header-aligned
+  // order, for the rank lookup further down.
+  var freshCache = refreshBallotCache_(id, sheet);
+  var candidates = freshCache.candidates.map(function (it) { return it.name; });
 
-  // Keyed by name (not position) so it stays correct even though `candidates` below
-  // gets reordered per-respondent to match their saved ranking — a candidate with no
-  // Candidates-table entry (e.g. added by a respondent, who can't set details) simply
-  // has no key here, which the client treats as "no details to show," not an error.
-  // NOTE: the RPC field is still named `itemDetails` — it's an established part of
-  // the client contract (webBallotPage.html reads config.itemDetails), unrelated to
-  // the Items->Candidates section rename. Each entry is {details, linkText, linkUrl}
-  // rather than a bare string so the client can render the optional link alongside it.
-  var itemDetails = {};
-  readBallotCandidateDetails_(sheet).forEach(function (it) {
-    if (it.details || it.linkUrl) {
-      itemDetails[it.name] = { details: it.details || '', linkText: it.linkText || '', linkUrl: it.linkUrl || '' };
-    }
-  });
-
-  var result = {
-    id: id,
-    title: config.Title || '',
-    description: config.Description || '',
-    instructions: config.Instructions || '',
-    footer: config.Footer || '',
-    contact: config.Contact || '',
-    acceptNew: _ballotAcceptsNew_(config),
-    addInstructions: config['Add-Instructions'] || '',
-    candidates: candidates,
-    itemDetails: itemDetails,
-    comment: '',
-    appVersion: (typeof APP_VERSION !== 'undefined' && APP_VERSION) || '',
-    appDeployTarget: (typeof APP_DEPLOY_TARGET !== 'undefined' && APP_DEPLOY_TARGET) || ''
-  };
-  if (!name) return result;
+  var result = _buildRespondentBranding_(id, freshCache.config, freshCache.candidates);
 
   var rows = readBallotResponseRows_(sheet);
   var target = name.toLowerCase();
@@ -711,6 +699,51 @@ function getBallotForRespondent_(id, name) {
   result.candidates = withRank.map(function (r) { return r.candidate; });
   result.comment = existing.comment;
   return result;
+}
+
+/**
+ * Builds the branding/candidate portion of getBallotForRespondent_'s result (everything
+ * except a specific respondent's saved ranking/comment) from already-loaded config +
+ * candidate-detail rows, whether those came from the cache or a fresh sheet read.
+ *
+ * @param {string} id
+ * @param {Object} config as returned by readBallotConfig_
+ * @param {Array<{name:string, details:string, linkText:string, linkUrl:string}>} candidateRows
+ * @return {Object}
+ */
+function _buildRespondentBranding_(id, config, candidateRows) {
+  var candidates = candidateRows.map(function (it) { return it.name; });
+
+  // Keyed by name (not position) so it stays correct however `candidates` above ends up
+  // reordered per-respondent to match their saved ranking — a candidate with no
+  // Candidates-table entry (e.g. added by a respondent, who can't set details) simply
+  // has no key here, which the client treats as "no details to show," not an error.
+  // NOTE: the RPC field is still named `itemDetails` — it's an established part of the
+  // client contract (webBallotPage.html reads config.itemDetails), unrelated to the
+  // Items->Candidates section rename. Each entry is {details, linkText, linkUrl} rather
+  // than a bare string so the client can render the optional link alongside it.
+  var itemDetails = {};
+  candidateRows.forEach(function (it) {
+    if (it.details || it.linkUrl) {
+      itemDetails[it.name] = { details: it.details || '', linkText: it.linkText || '', linkUrl: it.linkUrl || '' };
+    }
+  });
+
+  return {
+    id: id,
+    title: config.Title || '',
+    description: config.Description || '',
+    instructions: config.Instructions || '',
+    footer: config.Footer || '',
+    contact: config.Contact || '',
+    acceptNew: _ballotAcceptsNew_(config),
+    addInstructions: config['Add-Instructions'] || '',
+    candidates: candidates,
+    itemDetails: itemDetails,
+    comment: '',
+    appVersion: (typeof APP_VERSION !== 'undefined' && APP_VERSION) || '',
+    appDeployTarget: (typeof APP_DEPLOY_TARGET !== 'undefined' && APP_DEPLOY_TARGET) || ''
+  };
 }
 
 /**
@@ -736,6 +769,7 @@ function addBallotCandidateForId_(id, phrase, details) {
     var config = readBallotConfig_(sheet);
     if (!_ballotAcceptsNew_(config)) throw new Error('This ballot is not accepting new items.');
     addBallotCandidate_(sheet, phrase, details);
+    refreshBallotCache_(id, sheet); // keep the cache (BallotCache.js) in sync with this write
     return { candidate: phrase };
   } finally {
     lock.releaseLock();
@@ -909,6 +943,7 @@ function saveBallotCandidatesForId_(id, candidateRows) {
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
     saveBallotCandidates_(sheet, candidateRows);
+    refreshBallotCache_(id, sheet); // keep the cache (BallotCache.js) in sync with this write
   } finally {
     lock.releaseLock();
   }
@@ -938,6 +973,7 @@ function addBallotCandidateForAdmin_(id, name, details, linkText, linkUrl) {
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
     addBallotCandidate_(sheet, name, details, linkText, linkUrl);
     _highlightSectionMarkers_(sheet);
+    refreshBallotCache_(id, sheet); // keep the cache (BallotCache.js) in sync with this write
     return { candidate: name };
   } finally {
     lock.releaseLock();

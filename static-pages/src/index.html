@@ -82,10 +82,8 @@
   .field-panel-actions button { flex: 1; }
   .field-status { min-height: 1.2em; margin-top: 8px; font-size: 0.9em; color: #5f6368; }
   .field-status.error { color: #d93025; }
-  .static-block { border-left: 3px dashed #bdc1c6; padding: 6px 0 6px 12px; margin: 14px 0; }
-  .static-label { display: block; font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.04em; color: #9aa0a6; font-weight: bold; margin-bottom: 4px; }
-  .static-block p, .static-block label { color: #80868b; }
-  .static-block button, .static-block input, .static-block textarea { opacity: 0.75; }
+  .fixed-block { margin: 14px 0; }
+  .field-name-tag { display: block; font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.04em; color: #9aa0a6; font-weight: bold; margin-bottom: 4px; }
   .admin-only-section { margin-top: 32px; padding: 14px; border: 1px dashed #f9ab00; border-radius: 8px; background: #fef7e0; }
   .admin-only-section .subsection-header { border-bottom: none; margin-top: 0; }
   .admin-only-badge { display: inline-block; background: #f9ab00; color: #202124; font-size: 0.65em; font-weight: bold; text-transform: uppercase; padding: 2px 6px; border-radius: 10px; margin-left: 8px; vertical-align: middle; }
@@ -149,13 +147,14 @@
     <div id="editRoot" class="hidden">
       <div class="edit-instructions">
         <p><strong>Editing this ballot:</strong> below is the landing page immediately followed by the ballot page, laid out and styled exactly as respondents see them.</p>
-        <p>Fields with a pencil (✏️) are editable — tap it, make your change, and Save; it applies immediately, so there's nothing else to save. Text with a dashed border is fixed page copy shown for context only — it's already there, so there's no need to add it again.</p>
+        <p>A small label (like "TITLE") marks each editable field — tap its pencil (✏️), make your change, and Save; it applies immediately, so there's nothing else to save. Unlabeled text is fixed page copy, shown for context only — it's already there, so there's no need to add it again.</p>
         <p>When you're done, use "&larr; Back to ballot list" below.</p>
       </div>
 
       <p class="section-divider">Landing Page</p>
 
       <div class="field-block">
+        <span class="field-name-tag">Title</span>
         <div class="field-row">
           <h1 id="titleDisplay"></h1>
           <button type="button" class="pencil-btn" id="titleEditBtn" aria-label="Edit Title">✏️</button>
@@ -173,6 +172,7 @@
       </div>
 
       <div class="field-block">
+        <span class="field-name-tag">Description</span>
         <div class="field-row">
           <p class="sub" id="descriptionDisplay"></p>
           <button type="button" class="pencil-btn" id="descriptionEditBtn" aria-label="Edit Description">✏️</button>
@@ -189,8 +189,7 @@
         </div>
       </div>
 
-      <div class="static-block">
-        <span class="static-label">Fixed text — not editable</span>
+      <div class="fixed-block">
         <p class="sub">Enter your name to start or resume ranking.</p>
         <p class="sub">If you've already been here, your previous answers will be loaded so you can review or change them.</p>
         <label for="staticNameInput">Your name</label>
@@ -201,6 +200,7 @@
       <p class="section-divider">Ballot Page</p>
 
       <div class="field-block">
+        <span class="field-name-tag">Ballot Instructions</span>
         <div class="field-row">
           <p class="sub" id="instructionsDisplay"></p>
           <button type="button" class="pencil-btn" id="instructionsEditBtn" aria-label="Edit Ballot Instructions">✏️</button>
@@ -217,8 +217,7 @@
         </div>
       </div>
 
-      <div class="static-block">
-        <span class="static-label">Fixed text — not editable</span>
+      <div class="fixed-block">
         <p class="sub">Drag items to order them, most preferred on top.</p>
       </div>
 
@@ -245,8 +244,7 @@
         </div>
       </div>
 
-      <div class="static-block">
-        <span class="static-label">Fixed text — not editable</span>
+      <div class="fixed-block">
         <button type="button" disabled>Submit</button>
         <button type="button" class="secondary" disabled style="margin-top:8px;">Back</button>
       </div>
@@ -272,21 +270,20 @@
         </div>
       </div>
 
-      <div class="static-block" id="addNewButtonPreview">
-        <span class="static-label">Fixed text — not editable</span>
+      <div class="fixed-block" id="addNewButtonPreview">
         <button type="button" disabled>+ Add New</button>
       </div>
 
       <p class="subsection-header">Feedback</p>
 
-      <div class="static-block">
-        <span class="static-label">Fixed text — not editable — respondent-entered, so there's nothing to configure</span>
+      <div class="fixed-block">
         <button type="button" disabled>+ Add Feedback</button>
         <label for="staticFeedbackInput" style="margin-top:10px;">Feedback (optional)</label>
         <textarea id="staticFeedbackInput" rows="3" disabled placeholder="Any feedback you'd like to add?"></textarea>
       </div>
 
       <div class="field-block">
+        <span class="field-name-tag">Footer</span>
         <div class="field-row">
           <p id="footerDisplay"></p>
           <button type="button" class="pencil-btn" id="footerEditBtn" aria-label="Edit Footer">✏️</button>
@@ -304,6 +301,7 @@
       </div>
 
       <div class="field-block">
+        <span class="field-name-tag">Contact</span>
         <div class="field-row">
           <p id="contactDisplay"></p>
           <button type="button" class="pencil-btn" id="contactEditBtn" aria-label="Edit Contact">✏️</button>
