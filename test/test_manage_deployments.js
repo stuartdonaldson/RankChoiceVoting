@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { replaceConst, stampVersion, bumpPatchVersion_, bumpBuildNumber_, resetBuildNumber_ } = require('../tools/manage-deployments');
+const { replaceConst, stampVersion, bumpPatchVersion_, bumpBuildNumber_, resetBuildNumber_, printDeploySummary_, STATIC_ENTRY_BASE_URL } = require('../tools/manage-deployments');
 
 function withTempDir(fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rcv-deploy-test-'));
@@ -157,6 +157,41 @@ function testResetBuildNumberZeroesExistingCount() {
   });
 }
 
+function captureConsoleLog_(fn) {
+  const lines = [];
+  const original = console.log;
+  console.log = (...args) => lines.push(args.join(' '));
+  try {
+    fn();
+  } finally {
+    console.log = original;
+  }
+  return lines.join('\n');
+}
+
+function testPrintDeploySummaryIncludesAllFourLinks() {
+  const settings = { sitSheetId: 'SHEET123' };
+  const output = captureConsoleLog_(() => {
+    printDeploySummary_('sit', { version: '0.1.4.7', revision: '9', deploymentId: 'DEPLOY456', settings });
+  });
+
+  assert.ok(output.includes('v0.1.4.7'), 'prints the stamped version string');
+  assert.ok(output.includes('@9'), 'prints the deployment revision');
+  assert.ok(output.includes(STATIC_ENTRY_BASE_URL.SIT), 'prints the static entry point link');
+  assert.ok(output.includes('https://docs.google.com/spreadsheets/d/SHEET123/edit'), 'prints the spreadsheet link');
+  assert.ok(output.includes('https://script.google.com/macros/s/DEPLOY456/exec'), 'prints the webapp link');
+}
+
+function testPrintDeploySummaryHandlesMissingRevisionAndSheetId() {
+  const output = captureConsoleLog_(() => {
+    printDeploySummary_('nuuc', { version: '0.1.4', revision: null, deploymentId: 'DEPLOY789', settings: {} });
+  });
+
+  assert.ok(output.includes('could not be parsed'), 'falls back to an explanatory message for a missing revision');
+  assert.ok(output.includes('sheetId not set'), 'falls back to an explanatory message for a missing sheetId');
+  assert.ok(output.includes(STATIC_ENTRY_BASE_URL.NUUC), 'prints the NUUC static entry point link');
+}
+
 function run() {
   testReplaceConstAppendsWhenMissing();
   testStampVersionUpdatesAllFields();
@@ -167,6 +202,8 @@ function run() {
   testBumpBuildNumberIncrementsFromZeroWhenMissing();
   testBumpBuildNumberIsIdempotentAcrossCalls();
   testResetBuildNumberZeroesExistingCount();
+  testPrintDeploySummaryIncludesAllFourLinks();
+  testPrintDeploySummaryHandlesMissingRevisionAndSheetId();
   console.log('test_manage_deployments: all tests passed');
 }
 

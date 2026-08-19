@@ -4,7 +4,7 @@
  * test/test_build_static_pages.js.
  */
 const assert = require('assert');
-const { stampSource_, execUrlForEnv_, versionStringFor } = require('../tools/build-static-pages.js');
+const { stampSource_, execUrlForEnv_, versionStringFor, devContactFromVersionJs_ } = require('../tools/build-static-pages.js');
 
 let failures = 0;
 function test(name, fn) {
@@ -20,27 +20,82 @@ function test(name, fn) {
 
 console.log('build-static-pages.js');
 
-test('stampSource_ replaces both placeholders', () => {
-  const src = [
+// Minimal fixture carrying all five placeholders stampSource_ requires (version, webapp, dev
+// contact, theme attribute, theme fonts comment) — mirrors the real static-pages/src/index.html
+// shape closely enough to exercise the replacement logic without dragging in the whole file.
+function fixtureSrc_() {
+  return [
+    '<html data-theme="STATIC_THEME_">',
+    '<head><!-- STATIC_THEME_FONTS_ --></head>',
     '<script>',
     'var STATIC_BUILD_VERSION_ = null;',
     'var STATIC_WEBAPP_URL_ = null;',
+    'var STATIC_DEV_CONTACT_ = null;',
     '</script>',
+    '</html>',
   ].join('\n');
-  const out = stampSource_(src, { versionString: '0.1.4.2', webAppUrl: 'https://script.google.com/macros/s/ABC/exec' });
+}
+
+test('stampSource_ replaces all placeholders', () => {
+  const out = stampSource_(fixtureSrc_(), {
+    versionString: '0.1.4.2',
+    webAppUrl: 'https://script.google.com/macros/s/ABC/exec',
+    theme: 'f3',
+    devContact: 'dev@example.com',
+  });
   assert.ok(out.includes('var STATIC_BUILD_VERSION_ = "0.1.4.2";'));
   assert.ok(out.includes('var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/ABC/exec";'));
+  assert.ok(out.includes('var STATIC_DEV_CONTACT_ = "dev@example.com";'));
+  assert.ok(out.includes('data-theme="f3"'));
+  assert.ok(out.includes('fonts.googleapis.com'));
   assert.ok(!out.includes('= null;'));
+  assert.ok(!out.includes('STATIC_THEME_"'));
+});
+
+test('stampSource_ leaves data-theme empty and drops fonts when theme is falsy (legacy)', () => {
+  const out = stampSource_(fixtureSrc_(), {
+    versionString: '0.1.4',
+    webAppUrl: 'https://script.google.com/macros/s/ABC/exec',
+    theme: '',
+    devContact: '',
+  });
+  assert.ok(out.includes('data-theme=""'));
+  assert.ok(!out.includes('fonts.googleapis.com'));
+  assert.ok(out.includes('var STATIC_DEV_CONTACT_ = "";'));
 });
 
 test('stampSource_ throws when the version placeholder is missing', () => {
-  const src = 'var STATIC_WEBAPP_URL_ = null;';
-  assert.throws(() => stampSource_(src, { versionString: '1.0.0', webAppUrl: 'https://x/exec' }), /STATIC_BUILD_VERSION_/);
+  const src = fixtureSrc_().replace('var STATIC_BUILD_VERSION_ = null;', '');
+  assert.throws(() => stampSource_(src, { versionString: '1.0.0', webAppUrl: 'https://x/exec', theme: '' }), /STATIC_BUILD_VERSION_/);
 });
 
 test('stampSource_ throws when the webapp placeholder is missing', () => {
-  const src = 'var STATIC_BUILD_VERSION_ = null;';
-  assert.throws(() => stampSource_(src, { versionString: '1.0.0', webAppUrl: 'https://x/exec' }), /STATIC_WEBAPP_URL_/);
+  const src = fixtureSrc_().replace('var STATIC_WEBAPP_URL_ = null;', '');
+  assert.throws(() => stampSource_(src, { versionString: '1.0.0', webAppUrl: 'https://x/exec', theme: '' }), /STATIC_WEBAPP_URL_/);
+});
+
+test('stampSource_ throws when the dev contact placeholder is missing', () => {
+  const src = fixtureSrc_().replace('var STATIC_DEV_CONTACT_ = null;', '');
+  assert.throws(() => stampSource_(src, { versionString: '1.0.0', webAppUrl: 'https://x/exec', theme: '' }), /STATIC_DEV_CONTACT_/);
+});
+
+test('stampSource_ throws when the theme attribute placeholder is missing', () => {
+  const src = fixtureSrc_().replace('data-theme="STATIC_THEME_"', '');
+  assert.throws(() => stampSource_(src, { versionString: '1.0.0', webAppUrl: 'https://x/exec', theme: '' }), /STATIC_THEME_/);
+});
+
+test('stampSource_ throws when the theme fonts placeholder is missing', () => {
+  const src = fixtureSrc_().replace('<!-- STATIC_THEME_FONTS_ -->', '');
+  assert.throws(() => stampSource_(src, { versionString: '1.0.0', webAppUrl: 'https://x/exec', theme: '' }), /STATIC_THEME_FONTS_/);
+});
+
+test('devContactFromVersionJs_ extracts APP_CONTACT', () => {
+  const src = "const APP_VERSION = '0.1.0';\nconst APP_CONTACT       = 'stuart.donaldson@gmail.com';\n";
+  assert.strictEqual(devContactFromVersionJs_(src), 'stuart.donaldson@gmail.com');
+});
+
+test('devContactFromVersionJs_ returns empty string when APP_CONTACT is absent', () => {
+  assert.strictEqual(devContactFromVersionJs_("const APP_VERSION = '0.1.0';\n"), '');
 });
 
 test('versionStringFor: sit is version.build, prod/nuuc are bare version', () => {

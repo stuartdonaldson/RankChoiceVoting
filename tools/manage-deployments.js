@@ -64,9 +64,19 @@ function resolveClaspAuthPath_(settings, claspAuthKey) {
 // NUUC deploys under a separate Google account from SIT/PROD, hence its own claspAuthKey
 // (nuucAuth) instead of the shared claspAuth used by sit/prod.
 const TARGETS = {
-  sit:  { scriptIdKey: 'sitScriptId',  label: 'SIT',  emoji: '🧪', deploymentIdKey: 'sitDeploymentId',  claspAuthKey: 'claspAuth' },
-  prod: { scriptIdKey: 'prodScriptId', label: 'PROD', emoji: '🚀', deploymentIdKey: 'prodDeploymentId', claspAuthKey: 'claspAuth' },
-  nuuc: { scriptIdKey: 'nuucScriptId', label: 'NUUC', emoji: '⛪', deploymentIdKey: 'nuucDeploymentId', claspAuthKey: 'nuucAuth'  },
+  sit:  { scriptIdKey: 'sitScriptId',  label: 'SIT',  emoji: '🧪', deploymentIdKey: 'sitDeploymentId',  claspAuthKey: 'claspAuth', sheetIdKey: 'sitSheetId'  },
+  prod: { scriptIdKey: 'prodScriptId', label: 'PROD', emoji: '🚀', deploymentIdKey: 'prodDeploymentId', claspAuthKey: 'claspAuth', sheetIdKey: 'prodSheetId' },
+  nuuc: { scriptIdKey: 'nuucScriptId', label: 'NUUC', emoji: '⛪', deploymentIdKey: 'nuucDeploymentId', claspAuthKey: 'nuucAuth',  sheetIdKey: 'nuucSheetId' },
+};
+
+// Static front-end entry point per deploy label — must stay in sync with script/ApiBridge.js's
+// _staticPagesBaseUrl_ (that's the GAS-side copy of this same map, read at runtime from
+// APP_DEPLOY_TARGET; this one is the node-side copy, keyed the same way, used only to print a
+// clickable link at the end of a deploy).
+const STATIC_ENTRY_BASE_URL = {
+  SIT:  'https://f3go30.github.io/static-pages/ballot/sit/',
+  PROD: 'https://f3go30.github.io/static-pages/ballot/prod/',
+  NUUC: 'https://nuuc-it.github.io/Static/pub/ballot/',
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -244,10 +254,15 @@ function deploy(targetKey, options = {}) {
   console.log(`\n🔎 Looking up active deployment for ${label}…\n`);
   const deploymentId = findActiveDeploymentId_(claspEnv);
   console.log(`\n🌐 Updating named deployment ${deploymentId.slice(0, 12)}…\n`);
-  execSync(
+  // Captured (not 'inherit') so the revision number clasp reports (e.g. "...@8.") can be parsed
+  // out for the deploy summary below; still echoed to stdout so nothing is lost from the console.
+  const deployOutput = execSync(
     `clasp deploy --deploymentId ${deploymentId} --description "v${version} RCV"`,
-    { stdio: 'inherit', cwd: ROOT, env: claspEnv }
-  );
+    { cwd: ROOT, env: claspEnv }
+  ).toString();
+  process.stdout.write(deployOutput);
+  const revisionMatch = deployOutput.match(/@(\d+)\b/);
+  const revision = revisionMatch ? revisionMatch[1] : null;
   console.log(`\n✅ ${label} named deployment updated.`);
 
   saveDeploymentId_(targetKey, deploymentId);
@@ -286,6 +301,23 @@ function deploy(targetKey, options = {}) {
     `node ${path.join(__dirname, 'publish-static-pages.js')} --env ${targetKey} --skip-bump`,
     { stdio: 'inherit', cwd: ROOT }
   );
+
+  printDeploySummary_(targetKey, { version, revision, deploymentId, settings });
+}
+
+/** Prints the post-deploy summary: static entry point, spreadsheet, revision, and stamped version. */
+function printDeploySummary_(targetKey, { version, revision, deploymentId, settings }) {
+  const { label, emoji, sheetIdKey } = TARGETS[targetKey];
+  const sheetId = settings[sheetIdKey];
+  const staticUrl = STATIC_ENTRY_BASE_URL[label] || '(static hosting not configured for this target)';
+  const sheetUrl = sheetId ? `https://docs.google.com/spreadsheets/d/${sheetId}/edit` : '(sheetId not set in local.settings.json)';
+
+  console.log(`\n${emoji}  ${label} deploy summary`);
+  console.log(`   Version:     v${version}`);
+  console.log(`   Revision:    ${revision ? '@' + revision : '(could not be parsed from clasp deploy output)'}`);
+  console.log(`   Static page: ${staticUrl}`);
+  console.log(`   Spreadsheet: ${sheetUrl}`);
+  console.log(`   Webapp:      https://script.google.com/macros/s/${deploymentId}/exec\n`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -346,5 +378,7 @@ module.exports = {
   bumpPatchVersion_,
   bumpBuildNumber_,
   resetBuildNumber_,
+  printDeploySummary_,
   TARGETS,
+  STATIC_ENTRY_BASE_URL,
 };

@@ -131,9 +131,16 @@ function findBallotSheet_(ss, id) {
 function createBallotSheet_(ss, id) {
   var sheet = ss.insertSheet(getBallotSheetName_(id));
   sheet.getRange(1, 1, 8, 2).setValues([
+    // Description/Instructions default text folds in the "how to use this" guidance that the
+    // static ballot page (static-pages/src/index.html) used to render as fixed, uneditable copy
+    // below each field — every visible string on the page is now admin-editable, none of it
+    // hardcoded. The bracketed [TODO: ...] lead-in is the only part that actually needs
+    // replacing per-ballot; the rest is usable as-is. Existing ballots created before this
+    // change keep whatever Description/Instructions they already have — this only affects new
+    // ballots' starting text.
     ['Title', '[TODO: ballot title shown to respondents]'],
-    ['Description', '[TODO: intro text shown before respondents enter their name]'],
-    ['Instructions', '[TODO: instructions shown above the ranking list on the ballot page]'],
+    ['Description', '[TODO: describe what this ballot is about] Enter your name below to start or resume ranking — if you’ve already been here, your previous answers will be loaded so you can review or change them.'],
+    ['Instructions', '[TODO: any extra guidance for ranking these particular candidates] Drag items to reorder them, with your most preferred choice on top.'],
     ['Footer', '[TODO: footer text, e.g. deadline or sponsoring group]'],
     ['Contact', '[TODO: contact name/email for questions]'],
     ['Accept-New', 'TRUE'],

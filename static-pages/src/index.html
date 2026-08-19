@@ -1,32 +1,163 @@
 <!DOCTYPE html>
-<html>
+<html data-theme="STATIC_THEME_">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>RankChoiceVoting</title>
+<!-- STATIC_THEME_FONTS_ -->
 <style>
-  /* Combined styles for all four views (list/edit/analyze/ballot) — deliberately kept close to
-     the original GAS-rendered pages' look (webAdmin.js's _ADMIN_STYLE_, webAdminEditPage.html,
-     webBallotPage.html) so this reads as the same app, not a redesign. */
+  /* Combined styles for all four views (list/edit/analyze/ballot). Colors, fonts, and radii are
+     CSS custom properties so a per-environment "design language" can be swapped by toggling
+     data-theme on <html> (stamped by tools/build-static-pages.js) without duplicating markup or
+     rules. Three themes exist today:
+       - (no data-theme / "legacy") the original Material-ish look this app has always had.
+       - "f3" — the F3 tactical design language from docs/f3-dl-idea.md, used for sit/prod.
+       - "nuuc" — the Northlake UU design language from docs/nuuc-dl-idea.md, used for nuuc. */
+  :root {
+    --bg-page: #ffffff;
+    --text-primary: #202124;
+    --text-secondary: #5f6368;
+    --text-muted: #9aa0a6;
+    --text-body: #3c4043;
+    --border: #dadce0;
+    --surface-secondary: #f8f9fa;
+    --link: #1a73e8;
+    --accent: #1a73e8;
+    --accent-text: #ffffff;
+    --disabled-bg: #c7c7c7;
+    --success-bg: #e6f4ea;
+    --success-text: #188038;
+    --info-bg: #e8f0fe;
+    --info-text: #174ea6;
+    --error: #d93025;
+    --warning-border: #f9ab00;
+    --warning-bg: #fef7e0;
+    --warning-badge-bg: #f9ab00;
+    --warning-badge-text: #202124;
+    --dragging-shadow: rgba(0, 0, 0, 0.15);
+    --font-display: inherit;
+    --font-body: Arial, sans-serif;
+    --font-mono: 'Courier New', monospace;
+    --tracking-display: normal;
+    --transform-display: none;
+    --weight-display: bold; /* matches the browser UA default this theme has always relied on */
+    --radius-card: 8px;
+    --radius-button: 6px;
+    --radius-badge: 10px;
+  }
+  html[data-theme="f3"] {
+    /* F3 tactical design language (docs/f3-dl-idea.md §6 token reference, refined palette). */
+    --bg-page: #1B1E21;
+    --text-primary: #FFFFFF;
+    --text-secondary: #9DA5B4;
+    --text-muted: #9DA5B4;
+    --text-body: #C7CDD3;
+    --border: #383D43;
+    --surface-secondary: #24282D;
+    --link: #C83737;
+    --accent: #C83737;
+    --accent-text: #FFFFFF;
+    --disabled-bg: #4A5257;
+    --success-bg: rgba(46, 139, 87, 0.16);
+    --success-text: #2E8B57;
+    --info-bg: rgba(74, 134, 232, 0.16);
+    --info-text: #4A86E8;
+    --error: #C83737;
+    --warning-border: #E6A23C;
+    --warning-bg: rgba(230, 162, 60, 0.16);
+    --warning-badge-bg: #E6A23C;
+    --warning-badge-text: #1B1E21;
+    --dragging-shadow: rgba(0, 0, 0, 0.4);
+    /* The 3 Fs' accent colors (docs/f3-dl-idea.md §2) — not wired into any component yet since
+       this app has no per-F sections, but declared here so a future one can use them without
+       reaching for a raw hex. */
+    --f1-blue: #4A86E8;
+    --f2-amber: #E6A23C;
+    --f3-green: #2E8B57;
+    --font-display: 'Saira Stencil One', sans-serif;
+    --font-body: 'Inter', Arial, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Roboto Mono', monospace;
+    --tracking-display: 0.03em;
+    --transform-display: uppercase;
+    /* Saira Stencil One ships one weight (400) only — asking for bold makes the browser
+       synthesize a faux-bold by fattening the stencil glyphs, blurring out the cutouts into a
+       distracting fat sans-serif look (see h1/h2/h3 rule below). normal keeps the real stencil
+       face. */
+    --weight-display: normal;
+    --radius-card: 8px;
+    --radius-button: 4px;
+    --radius-badge: 12px;
+  }
+  html[data-theme="nuuc"] {
+    /* Northlake UU design language (docs/nuuc-dl-idea.md §2/§6) — warm Pacific Northwest
+       palette built on the Flaming Chalice identity: Parchment surfaces, Deep Chalice Teal
+       links/accents, Warm Gold for warnings/highlights, Evergreen/Lake Blue held in reserve
+       (see :root's --f1/--f2/--f3 comment above for the same "declared, not yet wired into a
+       component" pattern). */
+    --bg-page: #FBF9F5;
+    --text-primary: #2D3748;
+    --text-secondary: #5A6B7A;
+    --text-muted: #64748B;
+    --text-body: #3C4A57;
+    --border: #E2DDD3;
+    --surface-secondary: #F0F4F6;
+    --link: #007791;
+    --accent: #007791;
+    --accent-text: #ffffff;
+    --disabled-bg: #C7C7C7;
+    --success-bg: rgba(42, 77, 56, 0.1);
+    --success-text: #2A4D38;
+    --info-bg: #F0F4F6;
+    --info-text: #4B7B94;
+    --error: #C0392B;
+    --warning-border: #D97706;
+    --warning-bg: rgba(217, 119, 6, 0.12);
+    --warning-badge-bg: #D97706;
+    --warning-badge-text: #2D3748;
+    --dragging-shadow: rgba(0, 0, 0, 0.15);
+    /* Reserve colors from docs/nuuc-dl-idea.md §2 not wired into any component yet, following
+       the f3 theme's --f1/--f2/--f3 precedent above. */
+    --nuuc-evergreen: #2A4D38;
+    --nuuc-lake-blue: #4B7B94;
+    --font-display: 'Lora', Georgia, serif;
+    --font-body: 'Plus Jakarta Sans', Arial, sans-serif;
+    --font-mono: 'Plus Jakarta Sans', 'Courier New', monospace;
+    --tracking-display: normal;
+    --transform-display: none;
+    --weight-display: bold;
+    --radius-card: 12px;
+    --radius-button: 8px;
+    --radius-badge: 9999px;
+  }
   *, *::before, *::after { box-sizing: border-box; }
+  html { background: var(--bg-page); }
   body {
-    font-family: Arial, sans-serif;
+    font-family: var(--font-body);
     max-width: 640px;
     margin: 24px auto;
     padding: 0 16px;
-    color: #202124;
+    color: var(--text-primary);
+    background: var(--bg-page);
   }
+  /* font-weight is themed (--weight-display, see :root / html[data-theme="f3"] above) rather
+     than left to the browser UA default (bold) — the f3 theme's Black Ops One face has no bold
+     weight to give it, and asking anyway makes the browser synthesize a faux-bold that fattens
+     the stencil glyphs into a blurry, distracting look. font-synthesis: none is belt-and-braces
+     against that same faux-bold/faux-italic synthesis. */
+  h1, h2, h3 { font-family: var(--font-display); font-weight: var(--weight-display); font-synthesis: none; letter-spacing: var(--tracking-display); text-transform: var(--transform-display); }
   h1 { font-size: 1.4rem; }
-  a { color: #1a73e8; }
+  a { color: var(--link); }
   form { margin-bottom: 24px; }
   label { display: block; font-weight: bold; margin: 10px 0 6px; }
   input[type="text"], input[type="url"], textarea {
     width: 100%;
     font-size: 1rem;
     padding: 10px;
-    border: 1px solid #dadce0;
-    border-radius: 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-button);
     font-family: inherit;
+    background: var(--bg-page);
+    color: var(--text-primary);
   }
   textarea { resize: vertical; }
   button, a.btn {
@@ -34,9 +165,9 @@
     padding: 10px 16px;
     min-height: 44px; /* WCAG 2.5.5 touch-target minimum — no hover fallback on touch */
     border: none;
-    border-radius: 6px;
-    background: #1a73e8;
-    color: #fff;
+    border-radius: var(--radius-button);
+    background: var(--accent);
+    color: var(--accent-text);
     cursor: pointer;
     text-decoration: none;
     text-align: center;
@@ -46,79 +177,89 @@
     white-space: nowrap;
   }
   button { width: 100%; margin-top: 12px; }
-  button:disabled { background: #c7c7c7; cursor: default; }
-  button.secondary, a.btn.secondary { background: #f1f3f4; color: #202124; }
+  button:disabled { background: var(--disabled-bg); cursor: default; }
+  button.secondary, a.btn.secondary { background: var(--surface-secondary); color: var(--text-primary); }
   .hidden { display: none !important; }
-  .app-version-footer { color: #9aa0a6; font-size: 0.75em; margin-top: 24px; }
+  .app-version-footer { color: var(--text-muted); font-size: 0.75em; margin-top: 24px; font-family: var(--font-mono); }
 
   /* --- List view --- */
   .ballot-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
-  .ballot-card { border: 1px solid #dadce0; border-radius: 8px; padding: 12px 16px; }
+  .ballot-card { border: 1px solid var(--border); border-radius: var(--radius-card); padding: 12px 16px; background: var(--surface-secondary); }
   .ballot-card h3 { margin: 0 0 2px; font-size: 1.05rem; }
-  .ballot-card .ballot-id { color: #5f6368; font-size: 0.85em; margin-bottom: 6px; }
-  .ballot-card .ballot-meta { color: #5f6368; font-size: 0.9em; margin-bottom: 10px; }
+  .ballot-card .ballot-id { color: var(--text-secondary); font-size: 0.85em; margin-bottom: 6px; font-family: var(--font-mono); }
+  .ballot-card .ballot-meta { color: var(--text-secondary); font-size: 0.9em; margin-bottom: 10px; }
   .ballot-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   .ballot-actions a.btn { flex: 1 1 auto; min-width: 100px; }
   .ballot-info { margin-top: 10px; }
-  .ballot-info summary { cursor: pointer; color: #1a73e8; font-size: 0.9em; padding: 6px 0; min-height: 44px; display: flex; align-items: center; }
-  .ballot-info p { margin: 4px 0 0; color: #3c4043; font-size: 0.9em; white-space: pre-wrap; }
+  .ballot-info summary { cursor: pointer; color: var(--link); font-size: 0.9em; padding: 6px 0; min-height: 44px; display: flex; align-items: center; }
+  .ballot-info p { margin: 4px 0 0; color: var(--text-body); font-size: 0.9em; white-space: pre-wrap; }
   @media (max-width: 420px) { button, a.btn { width: 100%; } }
 
   /* --- Edit view --- */
-  p.sub { color: #5f6368; margin: 0; }
-  #createdBanner { background: #e6f4ea; color: #188038; border-radius: 6px; padding: 10px 12px; margin-bottom: 16px; }
-  .edit-instructions { background: #e8f0fe; border-radius: 6px; padding: 12px 14px; color: #174ea6; font-size: 0.9em; margin-bottom: 20px; }
+  p.sub { color: var(--text-secondary); margin: 0; }
+  #createdBanner { background: var(--success-bg); color: var(--success-text); border-radius: var(--radius-button); padding: 10px 12px; margin-bottom: 16px; }
+  .edit-instructions { background: var(--info-bg); border-radius: var(--radius-button); padding: 12px 14px; color: var(--info-text); font-size: 0.9em; margin-bottom: 20px; }
   .edit-instructions p { margin: 0 0 6px; }
   .edit-instructions p:last-child { margin-bottom: 0; }
-  .section-divider { color: #9aa0a6; font-size: 0.8em; text-align: center; margin: 32px 0 4px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: bold; }
-  .subsection-header { font-size: 0.95rem; font-weight: bold; margin: 24px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #dadce0; }
-  .subsection-header .optional-tag { font-weight: normal; font-size: 0.8em; color: #5f6368; margin-left: 6px; }
+  .section-divider { color: var(--text-muted); font-size: 0.8em; text-align: center; margin: 32px 0 4px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: bold; }
+  .subsection-header { font-size: 0.95rem; font-weight: bold; margin: 24px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); color: var(--text-primary); }
+  .subsection-header .optional-tag { font-weight: normal; font-size: 0.8em; color: var(--text-secondary); margin-left: 6px; }
   .field-block { margin: 18px 0; }
   .field-row { display: flex; align-items: flex-start; gap: 4px; justify-content: space-between; }
-  .pencil-btn { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 6px 8px; min-width: 44px; min-height: 44px; flex: 0 0 auto; }
-  .field-panel { margin-top: 10px; padding: 12px; border: 1px solid #dadce0; border-radius: 6px; background: #f8f9fa; }
-  .field-help { margin: 0 0 10px; color: #5f6368; font-size: 0.9em; }
+  /* The display text is the first child of every .field-row (h1#titleDisplay, p#footerDisplay,
+     etc.) — flex:1 1 auto plus min-width:0 lets it actually shrink/wrap inside the row instead
+     of pushing past the pencil button. */
+  .field-row > :first-child { flex: 1 1 auto; min-width: 0; }
+  /* width: auto overrides the generic `button { width: 100%; }` rule below — that rule wins the
+     cascade for the "width" property on any <button> whose own rule doesn't set one, which
+     .pencil-btn didn't; combined with flex:0 0 auto that made it claim the row's full width and
+     crush the display text next to it down to nothing. */
+  .pencil-btn { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 6px 8px; min-width: 44px; min-height: 44px; width: auto; flex: 0 0 auto; }
+  .field-panel { margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-button); background: var(--surface-secondary); }
+  .field-help { margin: 0 0 10px; color: var(--text-secondary); font-size: 0.9em; }
   .field-panel-actions { display: flex; gap: 8px; margin-top: 10px; }
   .field-panel-actions button { flex: 1; }
-  .field-status { min-height: 1.2em; margin-top: 8px; font-size: 0.9em; color: #5f6368; }
-  .field-status.error { color: #d93025; }
+  .field-status { min-height: 1.2em; margin-top: 8px; font-size: 0.9em; color: var(--text-secondary); }
+  .field-status.error { color: var(--error); }
   .fixed-block { margin: 14px 0; }
-  .field-name-tag { display: block; font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.04em; color: #9aa0a6; font-weight: bold; margin-bottom: 4px; }
-  .admin-only-section { margin-top: 32px; padding: 14px; border: 1px dashed #f9ab00; border-radius: 8px; background: #fef7e0; }
+  .field-name-tag { display: block; font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: bold; margin-bottom: 4px; }
+  .admin-only-section { margin-top: 32px; padding: 14px; border: 1px dashed var(--warning-border); border-radius: var(--radius-card); background: var(--warning-bg); }
   .admin-only-section .subsection-header { border-bottom: none; margin-top: 0; }
-  .admin-only-badge { display: inline-block; background: #f9ab00; color: #202124; font-size: 0.65em; font-weight: bold; text-transform: uppercase; padding: 2px 6px; border-radius: 10px; margin-left: 8px; vertical-align: middle; }
+  .admin-only-badge { display: inline-block; background: var(--warning-badge-bg); color: var(--warning-badge-text); font-size: 0.65em; font-weight: bold; text-transform: uppercase; padding: 2px 6px; border-radius: var(--radius-badge); margin-left: 8px; vertical-align: middle; }
 
   /* --- Candidate/topic rows (shared by edit + ballot views) --- */
   ul#candidateList, ul#topicList { list-style: none; padding: 0; margin: 12px 0; }
-  ul#candidateList li, ul#topicList li { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; }
+  ul#candidateList li, ul#topicList li { background: var(--surface-secondary); border: 1px solid var(--border); border-radius: var(--radius-button); padding: 8px 10px; margin-bottom: 6px; }
   ul#topicList li { display: flex; flex-direction: column; user-select: none; }
-  ul#topicList li.dragging { position: relative; z-index: 10; background: #e8f0fe; box-shadow: 0 4px 10px rgba(0,0,0,0.15); }
+  ul#topicList li.dragging { position: relative; z-index: 10; background: var(--info-bg); box-shadow: 0 4px 10px var(--dragging-shadow); }
   .topic-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
-  .handle { font-size: 1.1rem; color: #5f6368; padding: 10px 4px; min-height: 44px; display: flex; align-items: center; }
+  .handle { font-size: 1.1rem; color: var(--text-secondary); padding: 10px 4px; min-height: 44px; display: flex; align-items: center; }
   #topicList .handle { cursor: grab; touch-action: none; }
   .topic-text { min-width: 0; overflow-wrap: break-word; font-weight: bold; }
   #topicList .topic-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: normal; }
   .topic-text.has-details { cursor: pointer; }
   .topic-text.has-details, .info-toggle, .topic-info-content { touch-action: manipulation; }
-  .info-toggle { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 6px 8px; min-width: 44px; min-height: 44px; }
-  .topic-info-content { margin-top: 4px; padding-left: 34px; color: #3c4043; font-size: 0.9em; white-space: pre-wrap; }
-  .topic-info-content.empty { font-style: italic; color: #9aa0a6; }
+  /* Same width:auto fix as .pencil-btn above — .info-toggle is a <button> too and would
+     otherwise inherit width:100% and blow out its grid cell in .topic-row. */
+  .info-toggle { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 6px 8px; min-width: 44px; min-height: 44px; width: auto; }
+  .topic-info-content { margin-top: 4px; padding-left: 34px; color: var(--text-body); font-size: 0.9em; white-space: pre-wrap; }
+  .topic-info-content.empty { font-style: italic; color: var(--text-muted); }
   .topic-info-link { display: block; margin-top: 4px; padding-left: 34px; font-size: 0.9em; }
   .candidate-edit-panel { margin-top: 8px; }
-  .add-panel { margin-top: 12px; padding: 12px; border: 1px solid #dadce0; border-radius: 6px; background: #f8f9fa; }
+  .add-panel { margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-button); background: var(--surface-secondary); }
   .add-panel textarea { margin-top: 10px; }
   .add-panel-actions { display: flex; gap: 8px; }
   .add-panel-actions button { flex: 1; }
-  footer.ballot-footer { color: #5f6368; font-size: 0.85em; margin-top: 24px; }
-  p.ballot-contact { color: #5f6368; font-size: 0.85em; margin-top: 4px; }
-  #status, #status2 { color: #5f6368; min-height: 1.2em; margin-top: 8px; }
-  #status.error, #status2.error { color: #d93025; }
+  footer.ballot-footer { color: var(--text-secondary); font-size: 0.85em; margin-top: 24px; }
+  p.ballot-contact { color: var(--text-secondary); font-size: 0.85em; margin-top: 4px; }
+  #status, #status2 { color: var(--text-secondary); min-height: 1.2em; margin-top: 8px; }
+  #status.error, #status2.error { color: var(--error); }
 
   /* --- Analyze view --- */
-  .method-note { background: #e8f0fe; color: #174ea6; font-size: 0.9em; padding: 10px 12px; border-radius: 6px; margin-bottom: 16px; }
+  .method-note { background: var(--info-bg); color: var(--info-text); font-size: 0.9em; padding: 10px 12px; border-radius: var(--radius-button); margin-bottom: 16px; }
   table.results-table { border-collapse: collapse; margin-bottom: 15px; width: 100%; }
-  table.results-table th, table.results-table td { border: 1px solid #dadce0; padding: 6px 8px; }
-  table.results-table th { background: #f8f9fa; text-align: left; }
+  table.results-table th, table.results-table td { border: 1px solid var(--border); padding: 6px 8px; }
+  table.results-table th { background: var(--surface-secondary); text-align: left; }
   table.results-table td.center { text-align: center; }
 </style>
 </head>
@@ -178,7 +319,7 @@
           <button type="button" class="pencil-btn" id="descriptionEditBtn" aria-label="Edit Description">✏️</button>
         </div>
         <div class="field-panel hidden" id="descriptionPanel">
-          <p class="field-help">Shown on the landing page, before a respondent enters their name.</p>
+          <p class="field-help">Shown on the landing page, before a respondent enters their name. Include any "how to start" guidance here too — there's no separate fixed instruction text below it anymore.</p>
           <label for="descriptionInput">Description</label>
           <textarea id="descriptionInput" rows="3"></textarea>
           <div class="field-panel-actions">
@@ -190,8 +331,6 @@
       </div>
 
       <div class="fixed-block">
-        <p class="sub">Enter your name to start or resume ranking.</p>
-        <p class="sub">If you've already been here, your previous answers will be loaded so you can review or change them.</p>
         <label for="staticNameInput">Your name</label>
         <input type="text" id="staticNameInput" disabled placeholder="(respondent types their name here)">
         <button type="button" disabled style="margin-top:10px;">Continue</button>
@@ -206,7 +345,7 @@
           <button type="button" class="pencil-btn" id="instructionsEditBtn" aria-label="Edit Ballot Instructions">✏️</button>
         </div>
         <div class="field-panel hidden" id="instructionsPanel">
-          <p class="field-help">Shown above the ranking list on the ballot page — replaces the landing description above once a respondent starts ranking.</p>
+          <p class="field-help">Shown above the ranking list on the ballot page — replaces the landing description above once a respondent starts ranking. Include the drag/reorder guidance here too — there's no separate fixed instruction text below it anymore.</p>
           <label for="instructionsInput">Ballot Instructions</label>
           <textarea id="instructionsInput" rows="3"></textarea>
           <div class="field-panel-actions">
@@ -215,10 +354,6 @@
           </div>
           <div class="field-status" id="instructionsStatus"></div>
         </div>
-      </div>
-
-      <div class="fixed-block">
-        <p class="sub">Drag items to order them, most preferred on top.</p>
       </div>
 
       <p class="subsection-header">Candidates</p>
@@ -359,8 +494,12 @@
     </div>
 
     <div id="step-name" class="hidden">
-      <p class="sub">Enter your name to start or resume ranking.</p>
-      <p class="sub">If you've already been here, your previous answers will be loaded so you can review or change them.</p>
+      <!-- The "enter your name to start/resume" guidance used to be hardcoded here, duplicating
+           whatever the admin-editable Description above already says. It's now folded into
+           Description's own default text (see BallotModel.js's createBallotSheet_) instead, so
+           there's one editable block of copy here rather than an editable one stacked on a
+           fixed one. Applies to newly created ballots; an existing ballot's Description keeps
+           whatever it already has. -->
       <label for="nameInput">Your name</label>
       <input type="text" id="nameInput" autocomplete="name">
       <button id="startBtn">Continue</button>
@@ -368,7 +507,8 @@
     </div>
 
     <div id="step-rank" class="hidden">
-      <p class="sub">Drag items to order them, most preferred on top.</p>
+      <!-- Same fold as step-name above, but for Instructions/"drag items to reorder" — see
+           BallotModel.js's createBallotSheet_ default. -->
       <ul id="topicList"></ul>
 
       <button id="submitBtn">Submit</button>
@@ -416,6 +556,7 @@
   // this source file also runs unbuilt (local/manual testing with ?webapp= — see resolveWebappUrl_).
   var STATIC_BUILD_VERSION_ = null;
   var STATIC_WEBAPP_URL_ = null;
+  var STATIC_DEV_CONTACT_ = null;
 
   var params = new URLSearchParams(window.location.search);
   var cmd = params.get('cmd') || 'admin';
@@ -430,11 +571,27 @@
   }
   var webappUrl_ = resolveWebappUrl_();
 
+  // Appended to every troubleshooting message callApi_ raises below — "the developer" beats a
+  // dead end when there's genuinely nothing the respondent/admin can do about it themselves.
+  function _troubleshootingContact_() {
+    return STATIC_DEV_CONTACT_ ? ' If it keeps happening, contact ' + STATIC_DEV_CONTACT_ + '.'
+      : ' If it keeps happening, contact the site administrator.';
+  }
+
   /**
    * Calls a whitelisted GAS RPC (see ApiBridge.js's _API_WHITELIST_) via doPost ?cmd=api.
    * POSTs as text/plain (not application/json) so the browser treats this as a CORS "simple
    * request" and skips a preflight OPTIONS — Apps Script web apps don't implement OPTIONS, so a
    * real application/json POST would otherwise fail outright cross-origin.
+   *
+   * Every rejection here is rewritten into an actionable, plain-language message before it
+   * reaches a setStatus() call — the raw failure modes (a rejected fetch(), a non-2xx response,
+   * an unparseable body) each surface as cryptic browser/JSON-parser text otherwise ("Failed to
+   * fetch", "Unexpected token < in JSON at position 0", ...), which tells a respondent nothing
+   * they can act on. A GAS deployment mid-redeploy is the single most common real trigger for
+   * all three: `clasp deploy` briefly repoints the /exec alias, during which requests can fail
+   * outright (rejected fetch) or land on an interstitial HTML page instead of JSON (non-2xx /
+   * bad body) — hence the "try again in a minute" framing.
    *
    * @param {string} name RPC name.
    * @param {...*} args passed straight through to the GAS function.
@@ -449,7 +606,26 @@
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ name: name, args: args })
     })
-      .then(function (res) { return res.json(); })
+      .catch(function () {
+        // fetch() itself only rejects for network-level failures (offline, DNS, CORS, the
+        // deployment bouncing mid-redeploy) — never for a resolved-but-non-2xx response, which
+        // is handled below. The browser's own wording here ("Failed to fetch" / "NetworkError
+        // when attempting to fetch resource" / "Load failed") is accurate but meaningless to a
+        // respondent, so it's replaced rather than surfaced.
+        throw new Error('Could not reach the ballot server — check your internet connection.' + _troubleshootingContact_());
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          // A non-2xx response here is almost always GAS serving an HTML interstitial
+          // (permission prompt, deployment error page) instead of the JSON payload callApi_
+          // expects — res.json() below would otherwise fail on it with an opaque parser error.
+          throw new Error('The ballot server returned an error (HTTP ' + res.status + '), possibly because it’s ' +
+            'being redeployed right now — try again in a minute.' + _troubleshootingContact_());
+        }
+        return res.json().catch(function () {
+          throw new Error('The ballot server sent back a response this page couldn’t read — try reloading the page.' + _troubleshootingContact_());
+        });
+      })
       .then(function (json) {
         if (json && json.error) throw new Error(json.error);
         return json && json.result;

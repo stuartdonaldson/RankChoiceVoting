@@ -41,8 +41,8 @@ function testCreateNewBallotCreatesSkeleton() {
 
   const config = SM.readBallotConfig_(sheet);
   assert.equal(config.Title, '[TODO: ballot title shown to respondents]');
-  assert.equal(config.Description, '[TODO: intro text shown before respondents enter their name]');
-  assert.equal(config.Instructions, '[TODO: instructions shown above the ranking list on the ballot page]');
+  assert.equal(config.Description, '[TODO: describe what this ballot is about] Enter your name below to start or resume ranking — if you’ve already been here, your previous answers will be loaded so you can review or change them.');
+  assert.equal(config.Instructions, '[TODO: any extra guidance for ranking these particular candidates] Drag items to reorder them, with your most preferred choice on top.');
   assert.equal(config.Footer, '[TODO: footer text, e.g. deadline or sponsoring group]');
   assert.equal(config.Contact, '[TODO: contact name/email for questions]');
   assert.equal(config['Accept-New'], 'TRUE');
