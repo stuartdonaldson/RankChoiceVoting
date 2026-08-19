@@ -1,7 +1,7 @@
 {
   "name": "rankchoicevoting",
-  "version": "0.1.5",
-  "build": 1,
+  "version": "0.1.6",
+  "build": 0,
   "private": true,
   "scripts": {
     "test": "node test/test_gas_logger.js && node test/test_ballot_model.js && node test/test_ballot_cache.js && node test/test_manage_deployments.js && node test/test_callwebapp.js && node test/test_voting_algorithms.js && node test/test_build_static_pages.js",
