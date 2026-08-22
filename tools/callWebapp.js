@@ -34,10 +34,14 @@ const SETTINGS_PATH = path.join(ROOT, 'local.settings.json');
  */
 const UNGATED_ACTIONS = new Set(['bootstrapSecret', 'setWebappUrl']);
 
+/**
+ * `secretKey` is what the package reads; `adminSecretKey` is the same value under this project's
+ * original name, kept because tools/smokeTest.js and tools/smokeTestStaticApi.js destructure it.
+ */
 const ENV_MAP = {
-  sit:  { deploymentIdKey: 'sitDeploymentId',  secretKey: 'sitAdminSecret',  scriptIdKey: 'sitScriptId'  },
-  prod: { deploymentIdKey: 'prodDeploymentId', secretKey: 'prodAdminSecret', scriptIdKey: 'prodScriptId' },
-  nuuc: { deploymentIdKey: 'nuucDeploymentId', secretKey: 'nuucAdminSecret', scriptIdKey: 'nuucScriptId', authKey: 'nuucAuth' },
+  sit:  { deploymentIdKey: 'sitDeploymentId',  secretKey: 'sitAdminSecret',  adminSecretKey: 'sitAdminSecret',  scriptIdKey: 'sitScriptId'  },
+  prod: { deploymentIdKey: 'prodDeploymentId', secretKey: 'prodAdminSecret', adminSecretKey: 'prodAdminSecret', scriptIdKey: 'prodScriptId' },
+  nuuc: { deploymentIdKey: 'nuucDeploymentId', secretKey: 'nuucAdminSecret', adminSecretKey: 'nuucAdminSecret', scriptIdKey: 'nuucScriptId', authKey: 'nuucAuth' },
 };
 
 const config = {
