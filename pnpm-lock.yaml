@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       gas-deploy:
-        specifier: github:stuartdonaldson/GAS-Core#gas-deploy-v1.0.0&path:/packages/gas-deploy
-        version: https://codeload.github.com/stuartdonaldson/GAS-Core/tar.gz/94c1aceb482382caacb4602892224f744dc5e0d1#path:/packages/gas-deploy
+        specifier: github:stuartdonaldson/GAS-Core#gas-deploy-v1.1.0&path:/packages/gas-deploy
+        version: https://codeload.github.com/stuartdonaldson/GAS-Core/tar.gz/545c41a28148d07947890654d19bc9a1f073cd88#path:/packages/gas-deploy
     devDependencies:
       '@inquirer/prompts':
         specifier: ^7.5.2
@@ -180,9 +180,9 @@ packages:
   emoji-regex@8.0.0:
     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
 
-  gas-deploy@https://codeload.github.com/stuartdonaldson/GAS-Core/tar.gz/94c1aceb482382caacb4602892224f744dc5e0d1#path:/packages/gas-deploy:
-    resolution: {gitHosted: true, integrity: sha512-dSWTW8bY5tGTWuGgxKF04v5AWyl0X/covVENH3ZWlpvAALtc+h//aYEcjfZFb0L3KikhXdOVywm9ufOU6FkwSg==, path: /packages/gas-deploy, tarball: https://codeload.github.com/stuartdonaldson/GAS-Core/tar.gz/94c1aceb482382caacb4602892224f744dc5e0d1}
-    version: 1.0.0
+  gas-deploy@https://codeload.github.com/stuartdonaldson/GAS-Core/tar.gz/545c41a28148d07947890654d19bc9a1f073cd88#path:/packages/gas-deploy:
+    resolution: {gitHosted: true, path: /packages/gas-deploy, tarball: https://codeload.github.com/stuartdonaldson/GAS-Core/tar.gz/545c41a28148d07947890654d19bc9a1f073cd88}
+    version: 1.1.0
     engines: {node: '>=18'}
     hasBin: true
 
@@ -346,7 +346,7 @@ snapshots:
 
   emoji-regex@8.0.0: {}
 
-  gas-deploy@https://codeload.github.com/stuartdonaldson/GAS-Core/tar.gz/94c1aceb482382caacb4602892224f744dc5e0d1#path:/packages/gas-deploy: {}
+  gas-deploy@https://codeload.github.com/stuartdonaldson/GAS-Core/tar.gz/545c41a28148d07947890654d19bc9a1f073cd88#path:/packages/gas-deploy: {}
 
   iconv-lite@0.7.3:
     dependencies:

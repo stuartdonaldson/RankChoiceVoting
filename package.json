@@ -1,7 +1,7 @@
 {
   "name": "rankchoicevoting",
   "version": "0.1.6",
-  "build": 3,
+  "build": 4,
   "private": true,
   "packageManager": "pnpm@11.15.1",
   "scripts": {
@@ -17,7 +17,7 @@
     "release:major": "pnpm version major && pnpm run push -- --skip-bump && git push --follow-tags"
   },
   "dependencies": {
-    "gas-deploy": "github:stuartdonaldson/GAS-Core#gas-deploy-v1.0.0&path:/packages/gas-deploy"
+    "gas-deploy": "github:stuartdonaldson/GAS-Core#gas-deploy-v1.1.0&path:/packages/gas-deploy"
   },
   "devDependencies": {
     "@inquirer/prompts": "^7.5.2",
