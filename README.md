@@ -52,6 +52,7 @@ Deployed once as a Google Apps Script Web App, the same URL serves three views:
 | `<url>` or `<url>?cmd=admin` | Ballot list — create a ballot, and for each existing one: view it, edit it, or run analysis |
 | `<url>?cmd=admin&action=edit&id=<id>` | Edit a ballot: a live preview styled exactly like the page voters see, with a pencil icon on every editable field. Each field saves immediately (no page-wide Save) |
 | `<url>?cmd=ballot&id=<id>` | The respondent-facing ballot — what you share with voters |
+| `<url>?cmd=version` | JSON build identity of this deployment — `{ok, version, versionDate, target, deploymentId}`. No secret required; this is what `tools/manage-deployments.js` polls after a deploy to confirm the webapp is actually serving what was just pushed |
 
 From the spreadsheet itself, **Voting and Ballot Tools > Open Ballot Admin Page** opens the admin list, and **About** shows the deployed web app URL plus a direct link to every ballot.
 
@@ -84,7 +85,7 @@ Each run also overwrites the ballot sheet's own `[Results]` section with the sam
 
 ## Files
 
-- `script/WebApp.js` — `doGet`/`doPost` router (`cmd=ballot`, `cmd=admin`).
+- `script/WebApp.js` — `doGet`/`doPost` router (`cmd=ballot`, `cmd=admin`, `cmd=api`, `cmd=version`).
 - `script/BallotModel.js` — the sheet-layout model described above; every other file reads/writes ballots through this module.
 - `script/webAdmin.js` — admin ballot list, create-ballot form, and analysis view.
 - `script/webAdminEditPage.html` — the live-preview ballot editor.

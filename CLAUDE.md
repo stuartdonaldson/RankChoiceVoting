@@ -53,13 +53,54 @@ bd close <id>         # Complete work
 
 ## Build & Test
 
-_Add your build and test commands here_
+This project is **pnpm-only** (`only-allow pnpm`). Never use `npm` or `npx`.
 
 ```bash
-# Example:
-# npm install
-# npm test
+pnpm install
+pnpm test            # deterministic node suites — must pass outright
+pnpm run test:live-sit   # live smoke tests against the SIT deployment
 ```
+
+## Deploying
+
+```bash
+pnpm run deploy:sit    # bump build + stamp SIT  + push to sitScriptId
+pnpm run deploy:prod   # bump patch + stamp PROD + push to prodScriptId
+pnpm run deploy:nuuc   # bump patch + stamp NUUC + push to nuucScriptId
+```
+
+### Deploy verification (`cmd=version`)
+
+`clasp deploy` exiting 0 only proves a version was *created*, not that the `/exec` URL is
+serving it. Every deploy therefore ends with `assertDeployedVersion_`
+(`tools/manage-deployments.js`), which polls the deployment's `?cmd=version` route until the
+webapp itself reports the exact version **and** target just stamped:
+
+```jsonc
+// GET or POST ?cmd=version  →
+{ "ok": true, "version": "0.1.6.2", "versionDate": "2026-08-22T01:19:41.747Z",
+  "target": "SIT", "deploymentId": "AKfycbwRGVyw…" }
+```
+
+- **No secret required.** `cmd=version` is routed ahead of the `cmd=admin` branch in both
+  `doGet` and `doPost`, so it answers on an `ANYONE_ANONYMOUS` deployment and before
+  `ADMIN_SHARED_SECRET` is ever bootstrapped. Do not move it behind the secret gate.
+- The **target** check is what catches a deploy landing in the wrong environment — SIT, PROD and
+  NUUC share one version counter, so a version match alone would not.
+- On mismatch the deploy fails (non-zero exit) with expected-vs-actual, but still prints the
+  summary so you can see what *is* deployed.
+- The summary's version row is the **server-confirmed** value, not the locally stamped one.
+
+Query it by hand with:
+
+```bash
+node -e "require('./tools/callWebapp.js').post('https://script.google.com/macros/s/'+require('./local.settings.json').sitDeploymentId+'/exec?cmd=version',{action:'version'}).then(r=>console.log(r))"
+```
+
+The route is `script/WebApp.js`'s `handleVersionRequest_`, reading `script/version.js`'s stamped
+`APP_VERSION` / `APP_VERSION_DATE` / `APP_DEPLOY_TARGET`. Deploy internals are slated to move
+into the shared `gas-deploy` package — see
+`GAS-Core/best-practices/gas-deployment/RECOMMENDATION.md` §3.2.
 
 ## Architecture Overview
 

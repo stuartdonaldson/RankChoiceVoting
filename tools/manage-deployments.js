@@ -39,6 +39,11 @@ const fs            = require('fs');
 const os            = require('os');
 const path          = require('path');
 
+// callWebapp.js's post() is this project's only HTTP client for the deployed webapp;
+// assertDeployedVersion_ below polls cmd=version through it rather than adding a second one
+// (RECOMMENDATION.md §3.3).
+const { post: postWebapp_ } = require('./callWebapp.js');
+
 const ROOT          = path.join(__dirname, '..');
 const SETTINGS_PATH = path.join(ROOT, 'local.settings.json');
 const CLASP_PATH    = path.join(ROOT, '.clasp.json');
@@ -204,10 +209,62 @@ function saveDeploymentId_(targetKey, deploymentId) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Deploy verification (RECOMMENDATION.md §3.2 — assert the version actually serving)
+// ─────────────────────────────────────────────────────────────────────────
+
+function sleep_(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+/**
+ * Polls the deployment's cmd=version route (script/WebApp.js's handleVersionRequest_) until it
+ * reports the exact version *and* target just stamped, or the timeout expires. This is what
+ * turns "clasp deploy exited 0" into "the webapp is actually serving what we just pushed" — the
+ * gap RECOMMENDATION.md §3.2 calls #13. The target half is what catches a deploy landing in the
+ * wrong environment, which matters here because SIT, PROD and NUUC share one version counter:
+ * a PROD-stamped build served from the SIT deployment would otherwise look identical.
+ *
+ * Dependency-injected (postFn/sleep) so the match/mismatch/timeout paths are unit-testable
+ * without a real network call or a real wait — see test/test_assert_deployed_version.js.
+ */
+async function assertDeployedVersion_(deploymentId, expectedVersion, expectedTarget, options = {}) {
+  const { postFn = postWebapp_, intervalSec = 5, timeoutSec = 60, sleep = sleep_, log = () => {} } = options;
+  const url = `https://script.google.com/macros/s/${deploymentId}/exec?cmd=version`;
+  const startedAt = Date.now();
+  let attempt = 0;
+  let lastResult = null;
+
+  for (;;) {
+    attempt++;
+    try {
+      lastResult = await postFn(url, { action: 'version' });
+    } catch (err) {
+      log(`  attempt ${attempt}: request failed (${err.message})`);
+      lastResult = null;
+    }
+
+    if (lastResult && lastResult.ok && lastResult.version === expectedVersion && lastResult.target === expectedTarget) {
+      return { ok: true, attempts: attempt, version: lastResult.version, target: lastResult.target, deploymentId: lastResult.deploymentId };
+    }
+
+    const seen = lastResult && typeof lastResult === 'object'
+      ? `version=${lastResult.version || '(none)'} target=${lastResult.target || '(none)'}`
+      : '(no response)';
+    log(`  attempt ${attempt}: expected version=${expectedVersion} target=${expectedTarget}, got ${seen}`);
+
+    if (Date.now() - startedAt + intervalSec * 1000 > timeoutSec * 1000) {
+      throw new Error(
+        `assertDeployedVersion_ timed out after ${attempt} attempts (${timeoutSec}s): ` +
+        `expected version=${expectedVersion} target=${expectedTarget}, last seen ${seen}`
+      );
+    }
+    await sleep(intervalSec * 1000);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Deploy
 // ─────────────────────────────────────────────────────────────────────────
 
-function deploy(targetKey, options = {}) {
+async function deploy(targetKey, options = {}) {
   const { scriptIdKey, label, emoji, claspAuthKey } = TARGETS[targetKey];
   const settings = loadSettings();
   const scriptId = settings[scriptIdKey];
@@ -302,7 +359,23 @@ function deploy(targetKey, options = {}) {
     { stdio: 'inherit', cwd: ROOT }
   );
 
-  printDeploySummary_(targetKey, { version, revision, deploymentId, settings });
+  // Deploy verification (RECOMMENDATION.md §3.2) — the mandatory last step before the summary.
+  // On mismatch the deploy fails loudly (non-zero exit, expected-vs-actual) but still prints the
+  // summary, so the operator can see what *is* deployed rather than being left with an error.
+  console.log(`\n🔍 Verifying ${label} is actually serving v${version}…`);
+  let verified;
+  try {
+    verified = await assertDeployedVersion_(deploymentId, version, label, { log: console.log });
+    console.log(`✅ ${label} verified — serving v${verified.version} (target ${verified.target})`);
+  } catch (err) {
+    console.error(`\n❌ Deploy verification failed: ${err.message}`);
+    printDeploySummary_(targetKey, { version, revision, deploymentId, settings });
+    process.exitCode = 1;
+    return;
+  }
+
+  // Report what the server confirmed, not what was stamped locally (§3.2).
+  printDeploySummary_(targetKey, { version: verified.version, revision, deploymentId, settings });
 }
 
 /** Prints the post-deploy summary: static entry point, spreadsheet, revision, and stamped version. */
@@ -343,7 +416,7 @@ async function interactiveMenu() {
     ],
   });
 
-  if (action !== 'exit') deploy(action);
+  if (action !== 'exit') await deploy(action);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -354,9 +427,9 @@ async function main() {
   const args = process.argv.slice(2);
   const options = { skipBump: args.includes('--skip-bump') };
 
-  if (args.includes('--deploy-sit'))  return deploy('sit', options);
-  if (args.includes('--deploy-prod')) return deploy('prod', options);
-  if (args.includes('--deploy-nuuc')) return deploy('nuuc', options);
+  if (args.includes('--deploy-sit'))  return await deploy('sit', options);
+  if (args.includes('--deploy-prod')) return await deploy('prod', options);
+  if (args.includes('--deploy-nuuc')) return await deploy('nuuc', options);
 
   await interactiveMenu();
 }
@@ -379,6 +452,7 @@ module.exports = {
   bumpBuildNumber_,
   resetBuildNumber_,
   printDeploySummary_,
+  assertDeployedVersion_,
   TARGETS,
   STATIC_ENTRY_BASE_URL,
 };

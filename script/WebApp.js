@@ -32,6 +32,29 @@ function jsonOutput_(obj) {
 }
 
 /**
+ * RECOMMENDATION.md §3.2 (gas-deploy Stage 1b/1c): the deploy-verification contract every
+ * `gas-deploy` consumer exposes. Answers "what is this deployment actually running?" from
+ * whatever tools/manage-deployments.js last stamped into version.js — no secret required, so
+ * it works on the ANYONE_ANONYMOUS webapp and before bootstrapAdminSecret_ has ever run.
+ * tools/manage-deployments.js's assertDeployedVersion_ polls this after every deploy; without
+ * it a deploy is only ever verified by `clasp deploy` exiting 0.
+ */
+function extractDeploymentIdFromUrl_(url) {
+  var match = /\/macros\/s\/([^/]+)\/exec/.exec(url || '');
+  return match ? match[1] : null;
+}
+
+function handleVersionRequest_() {
+  return jsonOutput_({
+    ok: true,
+    version: APP_VERSION,
+    versionDate: APP_VERSION_DATE,
+    target: APP_DEPLOY_TARGET,
+    deploymentId: extractDeploymentIdFromUrl_(ScriptApp.getService().getUrl())
+  });
+}
+
+/**
  * Never includes postData.contents — request bodies (cmd=admin) may carry
  * secrets/voter data, and GasLogger.log() data must never contain either.
  * Only type/length are safe to log.
@@ -60,6 +83,10 @@ function doGet(e) {
     var cmd = (e && e.parameter && e.parameter.cmd) || '';
     var action = (e && e.parameter && e.parameter.action) || '';
 
+    if (cmd === 'version') {
+      return handleVersionRequest_();
+    }
+
     if (cmd === 'ballot' && action && action !== 'page') {
       return _handleBallot(e);
     }
@@ -82,6 +109,11 @@ function doPost(e) {
     GasLogger.log('doPost', buildWebAppRequestLog_(e));
     var cmd = e && e.parameter && e.parameter.cmd;
 
+    // Checked ahead of the cmd=admin branch deliberately — cmd=version must answer before any
+    // secret exists (§3.2), so it cannot live inside handleAdminPost_'s secret gate.
+    if (cmd === 'version') {
+      return handleVersionRequest_();
+    }
     if (cmd === 'admin') {
       return handleAdminPost_(e);
     }
@@ -289,4 +321,17 @@ function handleAdminPost_(e) {
     GasLogger.logError('handleAdminPost_.error', err, { action: payload.action });
     return jsonOutput_({ ok: false, error: 'server_error', detail: err.message });
   }
+}
+
+// Node-only export surface for the deterministic test suite (test/test_webapp_version_route.js).
+// GAS itself ignores this — `module` is undefined in the Apps Script runtime.
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    jsonOutput_: jsonOutput_,
+    buildWebAppRequestLog_: buildWebAppRequestLog_,
+    handleVersionRequest_: handleVersionRequest_,
+    extractDeploymentIdFromUrl_: extractDeploymentIdFromUrl_,
+    doGet: doGet,
+    doPost: doPost,
+  };
 }
