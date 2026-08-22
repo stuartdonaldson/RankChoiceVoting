@@ -1,20 +1,23 @@
 {
   "name": "rankchoicevoting",
   "version": "0.1.6",
-  "build": 0,
+  "build": 1,
   "private": true,
+  "packageManager": "pnpm@11.15.1",
   "scripts": {
+    "preinstall": "only-allow pnpm",
     "test": "node test/test_gas_logger.js && node test/test_ballot_model.js && node test/test_ballot_cache.js && node test/test_manage_deployments.js && node test/test_callwebapp.js && node test/test_voting_algorithms.js && node test/test_build_static_pages.js",
     "test:live-sit": "node tools/smokeTest.js && node tools/smokeTestStaticApi.js",
     "deploy:sit": "node tools/manage-deployments.js --deploy-sit",
     "deploy:prod": "node tools/manage-deployments.js --deploy-prod",
     "deploy:nuuc": "node tools/manage-deployments.js --deploy-nuuc",
     "push": "node tools/manage-deployments.js --deploy-prod",
-    "release:patch": "npm version patch && npm run push -- --skip-bump && git push --follow-tags",
-    "release:minor": "npm version minor && npm run push -- --skip-bump && git push --follow-tags",
-    "release:major": "npm version major && npm run push -- --skip-bump && git push --follow-tags"
+    "release:patch": "pnpm version patch && pnpm run push -- --skip-bump && git push --follow-tags",
+    "release:minor": "pnpm version minor && pnpm run push -- --skip-bump && git push --follow-tags",
+    "release:major": "pnpm version major && pnpm run push -- --skip-bump && git push --follow-tags"
   },
   "devDependencies": {
-    "@inquirer/prompts": "^7.5.2"
+    "@inquirer/prompts": "^7.5.2",
+    "only-allow": "1.2.2"
   }
 }
