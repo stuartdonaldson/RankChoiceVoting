@@ -28,7 +28,9 @@
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { bumpBuildNumber_ } = require('./manage-deployments.js');
+// The build counter is package.json's, owned by gas-deploy — sourced from the package directly
+// rather than re-exported through manage-deployments.js, which is now pure config.
+const { bumpBuildNumber: bumpBuildNumber_ } = require('gas-deploy');
 
 const ROOT = path.resolve(__dirname, '..');
 const DIST_ROOT = path.join(ROOT, 'static-pages', 'dist');

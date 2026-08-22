@@ -63,6 +63,15 @@ pnpm run test:live-sit   # live smoke tests against the SIT deployment
 
 ## Deploying
 
+**The deploy pipeline lives in the shared `gas-deploy` package** (GAS-Core
+`packages/gas-deploy/`, pinned by tag in `package.json`), not in this repo.
+`tools/manage-deployments.js` here is pure config — the three targets, the stamper, and the
+ordered post-deploy hooks — and `tools/callWebapp.js` is a thin wrapper over the package's one
+HTTP client. For deploy *internals* (auth, deployment-ID resolution, stamping, verification,
+summary, hook semantics) read that package's README; changing behaviour means changing the
+package and cutting a new `gas-deploy-vX.Y.Z` tag, not editing these two files. Background:
+`GAS-Core/best-practices/gas-deployment/RECOMMENDATION.md`.
+
 ```bash
 pnpm run deploy:sit    # bump build + stamp SIT  + push to sitScriptId
 pnpm run deploy:prod   # bump patch + stamp PROD + push to prodScriptId
@@ -72,8 +81,8 @@ pnpm run deploy:nuuc   # bump patch + stamp NUUC + push to nuucScriptId
 ### Deploy verification (`cmd=version`)
 
 `clasp deploy` exiting 0 only proves a version was *created*, not that the `/exec` URL is
-serving it. Every deploy therefore ends with `assertDeployedVersion_`
-(`tools/manage-deployments.js`), which polls the deployment's `?cmd=version` route until the
+serving it. Every deploy therefore ends with `assertDeployedVersion`
+(gas-deploy's `lib/verify.js`), which polls the deployment's `?cmd=version` route until the
 webapp itself reports the exact version **and** target just stamped:
 
 ```jsonc
@@ -98,9 +107,13 @@ node -e "require('./tools/callWebapp.js').post('https://script.google.com/macros
 ```
 
 The route is `script/WebApp.js`'s `handleVersionRequest_`, reading `script/version.js`'s stamped
-`APP_VERSION` / `APP_VERSION_DATE` / `APP_DEPLOY_TARGET`. Deploy internals are slated to move
-into the shared `gas-deploy` package — see
-`GAS-Core/best-practices/gas-deployment/RECOMMENDATION.md` §3.2.
+`APP_VERSION` / `APP_VERSION_DATE` / `APP_DEPLOY_TARGET`. It is GAS-side, per-project code by
+necessity — only this project knows where its stamper wrote — so it stays here while the Node
+side of the verification lives in the package.
+
+`node tools/manage-deployments.js --summary --env sit` prints the same summary for what is
+*currently* deployed without deploying anything, and flags any divergence between the live
+version and the local `script/version.js`.
 
 ## Architecture Overview
 

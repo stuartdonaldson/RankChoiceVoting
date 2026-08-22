@@ -1,12 +1,12 @@
 {
   "name": "rankchoicevoting",
   "version": "0.1.6",
-  "build": 2,
+  "build": 3,
   "private": true,
   "packageManager": "pnpm@11.15.1",
   "scripts": {
     "preinstall": "only-allow pnpm",
-    "test": "node test/test_gas_logger.js && node test/test_ballot_model.js && node test/test_ballot_cache.js && node test/test_manage_deployments.js && node test/test_callwebapp.js && node test/test_webapp_version_route.js && node test/test_assert_deployed_version.js && node test/test_voting_algorithms.js && node test/test_build_static_pages.js",
+    "test": "node test/test_gas_logger.js && node test/test_ballot_model.js && node test/test_ballot_cache.js && node test/test_webapp_version_route.js && node test/test_voting_algorithms.js && node test/test_build_static_pages.js",
     "test:live-sit": "node tools/smokeTest.js && node tools/smokeTestStaticApi.js",
     "deploy:sit": "node tools/manage-deployments.js --deploy-sit",
     "deploy:prod": "node tools/manage-deployments.js --deploy-prod",
@@ -15,6 +15,9 @@
     "release:patch": "pnpm version patch && pnpm run push -- --skip-bump && git push --follow-tags",
     "release:minor": "pnpm version minor && pnpm run push -- --skip-bump && git push --follow-tags",
     "release:major": "pnpm version major && pnpm run push -- --skip-bump && git push --follow-tags"
+  },
+  "dependencies": {
+    "gas-deploy": "github:stuartdonaldson/GAS-Core#gas-deploy-v1.0.0&path:/packages/gas-deploy"
   },
   "devDependencies": {
     "@inquirer/prompts": "^7.5.2",
