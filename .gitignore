@@ -17,3 +17,8 @@ build/
 .beads-credential-key
 
 .bd-run-beads/
+
+# gas-deploy local deploy records. Per-developer, per-machine history of what was
+# deployed when — useful locally, pure merge churn if committed.
+.deploy-metadata.json
+deployment-ledger/
