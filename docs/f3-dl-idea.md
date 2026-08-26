@@ -27,7 +27,7 @@ The color system combines F3 Nation’s iconic dark industrial roots with the mo
 ### Secondary & Accent Colors
 
 * **Gloom Gray (`#8A949E`):** Secondary text, subtle borders, inactive tab icons.
-* **Tac-Orange / Blaze (`#FF5A36`):** The primary **Action Color**. Used for critical buttons (e.g., *HC - Hard Commit*, *Take the Q*), alerts, and urgent SLT announcements.
+* **Ember Red (`#C83737`):** The primary **Action Color** — links, buttons (e.g., *HC - Hard Commit*, *Take the Q*), and error states. Replaces the original Tac-Orange/Blaze (`#FF5A36`): the high-saturation orange read to users as a warning or "something's wrong" signal rather than a call to action, so the palette moved to a deeper, less alarming red that still carries urgency without doubling as an implicit error color.
 * **Sound Steel Blue (`#3B82F6`):** Accent color for **1st F (Fitness)** and AO workout map pins.
 * **Fellowship Amber (`#F59E0B`):** Accent color for **2nd F (Fellowship)** gatherings, Happy Hours, and Co-working posts.
 * **Faith Green (`#10B981`):** Accent color for **3rd F (Faith/Service)** projects, Q-Source discussions, and community initiatives.
@@ -42,10 +42,12 @@ F3 visual identity often relies on stencil or military-inspired typography for h
 
 | Level | Font Family | Style / Weight | Primary Use Case |
 | --- | --- | --- | --- |
-| **Display / Headers** | **Black Ops One** or **Chakra Petch** | Bold / All Caps | Screen titles, AO names, "Gloom" headers, Badges. |
+| **Display / Headers** | **Saira Stencil One** (was Black Ops One) | Normal weight / All Caps, `0.03em` tracking | Screen titles, AO names, "Gloom" headers, Badges. |
 | **Subheaders / Titles** | **Inter** or **DM Sans** | Bold / Semi-Bold (18px–24px) | Card titles, Leader names (PAX), Role titles (Nantan, Site Q). |
 | **Body & Logs** | **Inter** or **SF Pro / Roboto** | Regular / Medium (14px–16px) | Backblasts, threads, event descriptions, Slack-digest feeds. |
 | **Tactical / Data** | **JetBrains Mono** or **Roboto Mono** | Bold (12px–14px) | Timestamps (e.g., `0530 PST`), AO Grid coordinates, Attendance counts, Permalinks. |
+
+> **Display font update:** Black Ops One rendered poorly in practice — thin, low-contrast strokes that were hard to read at typical UI sizes, and requesting bold weight on it made the browser synthesize a faux-bold that fattened the glyphs into an illegible blob. Saira Stencil One replaced it, kept at its native (normal) weight rather than forcing bold, with uppercase transform and slightly increased letter-spacing (`0.03em`) doing the "display" work that bold weight used to.
 
 ---
 
@@ -75,11 +77,11 @@ Icons should be **bold, monoline or solid tactical shapes** (2px stroke minimum)
 
 ### B. AO Card Component (Workout Sites)
 
-* **Visual Style:** Dark asphalt card with a subtle color indicator strip on the left edge (Blue for Bootcamp, Orange for Ruck, Green for Trail/Specialty).
+* **Visual Style:** Dark asphalt card with a subtle color indicator strip on the left edge (Blue for Bootcamp, Amber for Ruck, Green for Trail/Specialty).
 * **Key Data Points:**
 * **AO Name & Site Q:** Bold header (e.g., *The Gasworks*) + Site Q avatar.
 * **Time & Days:** Monospace font (e.g., `TUE / THU • 0530`).
-* **The Q:** "Q: @Roswell" badge. If open, an active Tac-Orange button: **[ TAKE THE Q ]**.
+* **The Q:** "Q: @Roswell" badge. If open, an active Ember Red button: **[ TAKE THE Q ]**.
 * **HC Counter:** A quick pill showing total Hard Commits (`14 PAX Committed`).
 
 
@@ -133,13 +135,16 @@ Icons should be **bold, monoline or solid tactical shapes** (2px stroke minimum)
     "surface-card": "#121416",
     "text-primary": "#FFFFFF",
     "text-muted": "#8A949E",
-    "brand-accent-orange": "#FF5A36",
+    "brand-accent-red": "#C83737",
     "1st-f-blue": "#3B82F6",
     "2nd-f-amber": "#F59E0B",
     "3rd-f-green": "#10B981"
   },
   "typography": {
-    "font-display": "Black Ops One, sans-serif",
+    "font-display": "Saira Stencil One, sans-serif",
+    "font-display-weight": "normal",
+    "font-display-transform": "uppercase",
+    "font-display-tracking": "0.03em",
     "font-body": "Inter, sans-serif",
     "font-mono": "JetBrains Mono, monospace"
   },
