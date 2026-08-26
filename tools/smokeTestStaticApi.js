@@ -3,8 +3,10 @@
  * smokeTestStaticApi.js — integration smoke test against a live SIT deployment, exercising the
  * static-pages migration specifically (rcballot-z4p): the doPost ?cmd=api JSON-RPC bridge
  * (script/ApiBridge.js) that static-pages/src/index.html now calls instead of
- * google.script.run, plus a check that the published static bundle is actually live on
- * GitHub Pages and pointed at this deployment.
+ * google.script.run.
+ *
+ * It does NOT check that the published page is live — gas-static's assertPublishedBuild does
+ * that, as a required step of every deploy. See the note where step 11 used to be.
  *
  * Unlike tools/smokeTest.js (which drives the secret-gated cmd=admin ops API), everything here
  * goes through cmd=api — unauthenticated, same as a real browser hitting the static page would
@@ -20,9 +22,7 @@
  *   8. submitBallotRanking x3 — three ballots with different orderings.
  *   9. addBallotTopic — a respondent-added candidate mid-race.
  *  10. getAdminAnalysisData_ — assert RCV + all four Condorcet methods return a sane shape.
- *  11. Fetch the live static page from GitHub Pages and assert it's stamped with this
- *      deployment's exec URL (proves the publish actually landed, not just committed).
- *  12. Cleanup: deleteSheet via the existing secret-gated cmd=admin ops API (best-effort).
+ *  11. Cleanup: deleteSheet via the existing secret-gated cmd=admin ops API (best-effort).
  *
  * Requires a live SIT deployment (sitDeploymentId in local.settings.json — see
  * `npm run deploy:sit`). Prints PASS/FAIL per step; exits non-zero on any failure.
@@ -33,7 +33,6 @@
 
 'use strict';
 
-const https = require('https');
 const { post, loadSettings, saveSetting_, generateSecret_, ENV_MAP, UNGATED_ACTIONS } = require('./callWebapp.js');
 
 const ENV = 'sit';
@@ -54,17 +53,6 @@ const results = [];
 function record_(step, ok, detail) {
   results.push({ step, ok, detail });
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${step}${detail ? ' — ' + detail : ''}`);
-}
-
-function get_(url) {
-  return new Promise((resolve, reject) => {
-    https.get(url, res => {
-      const chunks = [];
-      res.on('data', c => chunks.push(c));
-      res.on('end', () => resolve({ statusCode: res.statusCode, body: Buffer.concat(chunks).toString('utf8') }));
-      res.on('error', reject);
-    }).on('error', reject);
-  });
 }
 
 async function ensureAdminSecret_(deploymentId, settings) {
@@ -167,20 +155,18 @@ async function main() {
       a.finishOrders && a.finishOrders.condorcet);
     record_('getAdminAnalysisData_ returns full result shape', analysisOk, analysisOk ? ('winner=' + (a.rcv.winner || 'tie:' + a.rcv.tie)) : JSON.stringify(analysis));
 
-    // 11. Live static page check — confirms the published bundle is actually serving and
-    // pointed at THIS deployment, not just committed to the hosting repo.
-    const expectedExecUrl = `https://script.google.com/macros/s/${deploymentId}/exec`;
-    const staticUrl = 'https://f3go30.github.io/static-pages/ballot/sit/';
-    try {
-      const page = await get_(staticUrl);
-      const live = page.statusCode === 200 && page.body.includes(expectedExecUrl);
-      record_('live static page (' + staticUrl + ') stamped with this deployment', live,
-        live ? '' : `statusCode=${page.statusCode}, execUrlFound=${page.body.includes(expectedExecUrl)}`);
-    } catch (err) {
-      record_('live static page fetch', false, err.message + ' (GitHub Pages propagation lag? retry in ~1 min)');
-    }
+    // Step 11 — the live static page check — was REMOVED when this project moved onto gas-static.
+    // It fetched the published page and scraped its body for this deployment's /exec URL, using a
+    // fourth hardcoded copy of the static URL to do it. gas-static's assertPublishedBuild subsumes
+    // it and is strictly stronger: it runs as a *required* post-deploy hook, so a disagreement
+    // fails the deploy rather than being reported by a smoke test someone may not run; it reads
+    // the machine-written version.json instead of scraping a page body; and it asserts all three
+    // of version, env and webappUrl rather than the one. It also separates two failures this
+    // conflated — a version mismatch keeps polling because the CDN is still propagating, while an
+    // env or webappUrl mismatch fails on the first read, because nothing about that converges.
+    // Recorded in gas-static's README §Provenance as deliberately not ported.
   } finally {
-    // 12. Cleanup — best-effort, secret-gated cmd=admin (separate from cmd=api above).
+    // Cleanup — best-effort, secret-gated cmd=admin (separate from cmd=api above).
     const secret = await ensureAdminSecret_(deploymentId, loadSettings());
     if (secret) {
       const del = await post(adminUrl_(deploymentId), { action: 'deleteSheet', sheetName, adminSecret: secret });

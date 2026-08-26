@@ -1,20 +1,30 @@
 {
+  "_comment": [
+    "MACHINE TRUTH AND SECRETS ONLY — this file is gitignored. Copy it to local.settings.json and",
+    "fill it in. Project truth (each env's Apps Script project ID, spreadsheet ID, and static host)",
+    "is NOT here: it lives in the committed gas-project.json, so a wrong ID is caught in review once",
+    "instead of on every machine. GAS-Core adr/0004.",
+    "",
+    "A fresh clone needs only the values below; every project identifier is already correct."
+  ],
+
   "claspAuth":  "<path to this project's clasp credential file for SIT/PROD, e.g. ~/.clasprc-rankchoicevoting.json — passed to clasp via the clasp_config_auth env var by tools/manage-deployments.js>",
   "nuucAuth":   "<clasp credential file for the NUUC target's Google account (NUUC deploys under a separate account from SIT/PROD, so it has its own clasp login) — e.g. ~/.clasprc-nuuc.json>",
-  "sitScriptId":  "<SIT (dev) Apps Script project ID — Apps Script editor > Project Settings > IDs>",
-  "prodScriptId": "<PROD Apps Script project ID — Apps Script editor > Project Settings > IDs>",
-  "nuucScriptId": "<NUUC Apps Script project ID — Apps Script editor > Project Settings > IDs>",
-  "nuucSheetId":  "<Spreadsheet ID the NUUC script project is bound to, for reference — not read by tooling>",
-  "sitDeploymentId":  "<SIT web app deployment ID — filled in automatically by tools/manage-deployments.js after the first SIT deploy>",
-  "prodDeploymentId": "<PROD web app deployment ID — filled in automatically by tools/manage-deployments.js after the first PROD deploy>",
-  "nuucDeploymentId": "<NUUC web app deployment ID — filled in automatically by tools/manage-deployments.js after the first NUUC deploy>",
-  "axiomDataset":    "<Axiom dataset name, e.g. ballots — used by tools/query-axiom.js and GasLogger.flush()>",
-  "axiomToken":      "<Axiom ingest token — also set as the GAS script property AXIOM_TOKEN via the admin setScriptProperties action>",
-  "axiomQueryToken": "<Axiom query token — used only by tools/query-axiom.js; may be the same token as axiomToken>",
+
+  "sitDeploymentId":  "<CACHE — written back automatically by tools/manage-deployments.js after each SIT deploy. Never hand-entered.>",
+  "prodDeploymentId": "<CACHE — written back automatically after each PROD deploy.>",
+  "nuucDeploymentId": "<CACHE — written back automatically after each NUUC deploy.>",
+
   "sitAdminSecret":  "<SIT ADMIN_SHARED_SECRET — leave as empty string \"\" and let tools/callWebapp.js bootstrapSecret fill it in>",
   "prodAdminSecret": "<PROD ADMIN_SHARED_SECRET — leave as empty string \"\" and let tools/callWebapp.js bootstrapSecret fill it in>",
   "nuucAdminSecret": "<NUUC ADMIN_SHARED_SECRET — leave as empty string \"\" and let tools/callWebapp.js bootstrapSecret fill it in>",
+
+  "axiomDataset":    "<Axiom dataset name, e.g. ballots — used by tools/query-axiom.js and GasLogger.flush()>",
+  "axiomToken":      "<Axiom ingest token — also set as the GAS script property AXIOM_TOKEN via the admin setScriptProperties action>",
+  "axiomQueryToken": "<Axiom query token — used only by tools/query-axiom.js; may be the same token as axiomToken>",
+
   "GAS_LOGGER_PARENT_FOLDER_ID": "<Drive folder ID or URL of the shared log root — set via the admin setScriptProperties action>",
-  "staticPagesRepoPath": "<local checkout path of the f3go30/static-pages repo (e.g. ../F3Static) — tools/publish-static-pages.js copies the SIT/PROD static build to ballot/{sit,prod}/ there and pushes>",
-  "nuucStaticPagesRepoPath": "<local checkout path of the nuuc-it/Static repo (e.g. ../Static) — tools/publish-static-pages.js copies the NUUC static build to pub/ballot/ there and pushes>"
+
+  "staticRepoPath":     "<local checkout path of the f3go30/static-pages repo (e.g. ../F3Static) — where the SIT/PROD static build is published. WHICH repo, and which folder within it, are declared in gas-project.json; only this machine's path to your checkout belongs here.>",
+  "nuucStaticRepoPath": "<local checkout path of the nuuc-it/Static repo (e.g. ../Static) — where the NUUC static build is published. Same split as above.>"
 }

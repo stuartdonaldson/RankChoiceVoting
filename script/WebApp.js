@@ -5,7 +5,7 @@
  * WebApp.js, trimmed to this project's needs.
  *
  * The UI itself is a static front end (static-pages/src/index.html), published via GitHub
- * Pages by tools/publish-static-pages.js and backed by this deployment's ?cmd=api JSON
+ * Pages by gas-static (tools/static-pages.js) and backed by this deployment's ?cmd=api JSON
  * endpoint (see ApiBridge.js). GAS no longer renders any page HTML — see doGet below.
  *
  *   (no cmd), ?cmd=ballot, ?cmd=admin  — one-tap redirect to the static front end, forwarding

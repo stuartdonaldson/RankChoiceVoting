@@ -39,9 +39,9 @@ const UNGATED_ACTIONS = new Set(['bootstrapSecret', 'setWebappUrl']);
  * original name, kept because tools/smokeTest.js and tools/smokeTestStaticApi.js destructure it.
  */
 const ENV_MAP = {
-  sit:  { deploymentIdKey: 'sitDeploymentId',  secretKey: 'sitAdminSecret',  adminSecretKey: 'sitAdminSecret',  scriptIdKey: 'sitScriptId'  },
-  prod: { deploymentIdKey: 'prodDeploymentId', secretKey: 'prodAdminSecret', adminSecretKey: 'prodAdminSecret', scriptIdKey: 'prodScriptId' },
-  nuuc: { deploymentIdKey: 'nuucDeploymentId', secretKey: 'nuucAdminSecret', adminSecretKey: 'nuucAdminSecret', scriptIdKey: 'nuucScriptId', authKey: 'nuucAuth' },
+  sit:  { deploymentIdKey: 'sitDeploymentId',  secretKey: 'sitAdminSecret',  adminSecretKey: 'sitAdminSecret'  },
+  prod: { deploymentIdKey: 'prodDeploymentId', secretKey: 'prodAdminSecret', adminSecretKey: 'prodAdminSecret' },
+  nuuc: { deploymentIdKey: 'nuucDeploymentId', secretKey: 'nuucAdminSecret', adminSecretKey: 'nuucAdminSecret', authKey: 'nuucAuth' },
 };
 
 const config = {

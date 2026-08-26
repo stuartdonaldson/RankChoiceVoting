@@ -80,26 +80,27 @@ function handleApiPost_(e) {
 /**
  * Where the static front end (this deployment's UI, formerly rendered server-side via
  * HtmlService — see WebApp.js doGet) is published for the currently deployed target. Each
- * target's static content is hosted on a *sibling* GitHub Pages repo, not this one — published
- * by tools/publish-static-pages.js as the last step of every tools/manage-deployments.js deploy:
- *   SIT/PROD  -> ../F3Static (f3go30/static-pages), which already hosts F3Go30's own static
- *                front end at dist/{sit,prod}/ — RankChoiceVoting's build is namespaced
- *                alongside it at ballot/{sit,prod}/ rather than getting its own repo, following
- *                the same multi-app-per-static-host convention nuuc-it/Static already uses
- *                (pub/AS, pub/AS-sit, ...).
- *   NUUC      -> ../Static (nuuc-it/Static), at pub/ballot/ (a single folder — NUUC is one
- *                environment, unlike SIT/PROD, so there's no sit/prod split to make here).
- * Returns '' for an unrecognized/unset APP_DEPLOY_TARGET so callers can render an explicit
- * "not configured" message instead of a broken link.
+ * target's static content is hosted on a *sibling* GitHub Pages repo, not this one, published by
+ * gas-static as a required post-deploy step of every tools/manage-deployments.js deploy —
+ * f3go30/static-pages at ballot/{sit,prod}/ for SIT/PROD, nuuc-it/Static at pub/ballot/ for NUUC
+ * (NUUC is one environment, so there is no sit/prod split there).
+ *
+ * This used to hardcode those three URLs, and was the THIRD copy of them: the other two were
+ * tools/manage-deployments.js's STATIC_ENTRY_BASE_URL and tools/publish-static-pages.js's
+ * DEST_MAP, and nothing kept them in step. They are now declared once, as identifiers, in the
+ * committed gas-project.json (GAS-Core adr/0004) — the host's GitHub Pages URL plus this env's
+ * registered folder — and composed into BUILD_INFO.staticUrl by the deploy's stamper. A GAS
+ * script file cannot require() gas-project.json, so the composed value is stamped in rather than
+ * read: see tools/manage-deployments.js's stampAll_.
+ *
+ * Falls back to '' when BUILD_INFO carries no staticUrl (an old stamp, or a checkout that has
+ * never been deployed) so callers render an explicit "not configured" message, not a broken link.
  *
  * @return {string}
  */
 function _staticPagesBaseUrl_() {
-  var target = (typeof APP_DEPLOY_TARGET !== 'undefined' && APP_DEPLOY_TARGET) || '';
-  if (target === 'SIT') return 'https://f3go30.github.io/static-pages/ballot/sit/';
-  if (target === 'PROD') return 'https://f3go30.github.io/static-pages/ballot/prod/';
-  if (target === 'NUUC') return 'https://nuuc-it.github.io/Static/pub/ballot/';
-  return '';
+  if (typeof BUILD_INFO === 'undefined' || !BUILD_INFO) return '';
+  return BUILD_INFO.staticUrl || '';
 }
 
 /**

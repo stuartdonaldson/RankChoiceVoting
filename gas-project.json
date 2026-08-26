@@ -1,0 +1,45 @@
+{
+  "$comment": [
+    "PROJECT TRUTH — committed on purpose. GAS-Core adr/0004: per-env identifiers of external",
+    "resources live here, where a wrong ID is caught in review once instead of on every machine.",
+    "Machine truth and secrets (clasp auth, admin secrets, API tokens, the deploymentId cache the",
+    "deploy writes back) stay in the gitignored local.settings.json — see local.settings.json.example.",
+    "None of the IDs below is a secret: a scriptId appears in every Apps Script editor URL, and a",
+    "sheetId in every spreadsheet URL. Access is controlled by Drive sharing, not by their obscurity.",
+    "",
+    "envs.<target>.scriptId / .sheetId are read by gas-deploy (>= v1.4.0).",
+    "envs.<target>.static and staticHosts are read by this project's tools/static-pages.js, which",
+    "composes gas-static's config from them; gas-deploy ignores them."
+  ],
+
+  "envs": {
+    "sit": {
+      "scriptId": "1tGLrQlOPDiHAbGj8t2TbZhqdCSjp1l7z5n3qajwX85b8Z-vx7SKQoj3I",
+      "sheetId": "1RCQlZ8FH5fdmh3ias5iIrttnD_IVLvctrMGvUNVdWeA",
+      "static": { "host": "f3", "dest": "ballot/sit" }
+    },
+    "prod": {
+      "scriptId": "1NJRGvSY8SJw6dOU4d6CvWrIUNCNR-m1WsOddoAuOZ6q5PtWKFUDJNzyh",
+      "sheetId": "1u_S9D68vHo6Z2qgG0hjRB65TaC-Q6JwA7CS59_0CPI4",
+      "static": { "host": "f3", "dest": "ballot/prod" }
+    },
+    "nuuc": {
+      "scriptId": "1t8dC-Buza2quFmE12AyDluOqUsoKl9zS6QDVBWLcrnboJs7G__8qFS87",
+      "sheetId": "1lyuR9KotUjSX3UlwLNX4Z11d6erya5OOfOUpvJV2BaA",
+      "static": { "host": "nuuc", "dest": "pub/ballot" }
+    }
+  },
+
+  "staticHosts": {
+    "f3": {
+      "repo": "f3go30/static-pages",
+      "pagesUrl": "https://f3go30.github.io/static-pages/",
+      "repoKey": "staticRepoPath"
+    },
+    "nuuc": {
+      "repo": "nuuc-it/Static",
+      "pagesUrl": "https://nuuc-it.github.io/Static/",
+      "repoKey": "nuucStaticRepoPath"
+    }
+  }
+}

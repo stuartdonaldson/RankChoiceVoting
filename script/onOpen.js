@@ -16,7 +16,7 @@ function onOpen() {
 function showAbout() {
   var url = _getWebAppUrl_();
   // The admin/ballot UI lives on the static front end now (static-pages/src/index.html,
-  // published by tools/publish-static-pages.js) — user-facing links point there directly
+  // published by gas-static via tools/static-pages.js) — user-facing links point there directly
   // rather than at the GAS exec URL, which now only serves as a one-tap redirect to it (see
   // ApiBridge.js's _renderStaticRedirect_). `url` above is still shown separately below as the
   // backend URL, which is genuinely useful diagnostic info, just not where you want to click.

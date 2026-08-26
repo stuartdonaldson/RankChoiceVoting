@@ -73,9 +73,9 @@ package and cutting a new `gas-deploy-vX.Y.Z` tag, not editing these two files. 
 `GAS-Core/best-practices/gas-deployment/RECOMMENDATION.md`.
 
 ```bash
-pnpm run deploy:sit    # bump build + stamp SIT  + push to sitScriptId
-pnpm run deploy:prod   # bump patch + stamp PROD + push to prodScriptId
-pnpm run deploy:nuuc   # bump patch + stamp NUUC + push to nuucScriptId
+pnpm run deploy:sit    # bump build + stamp SIT  + push to envs.sit.scriptId
+pnpm run deploy:prod   # bump patch + stamp PROD + push to envs.prod.scriptId
+pnpm run deploy:nuuc   # bump patch + stamp NUUC + push to envs.nuuc.scriptId
 ```
 
 ### Deploy verification (`cmd=version`)
@@ -114,6 +114,59 @@ side of the verification lives in the package.
 `node tools/manage-deployments.js --summary --env sit` prints the same summary for what is
 *currently* deployed without deploying anything, and flags any divergence between the live
 version and the local `script/version.js`.
+
+## Configuration lives in two files
+
+GAS-Core `adr/0004`. Know which half a fact belongs in before you add one:
+
+| | file | holds |
+|---|---|---|
+| **project truth** | `gas-project.json`, **committed** | Per-env identifiers of external resources: `scriptId`, `sheetId`, and the static host (`staticHosts.<host>.repo` / `.pagesUrl`, plus each env's `static.dest`). Identical for every developer, so a typo is caught in review once instead of on every machine. |
+| **machine truth & secrets** | `local.settings.json`, **gitignored** | `claspAuth` / `nuucAuth`, the three `*AdminSecret`s, the Axiom tokens, `staticRepoPath` / `nuucStaticRepoPath` (this machine's checkouts of the host repos), and the `*DeploymentId` **cache** the deploy writes back. |
+
+None of the IDs in the committed half is a secret — a `scriptId` appears in every Apps Script
+editor URL. Access is controlled by Drive sharing, not by their obscurity.
+
+**Env *declarations* stay in JS**, not JSON: labels, counters, emoji and the post-deploy hook order
+are `tools/manage-deployments.js`'s; the themes and font links are `tools/static-pages.js`'s. They
+were always committed and reviewable, so moving them would add a second declaration mechanism
+without retiring the first.
+
+A disagreement between the two files is never silent: an env declared in `gas-project.json` with no
+matching secret throws before anything shells out, and a fact left behind in both files takes the
+committed value and warns which stale key to delete.
+
+## The static front end
+
+The UI is a static page on GitHub Pages, not `HtmlService` — GAS serves only `?cmd=api` JSON plus a
+one-tap redirect (`script/ApiBridge.js`). **The build/publish/verify pipeline lives in the shared
+`gas-static` package**, pinned by tag; `tools/static-pages.js` here is pure config. It replaced
+`tools/build-static-pages.js` and `tools/publish-static-pages.js`, both deleted.
+
+It is never run on its own: `manage-deployments.js` chains **build → publish →
+assertPublishedBuild** as *required* post-deploy hooks, so the page and the backend it calls ship as
+one release and a disagreement fails the deploy.
+
+Three env keys (`sit`, `prod`, `nuuc`) across **two** host repos — `f3go30/static-pages` at
+`ballot/{sit,prod}`, `nuuc-it/Static` at `pub/ballot`. Both carry a `PUBLISHERS.md` ownership map,
+and a publish to a folder registered to another project is refused (GAS-Core `adr/0003`).
+Registering a new folder is a reviewed edit **in the host repo**, first.
+
+Two things worth knowing before touching it:
+
+- **The backend URL comes from `BUILD_INFO`, never from a deployment ID.** `script/version.js`
+  carries a generated `BUILD_INFO` literal whose `webappUrl` is the `/exec` URL of the deployment
+  *this* deploy just landed in — which is why `resolveBeforeStamp: true` is set. Building an env
+  whose declared `deployTarget` disagrees with the stamped `env` throws before writing anything.
+  GAS-Core `adr/0001`; the old build constructed that URL from `local.settings.json` and reconciled
+  it against nothing.
+- **`BUILD_INFO.staticUrl` is how GAS-side code knows the page URL.** `_staticPagesBaseUrl_` reads
+  it rather than hardcoding three URLs as it used to. A GAS script file cannot `require()`
+  `gas-project.json`, so the composed URL is stamped in at deploy time.
+
+Adding a page-level build-time value means adding a token to `placeholders` in
+`tools/static-pages.js` — not changing the package. A missing placeholder is a hard failure that
+writes nothing.
 
 ## Architecture Overview
 
