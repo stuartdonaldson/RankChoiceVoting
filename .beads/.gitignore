@@ -68,3 +68,15 @@ bd.db
 # They would override fork protection in .git/info/exclude.
 # Config files (metadata.json, config.yaml) are tracked by git by default
 # since no pattern above ignores them.
+
+# --- added by bd-config-audit ---
+proxieddb/
+last_pull
+.auto-import-issues.jsonl
+proxied_server_client_info.json
+dolt-monitor.*
+dolt-pprof/
+interactions.jsonl
+issues.jsonl
+
+# bd-policy: ignore-jsonl
