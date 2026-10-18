@@ -64,7 +64,7 @@
  * ranks stay aligned to their column. The table also carries a per-candidate "Details"
  * note editable from the admin page; it is kept in sync by saveBallotCandidates_/
  * addBallotCandidate_, not by hand-editing. A ballot created before the Candidates
- * table existed has no Candidates marker — _ensureCandidatesSection_ inserts it (empty)
+ * table existed has no Candidates marker — _ensureBallotSections_ inserts it (empty)
  * the first time anything here needs it, so older sheets self-heal rather than throwing.
  *
  * webBallot.js (respondent UI) and webAdmin.js (analysis) both read/write
@@ -215,29 +215,76 @@ function _unfreezeStaleHeaderRows_(sheet, responsesHeaderRow) {
 }
 
 /**
- * Inserts an empty Candidates marker + header row directly above the Responses marker
- * if this sheet doesn't have one yet (a ballot created before the Candidates section
- * existed). No-op if the sheet already has a Candidates marker, or has no Responses
- * marker to anchor the insert to (shouldn't happen for any sheet created via
- * createBallotSheet_).
+ * Self-repair for a ballot sheet missing any of its three section markers, run at the start
+ * of every section read/write entry. Without a marker, that section's rows count as part of
+ * the section above — and if that is Results, the next analysis run deletes them. Repairs,
+ * in this order, each logged as ballot.repair.<section>Section {sheet,row}:
+ *   - [Candidates] missing: an empty marker + header is inserted directly above
+ *     [Responses], or appended at the end when [Responses] is missing too (a ballot
+ *     created before the Candidates section existed);
+ *   - [Responses] missing: see _repairResponsesSectionLocked_ (appended only when that
+ *     is provably safe, else logged and left alone);
+ *   - [Results] missing: a marker is inserted directly above the first present marker,
+ *     which keeps the canonical order.
+ * Existing rows are never reassigned to another section: every repair inserts new
+ * marker/header rows (or appends below everything). A healthy sheet costs one layout read
+ * and takes no lock; otherwise the lock is taken and the layout re-checked under it.
  *
  * @param {Sheet} sheet
  * @param {Object=} layout from _readBallotLayout_, if the caller already has a current one.
- * @return {Object} the current layout (re-read after a repair).
+ * @return {Object} the current layout (re-read after any repair). A marker can still be
+ *   missing when its repair was refused.
+ */
+function _ensureBallotSections_(sheet, layout) {
+  layout = layout || _readBallotLayout_(sheet);
+  if (_ballotMarkersComplete_(layout)) return layout;
+  return _withBallotLock_(function () {
+    var current = _readBallotLayout_(sheet);
+    if (current.markers.candidates === -1) {
+      var row;
+      if (current.markers.responses !== -1) {
+        row = current.markers.responses;
+        sheet.insertRowsBefore(row, 2);
+      } else {
+        row = current.lastRow + 1;
+      }
+      sheet.getRange(row, 1).setValue(_BALLOT_CANDIDATES_MARKER);
+      sheet.getRange(row + 1, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).setValues([_BALLOT_CANDIDATES_HEADER]);
+      _logBallotEvent_('ballot.repair.candidatesSection', { sheet: sheet.getName(), row: row });
+      current = _readBallotLayout_(sheet);
+    }
+    if (current.markers.responses === -1 && _repairResponsesSectionLocked_(sheet, current)) {
+      current = _readBallotLayout_(sheet);
+    }
+    if (current.markers.results === -1 && current.firstMarkerRow !== -1) {
+      var resultsRow = current.firstMarkerRow;
+      sheet.insertRowsBefore(resultsRow, 1);
+      sheet.getRange(resultsRow, 1).setValue(_BALLOT_RESULTS_MARKER);
+      _logBallotEvent_('ballot.repair.resultsSection', { sheet: sheet.getName(), row: resultsRow });
+      current = _readBallotLayout_(sheet);
+    }
+    return current;
+  });
+}
+
+/**
+ * @param {Object} layout from _readBallotLayout_
+ * @return {boolean} true when all three section markers are present.
+ */
+function _ballotMarkersComplete_(layout) {
+  return _BALLOT_SECTION_KEYS_.every(function (k) { return layout.markers[k] !== -1; });
+}
+
+/**
+ * Former single-purpose repair, kept as a name for callers/tests: runs the generic
+ * _ensureBallotSections_.
+ *
+ * @param {Sheet} sheet
+ * @param {Object=} layout
+ * @return {Object} the current layout.
  */
 function _ensureCandidatesSection_(sheet, layout) {
-  layout = layout || _readBallotLayout_(sheet);
-  if (layout.markers.candidates !== -1 || layout.markers.responses === -1) return layout;
-  return _withBallotLock_(function () {
-    // Re-check under the lock: another request may have repaired (or shifted rows) meanwhile.
-    var current = _readBallotLayout_(sheet);
-    if (current.markers.candidates !== -1 || current.markers.responses === -1) return current;
-    var responsesRow = current.markers.responses;
-    sheet.insertRowsBefore(responsesRow, 2);
-    sheet.getRange(responsesRow, 1).setValue(_BALLOT_CANDIDATES_MARKER);
-    sheet.getRange(responsesRow + 1, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).setValues([_BALLOT_CANDIDATES_HEADER]);
-    return _readBallotLayout_(sheet);
-  });
+  return _ensureBallotSections_(sheet, layout);
 }
 
 /**
@@ -289,54 +336,55 @@ function _logBallotEvent_(tag, data) {
 }
 
 /**
- * Re-creates a lost [Responses] marker + header directly after the sheet's last row —
- * the typical cause being a hand-paste of candidates over rows that held them. Without
- * it every section boundary below [Candidates] is undefined and readBallotCandidateDetails_
- * finds nothing. Only repairs when column A below the Candidates header is entirely blank:
- * column A is marker-only, so any text there may be orphaned response rows (Date in col A)
- * and appending a header beneath them would misfile them — that case is logged, not touched.
- * No-op when the sheet has a [Responses] marker or no [Candidates] marker.
+ * Former single-purpose repair, kept as a name for callers/tests: runs the generic
+ * _ensureBallotSections_ (see _repairResponsesSectionLocked_ for the Responses rule).
  *
  * @param {Sheet} sheet
- * @param {Object=} layout from _readBallotLayout_, if the caller already has a current one.
- * @return {Object} the current layout (re-read after a repair).
+ * @param {Object=} layout
+ * @return {Object} the current layout.
  */
 function _ensureResponsesSection_(sheet, layout) {
-  layout = layout || _readBallotLayout_(sheet);
-  if (layout.markers.candidates === -1 || layout.markers.responses !== -1) return layout;
-  return _withBallotLock_(function () {
-    // Re-check under the lock before touching anything.
-    var current = _readBallotLayout_(sheet);
-    if (current.markers.candidates === -1 || current.markers.responses !== -1) return current;
-    _repairResponsesSectionLocked_(sheet, current.markers.candidates);
-    return _readBallotLayout_(sheet);
-  });
+  return _ensureBallotSections_(sheet, layout);
 }
 
 /**
- * Body of _ensureResponsesSection_; caller holds the ballot lock and has verified the
- * [Candidates] marker exists at candidatesRow and [Responses] does not.
+ * Re-creates a lost [Responses] marker + header directly after the sheet's last row —
+ * the typical cause being a hand-paste of candidates over rows that held them (rcballot-4wm).
+ * Only repairs when column A below the last present marker's header (below the marker
+ * itself for [Results], which has no header) is entirely blank: column A is marker-only, so
+ * any text there may be orphaned response rows (Date in col A) and appending a header
+ * beneath them would misfile them — that case is logged as ballot.parse.responsesMarkerMissing
+ * and nothing is written. Caller holds the ballot lock and has a current layout with no
+ * [Responses] marker.
  *
  * @param {Sheet} sheet
- * @param {number} candidatesRow
+ * @param {Object} layout from _readBallotLayout_
+ * @return {boolean} true if the section was appended.
  */
-function _repairResponsesSectionLocked_(sheet, candidatesRow) {
-  var lastRow = sheet.getLastRow();
-  var firstDataRow = candidatesRow + 2;
+function _repairResponsesSectionLocked_(sheet, layout) {
+  var last = null;
+  _BALLOT_SECTION_KEYS_.forEach(function (k) {
+    var section = layout.sections[k];
+    if (section && (!last || section.markerRow > last.markerRow)) last = section;
+  });
+  if (!last) return false; // no marker to anchor to: not a ballot layout we can reason about
+  var lastRow = layout.lastRow;
+  var firstScanRow = (last.headerRow || last.markerRow) + 1;
   var colARows = [];
-  if (lastRow >= firstDataRow) {
-    sheet.getRange(firstDataRow, 1, lastRow - firstDataRow + 1, 1).getValues().forEach(function (r, i) {
-      if (String(r[0] || '').trim()) colARows.push(firstDataRow + i);
+  if (lastRow >= firstScanRow) {
+    sheet.getRange(firstScanRow, 1, lastRow - firstScanRow + 1, 1).getValues().forEach(function (r, i) {
+      if (String(r[0] || '').trim()) colARows.push(firstScanRow + i);
     });
   }
   if (colARows.length) {
-    _logBallotEvent_('ballot.parse.responsesMarkerMissing', { sheet: sheet.getName(), candidatesRow: candidatesRow, colARows: colARows });
-    return;
+    _logBallotEvent_('ballot.parse.responsesMarkerMissing', { sheet: sheet.getName(), lastMarkerRow: last.markerRow, colARows: colARows });
+    return false;
   }
-  var markerRow = Math.max(lastRow, candidatesRow + 1) + 1;
+  var markerRow = Math.max(lastRow, firstScanRow - 1) + 1;
   sheet.getRange(markerRow, 1).setValue(_BALLOT_RESPONSES_MARKER);
   sheet.getRange(markerRow + 1, 1, 1, _BALLOT_RESPONSE_FIXED_COLS.length).setValues([_BALLOT_RESPONSE_FIXED_COLS]);
   _logBallotEvent_('ballot.repair.responsesSection', { sheet: sheet.getName(), row: markerRow });
+  return true;
 }
 
 /**
@@ -345,7 +393,7 @@ function _repairResponsesSectionLocked_(sheet, candidatesRow) {
  * layout (columns B/C, col A left blank). Detected by the Candidates header's column A
  * cell still holding the literal "Name" label — the current layout never writes
  * anything to column A there. A no-op for a sheet already on the new layout (or
- * with no Candidates section at all — call _ensureCandidatesSection_ first).
+ * with no Candidates section at all — call _ensureBallotSections_ first).
  *
  * Without this, readBallotCandidateDetails_ silently reads garbage (the OLD Details
  * column mistaken for the new Name column) rather than throwing, because both
@@ -1180,6 +1228,44 @@ function submitBallotResponse_(id, name, orderedCandidates, comment) {
 }
 
 /**
+ * Decides whether writeBallotResults_ must refuse to rewrite the Results region. The rewrite
+ * clears and resizes everything between [Results] and the next marker, so it is only safe
+ * when that region provably holds analysis output: refuses when a marker is still missing
+ * after repair, when any marker is duplicated, or when the region holds what looks like
+ * another section's header row absorbed into it (Candidates: col B "Name" + col C
+ * "Details"; Responses: col A "Date" + col B "Name") — the signature of a deleted marker.
+ *
+ * @param {Sheet} sheet
+ * @param {Object} layout from _readBallotLayout_
+ * @return {?{reason:string, markers:(Array<string>|undefined), row:(number|undefined)}} null when safe.
+ */
+function _resultsRewriteRefusal_(sheet, layout) {
+  var missing = _BALLOT_SECTION_KEYS_.filter(function (k) { return layout.markers[k] === -1; });
+  if (missing.length) {
+    return { reason: 'markerMissing', markers: missing.map(function (k) { return _BALLOT_SECTION_MARKER_TEXT_[k]; }) };
+  }
+  if (layout.duplicates.length) {
+    return { reason: 'duplicateMarker', markers: layout.duplicates.map(function (d) { return d.marker; }) };
+  }
+  var results = layout.sections.results;
+  var count = results.endRow - results.firstDataRow + 1;
+  if (count <= 0) return null;
+  var values = sheet.getRange(results.firstDataRow, 1, count, 3).getValues();
+  for (var i = 0; i < values.length; i++) {
+    var a = String(values[i][0] || '').trim();
+    var b = String(values[i][1] || '').trim();
+    var c = String(values[i][2] || '').trim();
+    if (b === _BALLOT_CANDIDATES_HEADER[0] && c === _BALLOT_CANDIDATES_HEADER[1]) {
+      return { reason: 'absorbedCandidatesHeader', row: results.firstDataRow + i };
+    }
+    if (a === _BALLOT_RESPONSE_FIXED_COLS[0] && b === _BALLOT_RESPONSE_FIXED_COLS[1]) {
+      return { reason: 'absorbedResponsesHeader', row: results.firstDataRow + i };
+    }
+  }
+  return null;
+}
+
+/**
  * Inserts or deletes rows so the Results section has exactly rows.length
  * rows available, then writes rows into it. Leaves every other section untouched — the
  * insert/delete happens strictly between the [Results] marker and the next marker below
@@ -1191,11 +1277,14 @@ function submitBallotResponse_(id, name, orderedCandidates, comment) {
  * @param {Array<Array>} rows
  */
 function writeBallotResults_(sheet, rows) {
-  var layout = _ensureCandidatesSection_(sheet);
-  var results = layout.sections.results;
-  if (!results || !layout.sections.candidates) {
-    throw new Error('Ballot sheet is missing its Results/Candidates markers.');
+  var layout = _ensureBallotSections_(sheet);
+  var refusal = _resultsRewriteRefusal_(sheet, layout);
+  if (refusal) {
+    refusal.sheet = sheet.getName();
+    _logBallotEvent_('ballot.write.refused', refusal);
+    throw new Error('Ballot sheet layout is damaged — fix the markers before running analysis.');
   }
+  var results = layout.sections.results;
   // Clear the whole region (every column, col A included) first: column A is
   // markers-only, so output from the older layout that wrote names there must not
   // survive the rewrite; the resize then inserts/deletes blank rows only.
@@ -1207,19 +1296,17 @@ function writeBallotResults_(sheet, rows) {
 }
 
 /**
- * Runs the Candidates-side self-repairs and returns the layout they leave behind — the
- * shared preamble of readBallotCandidateDetails_ and writeBallotCandidateDetails_.
+ * Runs the section self-repair plus the Candidates-side migrations and returns the layout
+ * they leave behind — the shared preamble of readBallotCandidateDetails_ and
+ * writeBallotCandidateDetails_, and through them of every other section read/write entry.
  *
  * @param {Sheet} sheet
- * @param {boolean} ensureResponses also re-create a lost [Responses] section (read path).
  * @return {Object} layout from _readBallotLayout_.
  */
-function _prepareCandidatesSection_(sheet, ensureResponses) {
-  var layout = _ensureCandidatesSection_(sheet);
+function _prepareCandidatesSection_(sheet) {
+  var layout = _ensureBallotSections_(sheet);
   layout = _migrateCandidatesColumnsIfNeeded_(sheet, layout);
-  layout = _ensureCandidatesHeaderColumns_(sheet, layout);
-  if (ensureResponses) layout = _ensureResponsesSection_(sheet, layout);
-  return layout;
+  return _ensureCandidatesHeaderColumns_(sheet, layout);
 }
 
 /**
@@ -1242,10 +1329,10 @@ function readBallotCandidateDetails_(sheet) {
  * @return {{rows:Array<{name:string, details:string, linkText:string, linkUrl:string}>, layout:Object}}
  */
 function _readCandidateDetailsAndLayout_(sheet) {
-  var layout = _prepareCandidatesSection_(sheet, true);
+  var layout = _prepareCandidatesSection_(sheet);
   var candidates = layout.sections.candidates;
   // Without a [Responses] marker the rows below [Candidates] may be orphaned votes (see
-  // _ensureResponsesSection_), so nothing is read as a candidate until it is repaired.
+  // _repairResponsesSectionLocked_), so nothing is read as a candidate until it is repaired.
   if (!candidates || !layout.sections.responses) {
     _logBallotEvent_('ballot.parse.markerMissing', { sheet: sheet.getName(), candidatesRow: layout.markers.candidates, responsesRow: layout.markers.responses });
     return { rows: [], layout: layout };
@@ -1286,7 +1373,7 @@ function _readCandidateDetailsAndLayout_(sheet) {
  * @param {Array<{name:string, details:string, linkText:string, linkUrl:string}>} candidateRows
  */
 function writeBallotCandidateDetails_(sheet, candidateRows) {
-  var layout = _prepareCandidatesSection_(sheet, false);
+  var layout = _prepareCandidatesSection_(sheet);
   var candidates = layout.sections.candidates;
   if (!candidates || !layout.sections.responses) {
     throw new Error('Ballot sheet is missing its Candidates/Responses markers.');
@@ -1403,6 +1490,7 @@ if (typeof module !== 'undefined' && module.exports) {
     addBallotCandidateForAdmin_: addBallotCandidateForAdmin_,
     _highlightSectionMarkers_: _highlightSectionMarkers_,
     _ensureCandidatesSection_: _ensureCandidatesSection_,
+    _ensureBallotSections_: _ensureBallotSections_,
     _ensureResponsesSection_: _ensureResponsesSection_,
     _migrateCandidatesColumnsIfNeeded_: _migrateCandidatesColumnsIfNeeded_,
     _ensureCandidatesHeaderColumns_: _ensureCandidatesHeaderColumns_,

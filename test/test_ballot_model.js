@@ -1138,6 +1138,141 @@ function testNoGetLastRowPlusOneWrites() {
   assert.deepEqual(hits, []);
 }
 
+/** Row of the first column-A cell exactly equal to text, or -1. */
+function rowOf(sheet, text) {
+  const col = sheet.getRange(1, 1, sheet.getLastRow(), 1).getValues();
+  for (let i = 0; i < col.length; i++) if (col[i][0] === text) return i + 1;
+  return -1;
+}
+
+/** kix.6 AC1: each marker, removed alone, is restored per its rule and logged. */
+function testEachMissingMarkerIsRestoredAndLogged() {
+  // [Candidates] marker deleted: an empty section goes in directly above [Responses].
+  let t = loadBallotModel();
+  let sheet = buildOrderedBallot(t.ss, 'NoCand', ['results', 'candidates', 'responses']);
+  const responsesRow = rowOf(sheet, '[Responses]');
+  sheet.getRange(rowOf(sheet, '[Candidates]'), 1).setValue('');
+  t.SM.readBallotCandidates_(sheet);
+  assert.equal(sheet.getRange(responsesRow, 1).getValue(), '[Candidates]');
+  assert.deepEqual(sheet.getRange(responsesRow + 1, 2, 1, 2).getValues()[0], ['Name', 'Details']);
+  assert.equal(sheet.getRange(responsesRow + 2, 1).getValue(), '[Responses]');
+  let lines = logLinesWith(t.sandbox, 'ballot.repair.candidatesSection');
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].indexOf('"row":' + responsesRow) !== -1, true, lines[0]);
+
+  // [Candidates] and [Responses] both absent: Candidates is appended at the end, then
+  // Responses below it (column A under the new Candidates header is blank).
+  t = loadBallotModel();
+  sheet = buildOrderedBallot(t.ss, 'OnlyResults', ['results']);
+  const last = sheet.getLastRow();
+  t.SM.readBallotCandidateDetails_(sheet);
+  assert.equal(sheet.getRange(last + 1, 1).getValue(), '[Candidates]');
+  assert.equal(sheet.getRange(last + 3, 1).getValue(), '[Responses]');
+  assert.equal(logLinesWith(t.sandbox, 'ballot.repair.candidatesSection').length, 1);
+  assert.equal(logLinesWith(t.sandbox, 'ballot.repair.responsesSection').length, 1);
+
+  // [Responses] section gone, Results is the bottom section with column A blank below its
+  // marker: Responses is appended after the last row.
+  t = loadBallotModel();
+  sheet = buildOrderedBallot(t.ss, 'NoResp', ['candidates', 'results']);
+  const lastRow = sheet.getLastRow();
+  assert.deepEqual(t.SM.readBallotCandidateDetails_(sheet).map((it) => it.name), ['Alice', 'Bob']);
+  assert.equal(sheet.getRange(lastRow + 1, 1).getValue(), '[Responses]');
+  assert.deepEqual(sheet.getRange(lastRow + 2, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
+  lines = logLinesWith(t.sandbox, 'ballot.repair.responsesSection');
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].indexOf('"row":' + (lastRow + 1)) !== -1, true, lines[0]);
+
+  // [Results] marker deleted: re-inserted directly above the first present marker, in
+  // canonical and non-canonical orders alike; no existing row changes section. (When
+  // Results sat BELOW another section, deleting its marker already handed its rows to that
+  // section; the repair cannot know where the marker was and does not move them back.)
+  [['results', 'candidates', 'responses'], ['results', 'responses', 'candidates']].forEach((order) => {
+    t = loadBallotModel();
+    sheet = buildOrderedBallot(t.ss, 'NoRes', order);
+    sheet.getRange(rowOf(sheet, '[Results]'), 1).setValue('');
+    const firstMarker = rowOf(sheet, SECTION_MARKERS[order[1]]);
+    const before = t.SM.readBallotResponseRows_(sheet).map((r) => r.name);
+    assert.equal(sheet.getRange(firstMarker, 1).getValue(), '[Results]', order.join('/'));
+    assert.equal(sheet.getRange(firstMarker + 1, 1).getValue(), SECTION_MARKERS[order[1]]);
+    assert.deepEqual(before, ['V1', 'V2']);
+    assert.deepEqual(t.SM.readBallotCandidates_(sheet), ['Alice', 'Bob']);
+    lines = logLinesWith(t.sandbox, 'ballot.repair.resultsSection');
+    assert.equal(lines.length, 1, order.join('/'));
+    assert.equal(lines[0].indexOf('"row":' + firstMarker) !== -1, true, lines[0]);
+  });
+}
+
+/** kix.6 AC2: [Responses] marker lost but its rows remain (Date in column A) — no repair, logged. */
+function testMissingResponsesMarkerWithOrphanedRowsIsNotRepaired() {
+  ['results', 'candidates'].forEach((lastBefore) => {
+    const { SM, ss, sandbox } = loadBallotModel();
+    const order = lastBefore === 'results' ? ['results', 'candidates', 'responses'] : ['candidates', 'results', 'responses'];
+    const sheet = buildOrderedBallot(ss, 'Orphan', order);
+    sheet.getRange(rowOf(sheet, '[Responses]'), 1).setValue('');
+    const lastRow = sheet.getLastRow();
+    assert.deepEqual(SM.readBallotCandidateDetails_(sheet), []);
+    assert.equal(sheet.getLastRow(), lastRow);
+    assert.equal(rowOf(sheet, '[Responses]'), -1);
+    assert.equal(logLinesWith(sandbox, 'ballot.parse.responsesMarkerMissing').length > 0, true);
+    assert.equal(logLinesWith(sandbox, 'ballot.repair.responsesSection').length, 0);
+  });
+}
+
+function wholeSheet(sheet) {
+  return { lastRow: sheet.getLastRow(), values: sheet.getRange(1, 1, sheet.getLastRow(), Math.max(sheet.getLastColumn(), 1)).getValues() };
+}
+
+/** kix.6 AC3: writeBallotResults_ refuses (throws + logs, writes nothing) on a damaged layout. */
+function testWriteBallotResultsRefusesOnDamagedLayout() {
+  const damage = {
+    duplicateMarker: (sheet) => sheet.getRange(sheet.getLastRow() + 1, 1).setValue('[Candidates]'),
+    absorbedCandidatesHeader: (sheet) => sheet.getRange(rowOf(sheet, '[Results]') + 1, 2, 1, 2).setValues([['Name', 'Details']]),
+    absorbedResponsesHeader: (sheet) => sheet.getRange(rowOf(sheet, '[Results]') + 2, 1, 1, 2).setValues([['Date', 'Name']]),
+  };
+  Object.keys(damage).forEach((reason) => {
+    const { SM, ss, sandbox } = loadBallotModel();
+    const sheet = buildOrderedBallot(ss, 'Refuse', ['results', 'candidates', 'responses']);
+    damage[reason](sheet);
+    const before = wholeSheet(sheet);
+    const log = spyWrites(sheet, sandbox.LockService._state);
+    assert.throws(() => SM.writeBallotResults_(sheet, [['new output']]), /^Error: Ballot sheet layout is damaged — fix the markers before running analysis\.$/, reason);
+    assert.deepEqual(log.writes, [], reason + ': refusal wrote');
+    assert.deepEqual(wholeSheet(sheet), before, reason);
+    const lines = logLinesWith(sandbox, 'ballot.write.refused');
+    assert.equal(lines.length, 1, reason);
+    assert.equal(lines[0].indexOf('"reason":"' + reason + '"') !== -1, true, lines[0]);
+    assert.equal(lines[0].indexOf('"sheet":"Ballot-Refuse"') !== -1, true, lines[0]);
+  });
+
+  // A deleted [Candidates] marker: the repair inserts a fresh section above [Responses],
+  // which leaves the old Candidates header inside the Results region — refused, and the
+  // Results region (old candidate rows included) is left exactly as the repair left it.
+  let t = loadBallotModel();
+  let sheet = buildOrderedBallot(t.ss, 'LostCand', ['results', 'candidates', 'responses']);
+  sheet.getRange(rowOf(sheet, '[Candidates]'), 1).setValue('');
+  t.SM._ensureBallotSections_(sheet);
+  let before = wholeSheet(sheet);
+  assert.throws(() => t.SM.writeBallotResults_(sheet, [['x']]), /layout is damaged/);
+  assert.deepEqual(wholeSheet(sheet), before);
+  assert.equal(logLinesWith(t.sandbox, '"reason":"absorbedCandidatesHeader"').length, 1);
+
+  // A [Responses] marker that could not be repaired: still missing after repair → refused.
+  t = loadBallotModel();
+  sheet = buildOrderedBallot(t.ss, 'LostResp', ['results', 'candidates', 'responses']);
+  sheet.getRange(rowOf(sheet, '[Responses]'), 1).setValue('');
+  before = wholeSheet(sheet);
+  assert.throws(() => t.SM.writeBallotResults_(sheet, [['x']]), /layout is damaged/);
+  assert.deepEqual(wholeSheet(sheet), before);
+  assert.equal(logLinesWith(t.sandbox, '"reason":"markerMissing"').length, 1);
+
+  // Healthy sheet in a non-canonical order: not refused.
+  t = loadBallotModel();
+  sheet = buildOrderedBallot(t.ss, 'Fine', ['responses', 'results', 'candidates']);
+  t.SM.writeBallotResults_(sheet, [['ok']]);
+  assert.equal(logLinesWith(t.sandbox, 'ballot.write.refused').length, 0);
+}
+
 function run() {
   testCreateNewBallotCreatesSkeleton();
   testListBallotIdsAndFindBallotSheet();
@@ -1183,6 +1318,9 @@ function run() {
   testNewVoteFillsBlankRowBeforeNextMarker();
   testAddBallotCandidateAfterRepairWritesResponsesHeader();
   testNoGetLastRowPlusOneWrites();
+  testEachMissingMarkerIsRestoredAndLogged();
+  testMissingResponsesMarkerWithOrphanedRowsIsNotRepaired();
+  testWriteBallotResultsRefusesOnDamagedLayout();
   console.log('test_ballot_model: all tests passed');
 }
 
