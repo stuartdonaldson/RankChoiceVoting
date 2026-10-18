@@ -889,6 +889,41 @@ function testSelfRepairWritesRunUnderLock() {
   assert.equal(t.sandbox.LockService._state.waitCount, 0);
 }
 
+/** New ballots are not frozen at all (the old fixed 14-row freeze is gone). */
+function testNewBallotHasNoFrozenRows() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = SM.createNewBallot_(ss, 'NoFreeze');
+  assert.equal(sheet.getFrozenRows(), 0);
+}
+
+/** The legacy freeze-at-14 is undone by _highlightSectionMarkers_ only when the Responses header isn't row 14. */
+function testHighlightSectionMarkersUnfreezesStaleFourteenRowFreeze() {
+  const { SM, ss, sandbox } = loadBallotModel();
+  const sheet = SM.createNewBallot_(ss, 'StaleFreeze');
+  SM.writeBallotResults_(sheet, [['a'], ['b'], ['c']]); // pushes the Responses header below row 14
+  sheet.setFrozenRows(14);
+
+  SM._highlightSectionMarkers_(sheet);
+  assert.equal(sheet.getFrozenRows(), 0);
+  const lines = logLinesWith(sandbox, 'ballot.repair.frozenRows');
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].indexOf('StaleFreeze') !== -1, true);
+
+  // Header genuinely at row 14: a deliberate freeze, left alone.
+  const same = SM.createNewBallot_(ss, 'SameFreeze');
+  same.setFrozenRows(14);
+  SM._highlightSectionMarkers_(same);
+  assert.equal(same.getFrozenRows(), 14);
+
+  // Any other value is a user choice.
+  const other = SM.createNewBallot_(ss, 'OtherFreeze');
+  SM.writeBallotResults_(other, [['a'], ['b'], ['c']]);
+  other.setFrozenRows(3);
+  SM._highlightSectionMarkers_(other);
+  assert.equal(other.getFrozenRows(), 3);
+  assert.equal(logLinesWith(sandbox, 'ballot.repair.frozenRows').length, 1);
+}
+
 function run() {
   testCreateNewBallotCreatesSkeleton();
   testListBallotIdsAndFindBallotSheet();
@@ -922,6 +957,8 @@ function run() {
   testWithBallotLockIsReentrantAndReleasesOnThrow();
   testModelEntryPointsWriteUnderLock();
   testSelfRepairWritesRunUnderLock();
+  testNewBallotHasNoFrozenRows();
+  testHighlightSectionMarkersUnfreezesStaleFourteenRowFreeze();
   testDuplicateIdThrows();
   testInvalidIdThrows();
   console.log('test_ballot_model: all tests passed');
