@@ -30,7 +30,7 @@ function loadBallotModel() {
   vm.runInContext(src, sandbox, { filename: 'BallotModel.js' });
   const modelExports = sandbox.module.exports;
 
-  return { SM: Object.assign({}, cacheExports, modelExports), ss };
+  return { SM: Object.assign({}, cacheExports, modelExports), ss, sandbox };
 }
 
 function testCreateNewBallotCreatesSkeleton() {
@@ -591,6 +591,78 @@ function testInvalidIdThrows() {
   assert.throws(() => SM.createNewBallot_(ss, '_leadingUnderscore'), /may only contain/);
 }
 
+/** Logger lines from a loadBallotModel() sandbox containing `tag`. */
+function logLinesWith(sandbox, tag) {
+  return sandbox.Logger._lines.filter((l) => String(l).indexOf(tag) !== -1);
+}
+
+/**
+ * Builds a ballot whose [Responses] marker + header were lost (e.g. overwritten while
+ * hand-pasting candidates) — the sheet simply ends after the Candidates header.
+ */
+function createBallotWithoutResponsesSection(SM, ss, id) {
+  const sheet = SM.createNewBallot_(ss, id);
+  sheet.deleteRows(13, 2); // rows 13/14: [Responses] marker + header
+  assert.equal(sheet.getLastRow(), 12);
+  return sheet;
+}
+
+/**
+ * A missing [Responses] section with only candidate data below the Candidates header is
+ * re-created after the last row, so hand-pasted candidates are found instead of silently
+ * dropped.
+ */
+function testMissingResponsesSectionSelfHealsAndReturnsCandidates() {
+  const { SM, ss, sandbox } = loadBallotModel();
+  const sheet = createBallotWithoutResponsesSection(SM, ss, 'NoResponses');
+  sheet.getRange(13, 2, 2, 2).setValues([['Alice', 'first'], ['Bob', 'second']]);
+
+  assert.deepEqual(SM.readBallotCandidateDetails_(sheet).map((it) => it.name), ['Alice', 'Bob']);
+  assert.equal(sheet.getRange(15, 1).getValue(), '[Responses]');
+  assert.deepEqual(sheet.getRange(16, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice', 'Bob']);
+  assert.equal(logLinesWith(sandbox, 'ballot.repair.responsesSection').length, 1);
+}
+
+/**
+ * Column-A text below the Candidates header with no [Responses] marker could be orphaned
+ * response rows — never guess: write nothing, log why no candidates were found.
+ */
+function testMissingResponsesSectionWithColumnAContentIsNotRepaired() {
+  const { SM, ss, sandbox } = loadBallotModel();
+  const sheet = createBallotWithoutResponsesSection(SM, ss, 'NoResponsesColA');
+  sheet.getRange(13, 1).setValue('Alice');
+
+  assert.deepEqual(SM.readBallotCandidateDetails_(sheet), []);
+  assert.equal(sheet.getLastRow(), 13);
+  assert.equal(logLinesWith(sandbox, 'ballot.parse.responsesMarkerMissing').length > 0, true);
+}
+
+/** A candidate typed into column A is ignored (col A is marker-only) but logged. */
+function testCandidateInColumnAIsLoggedAndIgnored() {
+  const { SM, ss, sandbox } = loadBallotModel();
+  const sheet = SM.createNewBallot_(ss, 'ColA');
+  SM.writeBallotCandidateDetails_(sheet, [{ name: 'Alice', details: '' }, { name: 'Bob', details: '' }]);
+  sheet.getRange(14, 1).setValue('Carol'); // beside Bob, in the reserved column
+
+  assert.deepEqual(SM.readBallotCandidateDetails_(sheet).map((it) => it.name), ['Alice', 'Bob']);
+  const lines = logLinesWith(sandbox, 'ballot.parse.candidateInColumnA');
+  assert.equal(lines.length > 0, true);
+  assert.equal(lines[0].indexOf('14') !== -1, true);
+}
+
+/** Every cache rebuild logs what discovery found. */
+function testCacheRefreshLogsDiscoverySummary() {
+  const { SM, ss, sandbox } = loadBallotModel();
+  const sheet = SM.createNewBallot_(ss, 'Summary');
+  SM.writeBallotCandidateDetails_(sheet, [{ name: 'Alice', details: '' }]);
+  SM.refreshBallotCache_('Summary', sheet);
+
+  const lines = logLinesWith(sandbox, 'ballot.cache.refresh');
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].indexOf('"candidateCount":1') !== -1, true);
+}
+
 function run() {
   testCreateNewBallotCreatesSkeleton();
   testListBallotIdsAndFindBallotSheet();
@@ -614,6 +686,10 @@ function run() {
   testPrePopulatedCandidateNotInResponsesIsReconciledIn();
   testReadBallotCandidateDetailsIgnoresBlankRow();
   testReconcileCompactsGapCausedByWiderCandidatesTable();
+  testMissingResponsesSectionSelfHealsAndReturnsCandidates();
+  testMissingResponsesSectionWithColumnAContentIsNotRepaired();
+  testCandidateInColumnAIsLoggedAndIgnored();
+  testCacheRefreshLogsDiscoverySummary();
   testDuplicateIdThrows();
   testInvalidIdThrows();
   console.log('test_ballot_model: all tests passed');

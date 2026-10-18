@@ -207,6 +207,55 @@ function _ensureCandidatesSection_(sheet) {
 }
 
 /**
+ * Logs a sheet-parsing/repair event. Goes through GasLogger when it's loaded (web app
+ * requests, where entries also reach Drive/Axiom); otherwise — e.g. the onEdit simple
+ * trigger's restricted context, or Node tests — straight to Logger, which still shows in
+ * the Apps Script Executions log. Callers pass sheet names, row numbers and counts only.
+ *
+ * @param {string} tag
+ * @param {Object} data
+ */
+function _logBallotEvent_(tag, data) {
+  if (typeof GasLogger !== 'undefined') {
+    GasLogger.log(tag, data);
+  } else {
+    Logger.log(tag + ' ' + JSON.stringify(data));
+  }
+}
+
+/**
+ * Re-creates a lost [Responses] marker + header directly after the sheet's last row —
+ * the typical cause being a hand-paste of candidates over rows that held them. Without
+ * it every section boundary below [Candidates] is undefined and readBallotCandidateDetails_
+ * finds nothing. Only repairs when column A below the Candidates header is entirely blank:
+ * column A is marker-only, so any text there may be orphaned response rows (Date in col A)
+ * and appending a header beneath them would misfile them — that case is logged, not touched.
+ * No-op when the sheet has a [Responses] marker or no [Candidates] marker.
+ *
+ * @param {Sheet} sheet
+ */
+function _ensureResponsesSection_(sheet) {
+  var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
+  if (candidatesRow === -1 || _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER) !== -1) return;
+  var lastRow = sheet.getLastRow();
+  var firstDataRow = candidatesRow + 2;
+  var colARows = [];
+  if (lastRow >= firstDataRow) {
+    sheet.getRange(firstDataRow, 1, lastRow - firstDataRow + 1, 1).getValues().forEach(function (r, i) {
+      if (String(r[0] || '').trim()) colARows.push(firstDataRow + i);
+    });
+  }
+  if (colARows.length) {
+    _logBallotEvent_('ballot.parse.responsesMarkerMissing', { sheet: sheet.getName(), candidatesRow: candidatesRow, colARows: colARows });
+    return;
+  }
+  var markerRow = Math.max(lastRow, candidatesRow + 1) + 1;
+  sheet.getRange(markerRow, 1).setValue(_BALLOT_RESPONSES_MARKER);
+  sheet.getRange(markerRow + 1, 1, 1, _BALLOT_RESPONSE_FIXED_COLS.length).setValues([_BALLOT_RESPONSE_FIXED_COLS]);
+  _logBallotEvent_('ballot.repair.responsesSection', { sheet: sheet.getName(), row: markerRow });
+}
+
+/**
  * Migrates a Candidates section still using the OLD column layout (Name/Details in
  * columns A/B, from before column A was reserved for markers only) to the current
  * layout (columns B/C, col A left blank). Detected by the Candidates header's column A
@@ -865,12 +914,25 @@ function readBallotCandidateDetails_(sheet) {
   _ensureCandidatesSection_(sheet);
   _migrateCandidatesColumnsIfNeeded_(sheet);
   _ensureCandidatesHeaderColumns_(sheet);
+  _ensureResponsesSection_(sheet);
   var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
   var responsesRow = _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER);
-  if (candidatesRow === -1 || responsesRow === -1) return [];
+  if (candidatesRow === -1 || responsesRow === -1) {
+    _logBallotEvent_('ballot.parse.markerMissing', { sheet: sheet.getName(), candidatesRow: candidatesRow, responsesRow: responsesRow });
+    return [];
+  }
   var candidatesHeaderRow = candidatesRow + 1;
   var count = responsesRow - candidatesHeaderRow - 1;
   if (count <= 0) return [];
+  // Column A is marker-only (see file header) and never read as a candidate — but a name
+  // typed there is an easy mistake, so say so rather than let it vanish silently.
+  var colARows = [];
+  sheet.getRange(candidatesHeaderRow + 1, 1, count, 1).getValues().forEach(function (r, i) {
+    if (String(r[0] || '').trim()) colARows.push(candidatesHeaderRow + 1 + i);
+  });
+  if (colARows.length) {
+    _logBallotEvent_('ballot.parse.candidateInColumnA', { sheet: sheet.getName(), rows: colARows });
+  }
   var values = sheet.getRange(candidatesHeaderRow + 1, _BALLOT_CANDIDATES_FIRST_COL, count, _BALLOT_CANDIDATES_HEADER.length).getValues();
   // A row with no name (e.g. a stray blank row someone left in the sheet) isn't a
   // candidate — skip it rather than returning a phantom entry that would throw off
@@ -1014,6 +1076,7 @@ if (typeof module !== 'undefined' && module.exports) {
     addBallotCandidateForAdmin_: addBallotCandidateForAdmin_,
     _highlightSectionMarkers_: _highlightSectionMarkers_,
     _ensureCandidatesSection_: _ensureCandidatesSection_,
+    _ensureResponsesSection_: _ensureResponsesSection_,
     _migrateCandidatesColumnsIfNeeded_: _migrateCandidatesColumnsIfNeeded_,
     _ensureCandidatesHeaderColumns_: _ensureCandidatesHeaderColumns_
   };

@@ -80,6 +80,11 @@ function refreshBallotCache_(id, sheet) {
     candidates: candidateRows,
     updatedAt: new Date().toISOString()
   };
+  _logBallotEvent_('ballot.cache.refresh', {
+    id: id,
+    candidateCount: candidateRows.length,
+    configKeys: Object.keys(data.config)
+  });
   try {
     PropertiesService.getScriptProperties().setProperty(_ballotCacheKey_(id), JSON.stringify(data));
   } catch (err) {
