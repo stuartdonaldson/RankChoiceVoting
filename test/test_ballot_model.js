@@ -40,13 +40,13 @@ function testCreateNewBallotCreatesSkeleton() {
   assert.equal(sheet.getName(), 'Ballot-Test123');
 
   const config = SM.readBallotConfig_(sheet);
-  assert.equal(config.Title, '[TODO: ballot title shown to respondents]');
-  assert.equal(config.Description, '[TODO: describe what this ballot is about] Enter your name below to start or resume ranking — if you’ve already been here, your previous answers will be loaded so you can review or change them.');
-  assert.equal(config.Instructions, '[TODO: any extra guidance for ranking these particular candidates] Drag items to reorder them, with your most preferred choice on top.');
-  assert.equal(config.Footer, '[TODO: footer text, e.g. deadline or sponsoring group]');
-  assert.equal(config.Contact, '[TODO: contact name/email for questions]');
+  assert.equal(config.Title, '[TODO: ballot title shown to respondents — delete this bracket and edit the example] 2027 Board of Trustees Election');
+  assert.equal(config.Description, '[TODO: describe what this ballot is about — delete this bracket and edit the example] Help choose next year’s Board of Trustees by ranking the nominees below. Enter your name below to start or resume ranking — if you’ve already been here, your previous answers will be loaded so you can review or change them.');
+  assert.equal(config.Instructions, '[TODO: any extra guidance for ranking these particular candidates — delete this bracket and edit the example] Rank every nominee you have an opinion about; you don’t have to rank them all. Drag items to reorder them, with your most preferred choice on top.');
+  assert.equal(config.Footer, '[TODO: footer text, e.g. deadline or sponsoring group — delete this bracket and edit the example] Voting closes Sunday, March 14 at 5:00 PM. Sponsored by the Nominating Committee.');
+  assert.equal(config.Contact, '[TODO: contact name/email for questions — delete this bracket and edit the example] Questions? Contact Jane Smith at nominating@example.org.');
   assert.equal(config['Accept-New'], 'TRUE');
-  assert.equal(config['Add-Instructions'], '[TODO: instructions shown above the "+ Add New" button, if enabled]');
+  assert.equal(config['Add-Instructions'], '[TODO: instructions shown above the "+ Add New" button, if enabled — delete this bracket and edit the example] Don’t see someone you’d like to nominate? Add their name and a short description.');
   assert.equal(config['Admin-Only-Notes'], '');
 
   // Results marker at row 10, Candidates marker/header at 11/12, Responses marker at row

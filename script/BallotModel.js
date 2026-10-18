@@ -121,8 +121,8 @@ function findBallotSheet_(ss, id) {
 
 /**
  * Creates a new Ballot-<id> sheet with placeholder configuration and an
- * empty Results/Responses skeleton. Placeholder values start with "[TODO"
- * so they are easy to spot and grep for.
+ * empty Results/Responses skeleton. Placeholder values start with a "[TODO: ...]"
+ * instruction (easy to spot and grep for) followed by example text to edit.
  *
  * @param {Spreadsheet} ss
  * @param {string} id
@@ -131,20 +131,20 @@ function findBallotSheet_(ss, id) {
 function createBallotSheet_(ss, id) {
   var sheet = ss.insertSheet(getBallotSheetName_(id));
   sheet.getRange(1, 1, 8, 2).setValues([
-    // Description/Instructions default text folds in the "how to use this" guidance that the
-    // static ballot page (static-pages/src/index.html) used to render as fixed, uneditable copy
-    // below each field — every visible string on the page is now admin-editable, none of it
-    // hardcoded. The bracketed [TODO: ...] lead-in is the only part that actually needs
-    // replacing per-ballot; the rest is usable as-is. Existing ballots created before this
-    // change keep whatever Description/Instructions they already have — this only affects new
-    // ballots' starting text.
-    ['Title', '[TODO: ballot title shown to respondents]'],
-    ['Description', '[TODO: describe what this ballot is about] Enter your name below to start or resume ranking — if you’ve already been here, your previous answers will be loaded so you can review or change them.'],
-    ['Instructions', '[TODO: any extra guidance for ranking these particular candidates] Drag items to reorder them, with your most preferred choice on top.'],
-    ['Footer', '[TODO: footer text, e.g. deadline or sponsoring group]'],
-    ['Contact', '[TODO: contact name/email for questions]'],
+    // Each placeholder is "[TODO: what to enter — delete this bracket] <example>": the
+    // bracketed lead-in says what the field is for, and the text after it is a working
+    // example, so the admin deletes the bracket and edits the example rather than writing
+    // from scratch. Description/Instructions also fold in the "how to use this" guidance the
+    // static ballot page (static-pages/src/index.html) used to render as fixed copy — every
+    // visible string on the page is admin-editable, none of it hardcoded. Existing ballots
+    // keep whatever they already have; this only affects new ballots' starting text.
+    ['Title', '[TODO: ballot title shown to respondents — delete this bracket and edit the example] 2027 Board of Trustees Election'],
+    ['Description', '[TODO: describe what this ballot is about — delete this bracket and edit the example] Help choose next year’s Board of Trustees by ranking the nominees below. Enter your name below to start or resume ranking — if you’ve already been here, your previous answers will be loaded so you can review or change them.'],
+    ['Instructions', '[TODO: any extra guidance for ranking these particular candidates — delete this bracket and edit the example] Rank every nominee you have an opinion about; you don’t have to rank them all. Drag items to reorder them, with your most preferred choice on top.'],
+    ['Footer', '[TODO: footer text, e.g. deadline or sponsoring group — delete this bracket and edit the example] Voting closes Sunday, March 14 at 5:00 PM. Sponsored by the Nominating Committee.'],
+    ['Contact', '[TODO: contact name/email for questions — delete this bracket and edit the example] Questions? Contact Jane Smith at nominating@example.org.'],
     ['Accept-New', 'TRUE'],
-    ['Add-Instructions', '[TODO: instructions shown above the "+ Add New" button, if enabled]'],
+    ['Add-Instructions', '[TODO: instructions shown above the "+ Add New" button, if enabled — delete this bracket and edit the example] Don’t see someone you’d like to nominate? Add their name and a short description.'],
     ['Admin-Only-Notes', '']
   ]);
   sheet.getRange(10, 1).setValue(_BALLOT_RESULTS_MARKER);
