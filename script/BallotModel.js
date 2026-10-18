@@ -82,6 +82,7 @@ var _BALLOT_LEGACY_CONFIG_KEYS_ = { 'Admin-Only-Notes': ['Info'] };
 var _BALLOT_RESPONSE_FIXED_COLS = ['Date', 'Name', 'Weight', 'Comment'];
 var _BALLOT_FIRST_CANDIDATE_COL = _BALLOT_RESPONSE_FIXED_COLS.length + 1; // 5
 var _BALLOT_LOCK_TIMEOUT_MS = 30000;
+var _ballotLockDepth_ = 0; // nesting depth of _withBallotLock_ in this execution (GAS runs one request per isolate)
 // Bold + light-blue background applied to every section marker/header row so the
 // sheet's structure (Results / Candidates / Responses) is easy to scan visually.
 var _BALLOT_SECTION_HIGHLIGHT_BG = '#e8f0fe';
@@ -199,11 +200,47 @@ function _highlightSectionMarkers_(sheet) {
  */
 function _ensureCandidatesSection_(sheet) {
   if (_findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER) !== -1) return;
-  var responsesRow = _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER);
-  if (responsesRow === -1) return;
-  sheet.insertRowsBefore(responsesRow, 2);
-  sheet.getRange(responsesRow, 1).setValue(_BALLOT_CANDIDATES_MARKER);
-  sheet.getRange(responsesRow + 1, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).setValues([_BALLOT_CANDIDATES_HEADER]);
+  if (_findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER) === -1) return;
+  _withBallotLock_(function () {
+    // Re-check under the lock: another request may have repaired (or shifted rows) meanwhile.
+    if (_findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER) !== -1) return;
+    var responsesRow = _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER);
+    if (responsesRow === -1) return;
+    sheet.insertRowsBefore(responsesRow, 2);
+    sheet.getRange(responsesRow, 1).setValue(_BALLOT_CANDIDATES_MARKER);
+    sheet.getRange(responsesRow + 1, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).setValues([_BALLOT_CANDIDATES_HEADER]);
+  });
+}
+
+/**
+ * Runs fn while holding the script lock, so every sheet read-modify-write on a ballot
+ * is serialized against every other. Re-entrant: only the outermost call (depth 0)
+ * acquires the lock and releases it (in finally, so a throw can't leak it); nested calls
+ * — e.g. adminSaveCandidate holding the lock around saveBallotCandidatesForId_, or a
+ * self-repair inside a locked write — just run fn. The script lock itself is not
+ * re-entrant, so a second waitLock in the same execution would block until it timed out.
+ *
+ * @param {function(): *} fn
+ * @return {*} fn's return value.
+ */
+function _withBallotLock_(fn) {
+  if (_ballotLockDepth_ > 0) {
+    _ballotLockDepth_++;
+    try {
+      return fn();
+    } finally {
+      _ballotLockDepth_--;
+    }
+  }
+  var lock = LockService.getScriptLock();
+  lock.waitLock(_BALLOT_LOCK_TIMEOUT_MS);
+  _ballotLockDepth_ = 1;
+  try {
+    return fn();
+  } finally {
+    _ballotLockDepth_ = 0;
+    lock.releaseLock();
+  }
 }
 
 /**
@@ -237,6 +274,22 @@ function _logBallotEvent_(tag, data) {
 function _ensureResponsesSection_(sheet) {
   var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
   if (candidatesRow === -1 || _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER) !== -1) return;
+  _withBallotLock_(function () {
+    // Re-check under the lock before touching anything.
+    var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
+    if (candidatesRow === -1 || _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER) !== -1) return;
+    _repairResponsesSectionLocked_(sheet, candidatesRow);
+  });
+}
+
+/**
+ * Body of _ensureResponsesSection_; caller holds the ballot lock and has verified the
+ * [Candidates] marker exists at candidatesRow and [Responses] does not.
+ *
+ * @param {Sheet} sheet
+ * @param {number} candidatesRow
+ */
+function _repairResponsesSectionLocked_(sheet, candidatesRow) {
   var lastRow = sheet.getLastRow();
   var firstDataRow = candidatesRow + 2;
   var colARows = [];
@@ -278,16 +331,25 @@ function _migrateCandidatesColumnsIfNeeded_(sheet) {
   var headerColA = String(sheet.getRange(candidatesHeaderRow, 1).getValue() || '').trim();
   if (headerColA !== _BALLOT_CANDIDATES_HEADER[0]) return; // already migrated (col A blank) or unrecognized
 
-  var responsesRow = _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER);
-  if (responsesRow === -1) return;
-  var count = responsesRow - candidatesHeaderRow - 1;
-  var oldValues = count > 0 ? sheet.getRange(candidatesHeaderRow + 1, 1, count, 2).getValues() : [];
+  _withBallotLock_(function () {
+    // Re-check under the lock: a concurrent request may already have migrated.
+    var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
+    if (candidatesRow === -1) return;
+    var candidatesHeaderRow = candidatesRow + 1;
+    var headerColA = String(sheet.getRange(candidatesHeaderRow, 1).getValue() || '').trim();
+    if (headerColA !== _BALLOT_CANDIDATES_HEADER[0]) return;
 
-  sheet.getRange(candidatesHeaderRow, 1, count + 1, 1).clearContent(); // vacate col A (header + data rows)
-  sheet.getRange(candidatesHeaderRow, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).setValues([_BALLOT_CANDIDATES_HEADER]);
-  if (count > 0) {
-    sheet.getRange(candidatesHeaderRow + 1, _BALLOT_CANDIDATES_FIRST_COL, count, 2).setValues(oldValues);
-  }
+    var responsesRow = _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER);
+    if (responsesRow === -1) return;
+    var count = responsesRow - candidatesHeaderRow - 1;
+    var oldValues = count > 0 ? sheet.getRange(candidatesHeaderRow + 1, 1, count, 2).getValues() : [];
+
+    sheet.getRange(candidatesHeaderRow, 1, count + 1, 1).clearContent(); // vacate col A (header + data rows)
+    sheet.getRange(candidatesHeaderRow, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).setValues([_BALLOT_CANDIDATES_HEADER]);
+    if (count > 0) {
+      sheet.getRange(candidatesHeaderRow + 1, _BALLOT_CANDIDATES_FIRST_COL, count, 2).setValues(oldValues);
+    }
+  });
 }
 
 /**
@@ -306,8 +368,17 @@ function _ensureCandidatesHeaderColumns_(sheet) {
   var current = sheet.getRange(headerRow, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).getValues()[0];
   var missing = _BALLOT_CANDIDATES_HEADER.filter(function (label, i) { return String(current[i] || '').trim() === ''; });
   if (!missing.length) return;
-  var firstMissingCol = _BALLOT_CANDIDATES_FIRST_COL + (_BALLOT_CANDIDATES_HEADER.length - missing.length);
-  sheet.getRange(headerRow, firstMissingCol, 1, missing.length).setValues([missing]);
+  _withBallotLock_(function () {
+    // Re-check under the lock before appending.
+    var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
+    if (candidatesRow === -1) return;
+    var headerRow = candidatesRow + 1;
+    var current = sheet.getRange(headerRow, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).getValues()[0];
+    var missing = _BALLOT_CANDIDATES_HEADER.filter(function (label, i) { return String(current[i] || '').trim() === ''; });
+    if (!missing.length) return;
+    var firstMissingCol = _BALLOT_CANDIDATES_FIRST_COL + (_BALLOT_CANDIDATES_HEADER.length - missing.length);
+    sheet.getRange(headerRow, firstMissingCol, 1, missing.length).setValues([missing]);
+  });
 }
 
 /**
@@ -447,8 +518,13 @@ function _findMarkerRow_(sheet, marker) {
     var cell = String(values[i][0] || '').trim();
     if (cell === marker) return i + 1;
     if (legacyTexts.indexOf(cell) !== -1) {
-      sheet.getRange(i + 1, 1).setValue(marker); // one-time upgrade to the current decorated form
-      return i + 1;
+      var legacyRow = i + 1;
+      _withBallotLock_(function () {
+        if (String(sheet.getRange(legacyRow, 1).getValue() || '').trim() === cell) {
+          sheet.getRange(legacyRow, 1).setValue(marker); // one-time upgrade to the current decorated form
+        }
+      });
+      return legacyRow;
     }
   }
   return -1;
@@ -472,7 +548,12 @@ function readBallotConfig_(sheet) {
     if (!key) return;
     Object.keys(_BALLOT_LEGACY_CONFIG_KEYS_).forEach(function (currentKey) {
       if (_BALLOT_LEGACY_CONFIG_KEYS_[currentKey].indexOf(key) !== -1) {
-        sheet.getRange(i + 1, 1).setValue(currentKey); // one-time upgrade to the current key name
+        var legacyKey = key;
+        _withBallotLock_(function () {
+          if (String(sheet.getRange(i + 1, 1).getValue() || '').trim() === legacyKey) {
+            sheet.getRange(i + 1, 1).setValue(currentKey); // one-time upgrade to the current key name
+          }
+        });
         key = currentKey;
       }
     });
@@ -529,10 +610,28 @@ function readBallotCandidates_(sheet) {
  * @param {Sheet} sheet
  */
 function _reconcileCandidatesWithResponses_(sheet) {
+  var plan = _planCandidateReconcile_(sheet);
+  if (!plan) return;
+  _withBallotLock_(function () {
+    // Re-plan under the lock: another request may have appended the same columns meanwhile.
+    var current = _planCandidateReconcile_(sheet);
+    if (current) _applyCandidateReconcile_(sheet, current);
+  });
+}
+
+/**
+ * Read-only half of _reconcileCandidatesWithResponses_: works out what (if anything) the
+ * Responses header needs.
+ *
+ * @param {Sheet} sheet
+ * @return {{headerRow:number, existingNames:Array<string>, compacted:Array<string>, missingNames:Array<string>}|null}
+ *   null when the header already matches the Candidates table.
+ */
+function _planCandidateReconcile_(sheet) {
   var candidateRows = readBallotCandidateDetails_(sheet);
-  if (!candidateRows.length) return;
+  if (!candidateRows.length) return null;
   var headerRow = _getResponsesHeaderRow_(sheet);
-  if (headerRow === -1) return;
+  if (headerRow === -1) return null;
 
   var lastCol = sheet.getLastColumn();
   var existingNames = lastCol < _BALLOT_FIRST_CANDIDATE_COL ? [] :
@@ -547,6 +646,28 @@ function _reconcileCandidatesWithResponses_(sheet) {
   // are always written starting at _BALLOT_FIRST_CANDIDATE_COL regardless of the
   // header (see submitBallotResponse_) — so the header, not the data, is what drifted.
   var compacted = existingNames.filter(function (n) { return n; });
+
+  var existingSet = {};
+  compacted.forEach(function (n) { existingSet[n] = true; });
+
+  var missingNames = candidateRows
+    .map(function (it) { return it.name; })
+    .filter(function (n) { return n && !existingSet[n]; });
+  if (compacted.length === existingNames.length && !missingNames.length) return null;
+  return { headerRow: headerRow, existingNames: existingNames, compacted: compacted, missingNames: missingNames };
+}
+
+/**
+ * Write half of _reconcileCandidatesWithResponses_; caller holds the ballot lock.
+ *
+ * @param {Sheet} sheet
+ * @param {{headerRow:number, existingNames:Array<string>, compacted:Array<string>, missingNames:Array<string>}} plan
+ */
+function _applyCandidateReconcile_(sheet, plan) {
+  var headerRow = plan.headerRow;
+  var existingNames = plan.existingNames;
+  var compacted = plan.compacted;
+  var missingNames = plan.missingNames;
   if (compacted.length !== existingNames.length) {
     Logger.log('Ballot "' + sheet.getName() + '": correcting ' + (existingNames.length - compacted.length) +
       ' blank gap column(s) in the Responses header.');
@@ -556,13 +677,6 @@ function _reconcileCandidatesWithResponses_(sheet) {
     }
     existingNames = compacted;
   }
-
-  var existingSet = {};
-  existingNames.forEach(function (n) { if (n) existingSet[n] = true; });
-
-  var missingNames = candidateRows
-    .map(function (it) { return it.name; })
-    .filter(function (n) { return n && !existingSet[n]; });
   if (!missingNames.length) return;
 
   // Computed from the header's own (now-compacted) candidate count, not
@@ -816,9 +930,7 @@ function addBallotCandidateForId_(id, phrase, details) {
   phrase = String(phrase || '').trim();
   if (!phrase) throw new Error('Item cannot be empty.');
 
-  var lock = LockService.getScriptLock();
-  lock.waitLock(_BALLOT_LOCK_TIMEOUT_MS);
-  try {
+  return _withBallotLock_(function () {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
@@ -827,9 +939,7 @@ function addBallotCandidateForId_(id, phrase, details) {
     addBallotCandidate_(sheet, phrase, details);
     refreshBallotCache_(id, sheet); // keep the cache (BallotCache.js) in sync with this write
     return { candidate: phrase };
-  } finally {
-    lock.releaseLock();
-  }
+  });
 }
 
 /**
@@ -848,9 +958,7 @@ function submitBallotResponse_(id, name, orderedCandidates, comment) {
   if (!name) throw new Error('Name is required.');
   if (!orderedCandidates || !orderedCandidates.length) throw new Error('Ranking cannot be empty.');
 
-  var lock = LockService.getScriptLock();
-  lock.waitLock(_BALLOT_LOCK_TIMEOUT_MS);
-  try {
+  return _withBallotLock_(function () {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
@@ -877,9 +985,7 @@ function submitBallotResponse_(id, name, orderedCandidates, comment) {
     ]);
 
     return { ok: true };
-  } finally {
-    lock.releaseLock();
-  }
+  });
 }
 
 /**
@@ -1005,17 +1111,13 @@ function saveBallotCandidates_(sheet, candidateRows) {
  * @param {Array<{name:string, details:string, linkText:string, linkUrl:string}>} candidateRows
  */
 function saveBallotCandidatesForId_(id, candidateRows) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(_BALLOT_LOCK_TIMEOUT_MS);
-  try {
+  return _withBallotLock_(function () {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
     saveBallotCandidates_(sheet, candidateRows);
     refreshBallotCache_(id, sheet); // keep the cache (BallotCache.js) in sync with this write
-  } finally {
-    lock.releaseLock();
-  }
+  });
 }
 
 /**
@@ -1034,9 +1136,7 @@ function addBallotCandidateForAdmin_(id, name, details, linkText, linkUrl) {
   name = String(name || '').trim();
   if (!name) throw new Error('Candidate name cannot be empty.');
 
-  var lock = LockService.getScriptLock();
-  lock.waitLock(_BALLOT_LOCK_TIMEOUT_MS);
-  try {
+  return _withBallotLock_(function () {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
@@ -1044,9 +1144,7 @@ function addBallotCandidateForAdmin_(id, name, details, linkText, linkUrl) {
     _highlightSectionMarkers_(sheet);
     refreshBallotCache_(id, sheet); // keep the cache (BallotCache.js) in sync with this write
     return { candidate: name };
-  } finally {
-    lock.releaseLock();
-  }
+  });
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -1078,6 +1176,7 @@ if (typeof module !== 'undefined' && module.exports) {
     _ensureCandidatesSection_: _ensureCandidatesSection_,
     _ensureResponsesSection_: _ensureResponsesSection_,
     _migrateCandidatesColumnsIfNeeded_: _migrateCandidatesColumnsIfNeeded_,
-    _ensureCandidatesHeaderColumns_: _ensureCandidatesHeaderColumns_
+    _ensureCandidatesHeaderColumns_: _ensureCandidatesHeaderColumns_,
+    _withBallotLock_: _withBallotLock_
   };
 }

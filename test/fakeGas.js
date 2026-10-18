@@ -222,14 +222,27 @@ function createFakeUtilities() {
   };
 }
 
+/**
+ * Script lock fake that counts calls and, like the real one, is NOT re-entrant: a second
+ * waitLock while held throws (the real call would block until it timed out). `_state`
+ * exposes waitCount / releaseCount / held so tests can assert on lock coverage.
+ */
 function createFakeLockService() {
-  return {
-    getScriptLock() {
-      return {
-        waitLock() {},
-        releaseLock() {},
-      };
+  const state = { waitCount: 0, releaseCount: 0, held: false };
+  const lock = {
+    waitLock() {
+      if (state.held) throw new Error('waitLock called while the script lock is already held (not re-entrant)');
+      state.waitCount += 1;
+      state.held = true;
     },
+    releaseLock() {
+      state.releaseCount += 1;
+      state.held = false;
+    },
+  };
+  return {
+    getScriptLock() { return lock; },
+    _state: state,
   };
 }
 

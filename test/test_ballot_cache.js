@@ -33,7 +33,7 @@ function loadApp() {
   const sandbox = Object.assign({ module: { exports: {} } }, createFakeGasGlobals(ss));
   vm.createContext(sandbox);
 
-  const files = ['BallotCache.js', 'BallotModel.js', 'onOpen.js', 'webAdmin.js', 'webBallot.js', 'Triggers.js'];
+  const files = ['BallotCache.js', 'BallotModel.js', 'onOpen.js', 'webAdmin.js', 'webBallot.js', 'Triggers.js', 'processRCV.js', 'processCondorcet.js'];
   files.forEach(function (file) {
     sandbox.module = { exports: {} }; // discarded — this test reads functions off `sandbox` itself
     const src = fs.readFileSync(path.join(__dirname, '..', 'script', file), 'utf8');
@@ -175,6 +175,55 @@ function testGetAdminListDataUsesCacheForTitleAndCandidateCount() {
   assert.equal(entry.candidateCount, 1);
 }
 
+/**
+ * kix.1: the admin entry points that mutate the sheet do their reads+writes inside one
+ * script-lock hold. The fake lock is non-re-entrant, so adminSaveCandidate's nested
+ * saveBallotCandidatesForId_ also proves the lock is re-entrant in practice.
+ */
+function spyAdminWrites(sheet, lockState) {
+  const log = { writes: 0, unlocked: [] };
+  const origGetRange = sheet.getRange.bind(sheet);
+  sheet.getRange = function () {
+    const range = origGetRange.apply(null, arguments);
+    ['setValue', 'setValues', 'clearContent'].forEach(function (m) {
+      const orig = range[m].bind(range);
+      range[m] = function () { log.writes++; if (!lockState.held) log.unlocked.push(m); return orig.apply(null, arguments); };
+    });
+    return range;
+  };
+  ['insertRowsBefore', 'deleteRows'].forEach(function (m) {
+    const orig = sheet[m].bind(sheet);
+    sheet[m] = function () { log.writes++; if (!lockState.held) log.unlocked.push(m); return orig.apply(null, arguments); };
+  });
+  return log;
+}
+
+function testAdminMutatingEntryPointsRunUnderLock() {
+  const { app, ss } = loadApp();
+  const state = app.LockService._state;
+  const sheet = app.createNewBallot_(ss, 'AdminLock');
+  app.addBallotCandidateForAdmin_('AdminLock', 'Alice', '', '', '');
+  app.addBallotCandidateForAdmin_('AdminLock', 'Bob', '', '', '');
+  app.submitBallotResponse_('AdminLock', 'V1', ['Alice', 'Bob'], '');
+  app.submitBallotResponse_('AdminLock', 'V2', ['Bob', 'Alice'], '');
+  const log = spyAdminWrites(sheet, state);
+
+  app.runBallotAnalysis_(sheet);
+  assert.ok(log.writes > 0);
+  assert.deepEqual(log.unlocked, [], 'runBallotAnalysis_ wrote outside the lock');
+
+  log.writes = 0;
+  app._adminWriteConfig_('AdminLock', { Title: 'Locked' });
+  assert.ok(log.writes > 0);
+  assert.deepEqual(log.unlocked, [], '_adminWriteConfig_ wrote outside the lock');
+
+  log.writes = 0;
+  app.adminSaveCandidate('AdminLock', 0, 'Alice', 'note', '', '');
+  assert.ok(log.writes > 0);
+  assert.deepEqual(log.unlocked, [], 'adminSaveCandidate wrote outside the lock');
+  assert.equal(state.held, false);
+}
+
 function run() {
   testCacheMissBuildsFromSheetAndPopulatesCache();
   testGetCachedBallotDataReturnsNullForUnknownBallot();
@@ -185,6 +234,7 @@ function run() {
   testOnEditRefreshesCacheAfterManualSheetEdit();
   testOnEditIgnoresNonBallotSheetsAndMissingEvent();
   testGetAdminListDataUsesCacheForTitleAndCandidateCount();
+  testAdminMutatingEntryPointsRunUnderLock();
   console.log('test_ballot_cache: all tests passed');
 }
 

@@ -337,12 +337,14 @@ function getAdminEditData(id) {
  * @return {{ok:boolean}}
  */
 function _adminWriteConfig_(id, updates) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = findBallotSheet_(ss, id);
-  if (!sheet) throw new Error('No ballot found for id "' + id + '".');
-  writeBallotConfig_(sheet, updates);
-  refreshBallotCache_(id, sheet); // keep the cache (BallotCache.js) in sync with this write
-  return { ok: true };
+  return _withBallotLock_(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = findBallotSheet_(ss, id);
+    if (!sheet) throw new Error('No ballot found for id "' + id + '".');
+    writeBallotConfig_(sheet, updates);
+    refreshBallotCache_(id, sheet); // keep the cache (BallotCache.js) in sync with this write
+    return { ok: true };
+  });
 }
 
 /** RPC: saves the Title field's pencil-icon editor. @return {{ok:boolean}} */
@@ -395,31 +397,35 @@ function adminSaveAddSettings(id, acceptNew, addInstructions) {
  * @return {{ok:boolean, name:string, details:string, linkText:string, linkUrl:string}}
  */
 function adminSaveCandidate(id, index, name, details, linkText, linkUrl) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = findBallotSheet_(ss, id);
-  if (!sheet) throw new Error('No ballot found for id "' + id + '".');
+  // One lock hold across the read-modify-write so no other request's candidate/response
+  // change lands between reading the current rows and saving the edited set.
+  return _withBallotLock_(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = findBallotSheet_(ss, id);
+    if (!sheet) throw new Error('No ballot found for id "' + id + '".');
 
-  var candidates = readBallotCandidates_(sheet);
-  var rows = readBallotCandidateDetails_(sheet);
-  while (rows.length < candidates.length) {
-    rows.push({ name: candidates[rows.length], details: '', linkText: '', linkUrl: '' });
-  }
-  if (index < 0 || index >= rows.length) throw new Error('Invalid candidate index.');
+    var candidates = readBallotCandidates_(sheet);
+    var rows = readBallotCandidateDetails_(sheet);
+    while (rows.length < candidates.length) {
+      rows.push({ name: candidates[rows.length], details: '', linkText: '', linkUrl: '' });
+    }
+    if (index < 0 || index >= rows.length) throw new Error('Invalid candidate index.');
 
-  rows[index] = {
-    name: String(name || '').trim(),
-    details: String(details || ''),
-    linkText: String(linkText || ''),
-    linkUrl: String(linkUrl || '')
-  };
-  saveBallotCandidatesForId_(id, rows);
-  return {
-    ok: true,
-    name: rows[index].name,
-    details: rows[index].details,
-    linkText: rows[index].linkText,
-    linkUrl: rows[index].linkUrl
-  };
+    rows[index] = {
+      name: String(name || '').trim(),
+      details: String(details || ''),
+      linkText: String(linkText || ''),
+      linkUrl: String(linkUrl || '')
+    };
+    saveBallotCandidatesForId_(id, rows); // nested: _withBallotLock_ is re-entrant
+    return {
+      ok: true,
+      name: rows[index].name,
+      details: rows[index].details,
+      linkText: rows[index].linkText,
+      linkUrl: rows[index].linkUrl
+    };
+  });
 }
 
 /**
@@ -489,6 +495,20 @@ function _renderAdminAnalysis_(id) {
  * @return {{rcv:Object, condorcet:Object}|{error:string}}
  */
 function runBallotAnalysis_(sheet) {
+  // Read + compute + Results rewrite as one unit, so a concurrent submit can't append a
+  // response row while the Results section's rows are being inserted/deleted.
+  return _withBallotLock_(function () {
+    return _runBallotAnalysisLocked_(sheet);
+  });
+}
+
+/**
+ * Body of runBallotAnalysis_; caller holds the ballot lock.
+ *
+ * @param {Sheet} sheet
+ * @return {{rcv:Object, condorcet:Object}|{error:string}}
+ */
+function _runBallotAnalysisLocked_(sheet) {
   var candidateNames = readBallotCandidates_(sheet);
   // Deduped to one ballot per respondent (case-insensitive name, latest wins) — a
   // respondent who re-voted must only count once, using their most recent ranking.

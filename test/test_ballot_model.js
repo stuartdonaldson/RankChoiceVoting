@@ -663,6 +663,164 @@ function testCacheRefreshLogsDiscoverySummary() {
   assert.equal(lines[0].indexOf('"candidateCount":1') !== -1, true);
 }
 
+/**
+ * Instruments a sheet so every mutating call (setValue/setValues/clearContent via
+ * getRange, plus insert/delete rows) records whether the script lock was held. Returns
+ * { writes, unlocked } — both arrays of op names.
+ */
+function spyWrites(sheet, lockState) {
+  const log = { writes: [], unlocked: [] };
+  function note(op) {
+    log.writes.push(op);
+    if (!lockState.held) log.unlocked.push(op);
+  }
+  const origGetRange = sheet.getRange.bind(sheet);
+  sheet.getRange = function () {
+    const range = origGetRange.apply(null, arguments);
+    ['setValue', 'setValues', 'clearContent'].forEach(function (m) {
+      const orig = range[m].bind(range);
+      range[m] = function () { note(m); return orig.apply(null, arguments); };
+    });
+    return range;
+  };
+  ['insertRowsBefore', 'insertRowsAfter', 'deleteRows'].forEach(function (m) {
+    const orig = sheet[m].bind(sheet);
+    sheet[m] = function () { note(m); return orig.apply(null, arguments); };
+  });
+  return log;
+}
+
+function assertAllWritesLocked(log, label) {
+  assert.ok(log.writes.length > 0, label + ': expected the scenario to write something');
+  assert.deepEqual(log.unlocked, [], label + ': writes outside the script lock');
+}
+
+/** _withBallotLock_ is re-entrant (one waitLock/releaseLock pair) and releases on throw. */
+function testWithBallotLockIsReentrantAndReleasesOnThrow() {
+  const { SM, sandbox } = loadBallotModel();
+  const state = sandbox.LockService._state;
+
+  const result = SM._withBallotLock_(function () {
+    assert.equal(state.held, true);
+    return SM._withBallotLock_(function () {
+      return SM._withBallotLock_(function () { return 42; });
+    });
+  });
+  assert.equal(result, 42);
+  assert.equal(state.waitCount, 1);
+  assert.equal(state.releaseCount, 1);
+  assert.equal(state.held, false);
+
+  assert.throws(function () {
+    SM._withBallotLock_(function () {
+      SM._withBallotLock_(function () { throw new Error('boom'); });
+    });
+  }, /boom/);
+  assert.equal(state.waitCount, 2);
+  assert.equal(state.releaseCount, 2);
+  assert.equal(state.held, false);
+
+  // Depth was reset by the throw: a later call acquires again.
+  SM._withBallotLock_(function () {});
+  assert.equal(state.waitCount, 3);
+}
+
+/** Every model-level mutating entry point does its sheet writes inside the lock. */
+function testModelEntryPointsWriteUnderLock() {
+  const { SM, ss, sandbox } = loadBallotModel();
+  const state = sandbox.LockService._state;
+  const sheet = SM.createNewBallot_(ss, 'LockCover');
+  const log = spyWrites(sheet, state);
+
+  SM.addBallotCandidateForId_('LockCover', 'Alice', 'a');
+  assertAllWritesLocked(log, 'addBallotCandidateForId_');
+  log.writes.length = 0;
+
+  SM.addBallotCandidateForAdmin_('LockCover', 'Bob', 'b', '', '');
+  assertAllWritesLocked(log, 'addBallotCandidateForAdmin_');
+  log.writes.length = 0;
+
+  SM.submitBallotResponse_('LockCover', 'Voter', ['Bob', 'Alice'], '');
+  assertAllWritesLocked(log, 'submitBallotResponse_');
+  log.writes.length = 0;
+
+  SM.saveBallotCandidatesForId_('LockCover', [
+    { name: 'Alice', details: 'x', linkText: '', linkUrl: '' },
+    { name: 'Bob', details: 'y', linkText: '', linkUrl: '' },
+  ]);
+  assertAllWritesLocked(log, 'saveBallotCandidatesForId_');
+  assert.equal(state.held, false);
+}
+
+/** Self-repair writes in read paths run inside the lock. */
+function testSelfRepairWritesRunUnderLock() {
+  // Missing [Candidates] section (old sheet) + legacy bare marker text.
+  let t = loadBallotModel();
+  let sheet = t.ss.insertSheet('Ballot-RepairA');
+  sheet.getRange(1, 1, 6, 2).setValues([
+    ['Title', 'T'], ['Description', 'D'], ['Footer', 'F'],
+    ['Contact', 'C'], ['Accept-New', 'TRUE'], ['Admin-Only-Notes', ''],
+  ]);
+  sheet.getRange(8, 1).setValue('[Results]');
+  sheet.getRange(10, 1).setValue('[Responses]');
+  sheet.getRange(11, 1, 1, 6).setValues([['Date', 'Name', 'Weight', 'Comment', 'Alice', 'Bob']]);
+  let log = spyWrites(sheet, t.sandbox.LockService._state);
+  t.SM._ensureCandidatesSection_(sheet);
+  assertAllWritesLocked(log, '_ensureCandidatesSection_');
+
+  // Lost [Responses] section.
+  t = loadBallotModel();
+  sheet = t.SM.createNewBallot_(t.ss, 'RepairB');
+  sheet.deleteRows(13, 2);
+  log = spyWrites(sheet, t.sandbox.LockService._state);
+  t.SM._ensureResponsesSection_(sheet);
+  assertAllWritesLocked(log, '_ensureResponsesSection_');
+
+  // Old column-A Candidates layout.
+  t = loadBallotModel();
+  sheet = t.ss.insertSheet('Ballot-RepairC');
+  sheet.getRange(8, 1).setValue('[Results]');
+  sheet.getRange(9, 1).setValue('[Candidates]');
+  sheet.getRange(10, 1, 1, 2).setValues([['Name', 'Details']]);
+  sheet.getRange(11, 1, 1, 2).setValues([['book 1', 'd1']]);
+  sheet.getRange(12, 1).setValue('[Responses]');
+  sheet.getRange(13, 1, 1, 5).setValues([['Date', 'Name', 'Weight', 'Comment', 'book 1']]);
+  log = spyWrites(sheet, t.sandbox.LockService._state);
+  t.SM._migrateCandidatesColumnsIfNeeded_(sheet);
+  assertAllWritesLocked(log, '_migrateCandidatesColumnsIfNeeded_');
+
+  // Missing trailing Candidates header columns.
+  t = loadBallotModel();
+  sheet = t.SM.createNewBallot_(t.ss, 'RepairD');
+  sheet.getRange(12, 4, 1, 2).clearContent();
+  log = spyWrites(sheet, t.sandbox.LockService._state);
+  t.SM._ensureCandidatesHeaderColumns_(sheet);
+  assertAllWritesLocked(log, '_ensureCandidatesHeaderColumns_');
+
+  // Legacy 'Info' config key rename.
+  t = loadBallotModel();
+  sheet = t.SM.createNewBallot_(t.ss, 'RepairE');
+  sheet.getRange(8, 1).setValue('Info');
+  log = spyWrites(sheet, t.sandbox.LockService._state);
+  t.SM.readBallotConfig_(sheet);
+  assertAllWritesLocked(log, 'readBallotConfig_ legacy key');
+
+  // Candidate typed into the Candidates table only: Responses header reconcile.
+  t = loadBallotModel();
+  sheet = t.SM.createNewBallot_(t.ss, 'RepairF');
+  t.SM.writeBallotCandidateDetails_(sheet, [{ name: 'Alice', details: '' }]);
+  log = spyWrites(sheet, t.sandbox.LockService._state);
+  t.SM.readBallotCandidates_(sheet);
+  assertAllWritesLocked(log, '_reconcileCandidatesWithResponses_');
+
+  // A healthy sheet read takes no lock at all.
+  t = loadBallotModel();
+  sheet = t.SM.createNewBallot_(t.ss, 'Healthy');
+  t.SM.readBallotCandidates_(sheet);
+  t.SM.readBallotConfig_(sheet);
+  assert.equal(t.sandbox.LockService._state.waitCount, 0);
+}
+
 function run() {
   testCreateNewBallotCreatesSkeleton();
   testListBallotIdsAndFindBallotSheet();
@@ -690,6 +848,9 @@ function run() {
   testMissingResponsesSectionWithColumnAContentIsNotRepaired();
   testCandidateInColumnAIsLoggedAndIgnored();
   testCacheRefreshLogsDiscoverySummary();
+  testWithBallotLockIsReentrantAndReleasesOnThrow();
+  testModelEntryPointsWriteUnderLock();
+  testSelfRepairWritesRunUnderLock();
   testDuplicateIdThrows();
   testInvalidIdThrows();
   console.log('test_ballot_model: all tests passed');
