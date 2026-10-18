@@ -22,9 +22,16 @@
  *   Row N+1    Responses header: Date | Name | Weight | Comment | <candidate1> | <candidate2> | ...
  *   Row N+2+   One row per respondent
  *
+ * That is the order createBallotSheet_ writes, but nothing depends on it: the three
+ * sections may appear in any order below the config rows. _readBallotLayout_ finds every
+ * marker in one column-A read, and each section runs from its marker to the row before the
+ * next marker of any kind (or to the last row). Config is everything above the first
+ * marker. Readers skip blank rows inside a section rather than stopping at them, and every
+ * write resizes its own section in place, so the sections around it only shift.
+ *
  * Column A is reserved EXCLUSIVELY for section markers/config keys — never for
  * user-entered or app-generated data — and markers are bracket-decorated ("[Results]",
- * not "Results") as a second, independent guard. Both exist because _findMarkerRow_
+ * not "Results") as a second, independent guard. Both exist because _readBallotLayout_
  * does an unscoped top-to-bottom scan of column A for exact marker text: if a
  * candidate's name (user-controlled, arbitrary) ever landed in column A, naming a
  * candidate e.g. "Responses" would shadow the real marker and corrupt every section
@@ -171,9 +178,10 @@ function _highlightSectionMarkers_(sheet) {
     sheet.getRange(row, 1, 1, numCols || 1).setBackground(_BALLOT_SECTION_HIGHLIGHT_BG).setFontWeight('bold');
   }
 
-  var resultsRow = _findMarkerRow_(sheet, _BALLOT_RESULTS_MARKER);
-  var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
-  var responsesRow = _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER);
+  var layout = _readBallotLayout_(sheet);
+  var resultsRow = layout.markers.results;
+  var candidatesRow = layout.markers.candidates;
+  var responsesRow = layout.markers.responses;
 
   highlightRow(resultsRow, 1);
   highlightRow(candidatesRow, 1);
@@ -214,18 +222,21 @@ function _unfreezeStaleHeaderRows_(sheet, responsesHeaderRow) {
  * createBallotSheet_).
  *
  * @param {Sheet} sheet
+ * @param {Object=} layout from _readBallotLayout_, if the caller already has a current one.
+ * @return {Object} the current layout (re-read after a repair).
  */
-function _ensureCandidatesSection_(sheet) {
-  if (_findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER) !== -1) return;
-  if (_findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER) === -1) return;
-  _withBallotLock_(function () {
+function _ensureCandidatesSection_(sheet, layout) {
+  layout = layout || _readBallotLayout_(sheet);
+  if (layout.markers.candidates !== -1 || layout.markers.responses === -1) return layout;
+  return _withBallotLock_(function () {
     // Re-check under the lock: another request may have repaired (or shifted rows) meanwhile.
-    if (_findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER) !== -1) return;
-    var responsesRow = _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER);
-    if (responsesRow === -1) return;
+    var current = _readBallotLayout_(sheet);
+    if (current.markers.candidates !== -1 || current.markers.responses === -1) return current;
+    var responsesRow = current.markers.responses;
     sheet.insertRowsBefore(responsesRow, 2);
     sheet.getRange(responsesRow, 1).setValue(_BALLOT_CANDIDATES_MARKER);
     sheet.getRange(responsesRow + 1, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).setValues([_BALLOT_CANDIDATES_HEADER]);
+    return _readBallotLayout_(sheet);
   });
 }
 
@@ -287,15 +298,18 @@ function _logBallotEvent_(tag, data) {
  * No-op when the sheet has a [Responses] marker or no [Candidates] marker.
  *
  * @param {Sheet} sheet
+ * @param {Object=} layout from _readBallotLayout_, if the caller already has a current one.
+ * @return {Object} the current layout (re-read after a repair).
  */
-function _ensureResponsesSection_(sheet) {
-  var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
-  if (candidatesRow === -1 || _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER) !== -1) return;
-  _withBallotLock_(function () {
+function _ensureResponsesSection_(sheet, layout) {
+  layout = layout || _readBallotLayout_(sheet);
+  if (layout.markers.candidates === -1 || layout.markers.responses !== -1) return layout;
+  return _withBallotLock_(function () {
     // Re-check under the lock before touching anything.
-    var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
-    if (candidatesRow === -1 || _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER) !== -1) return;
-    _repairResponsesSectionLocked_(sheet, candidatesRow);
+    var current = _readBallotLayout_(sheet);
+    if (current.markers.candidates === -1 || current.markers.responses !== -1) return current;
+    _repairResponsesSectionLocked_(sheet, current.markers.candidates);
+    return _readBallotLayout_(sheet);
   });
 }
 
@@ -340,25 +354,26 @@ function _repairResponsesSectionLocked_(sheet, candidatesRow) {
  * came back empty even though the sheet clearly had them.
  *
  * @param {Sheet} sheet
+ * @param {Object=} layout from _readBallotLayout_, if the caller already has a current one.
+ * @return {Object} the current layout (migration rewrites cells only, never rows).
  */
-function _migrateCandidatesColumnsIfNeeded_(sheet) {
-  var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
-  if (candidatesRow === -1) return;
-  var candidatesHeaderRow = candidatesRow + 1;
-  var headerColA = String(sheet.getRange(candidatesHeaderRow, 1).getValue() || '').trim();
-  if (headerColA !== _BALLOT_CANDIDATES_HEADER[0]) return; // already migrated (col A blank) or unrecognized
+function _migrateCandidatesColumnsIfNeeded_(sheet, layout) {
+  layout = layout || _readBallotLayout_(sheet);
+  var candidates = layout.sections.candidates;
+  if (!candidates) return layout;
+  var headerColA = String(sheet.getRange(candidates.headerRow, 1).getValue() || '').trim();
+  if (headerColA !== _BALLOT_CANDIDATES_HEADER[0]) return layout; // already migrated (col A blank) or unrecognized
 
-  _withBallotLock_(function () {
+  return _withBallotLock_(function () {
     // Re-check under the lock: a concurrent request may already have migrated.
-    var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
-    if (candidatesRow === -1) return;
-    var candidatesHeaderRow = candidatesRow + 1;
+    var current = _readBallotLayout_(sheet);
+    var candidates = current.sections.candidates;
+    if (!candidates || !current.sections.responses) return current;
+    var candidatesHeaderRow = candidates.headerRow;
     var headerColA = String(sheet.getRange(candidatesHeaderRow, 1).getValue() || '').trim();
-    if (headerColA !== _BALLOT_CANDIDATES_HEADER[0]) return;
+    if (headerColA !== _BALLOT_CANDIDATES_HEADER[0]) return current;
 
-    var responsesRow = _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER);
-    if (responsesRow === -1) return;
-    var count = responsesRow - candidatesHeaderRow - 1;
+    var count = candidates.endRow - candidatesHeaderRow;
     var oldValues = count > 0 ? sheet.getRange(candidatesHeaderRow + 1, 1, count, 2).getValues() : [];
 
     sheet.getRange(candidatesHeaderRow, 1, count + 1, 1).clearContent(); // vacate col A (header + data rows)
@@ -366,6 +381,7 @@ function _migrateCandidatesColumnsIfNeeded_(sheet) {
     if (count > 0) {
       sheet.getRange(candidatesHeaderRow + 1, _BALLOT_CANDIDATES_FIRST_COL, count, 2).setValues(oldValues);
     }
+    return current;
   });
 }
 
@@ -374,27 +390,30 @@ function _migrateCandidatesColumnsIfNeeded_(sheet) {
  * _BALLOT_CANDIDATES_HEADER after a sheet was created (e.g. "Link Text"/"Link URL"
  * added after Name/Details) — a sheet already on the current header is left untouched.
  * Only ever appends missing trailing header cells; never rewrites the existing ones,
- * so it can't clobber a sheet mid-migration from the old column-A layout.
+ * so it can't clobber a sheet mid-migration from the old column-A layout. Skipped when
+ * the row below [Candidates] is already the next marker (no header row to backfill).
  *
  * @param {Sheet} sheet
+ * @param {Object=} layout from _readBallotLayout_, if the caller already has a current one.
+ * @return {Object} the current layout (header cells only, never rows).
  */
-function _ensureCandidatesHeaderColumns_(sheet) {
-  var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
-  if (candidatesRow === -1) return;
-  var headerRow = candidatesRow + 1;
-  var current = sheet.getRange(headerRow, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).getValues()[0];
-  var missing = _BALLOT_CANDIDATES_HEADER.filter(function (label, i) { return String(current[i] || '').trim() === ''; });
-  if (!missing.length) return;
-  _withBallotLock_(function () {
+function _ensureCandidatesHeaderColumns_(sheet, layout) {
+  layout = layout || _readBallotLayout_(sheet);
+  function missingLabels(l) {
+    var candidates = l.sections.candidates;
+    if (!candidates || candidates.headerRow > candidates.endRow) return [];
+    var current = sheet.getRange(candidates.headerRow, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).getValues()[0];
+    return _BALLOT_CANDIDATES_HEADER.filter(function (label, i) { return String(current[i] || '').trim() === ''; });
+  }
+  if (!missingLabels(layout).length) return layout;
+  return _withBallotLock_(function () {
     // Re-check under the lock before appending.
-    var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
-    if (candidatesRow === -1) return;
-    var headerRow = candidatesRow + 1;
-    var current = sheet.getRange(headerRow, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).getValues()[0];
-    var missing = _BALLOT_CANDIDATES_HEADER.filter(function (label, i) { return String(current[i] || '').trim() === ''; });
-    if (!missing.length) return;
+    var current = _readBallotLayout_(sheet);
+    var missing = missingLabels(current);
+    if (!missing.length) return current;
     var firstMissingCol = _BALLOT_CANDIDATES_FIRST_COL + (_BALLOT_CANDIDATES_HEADER.length - missing.length);
-    sheet.getRange(headerRow, firstMissingCol, 1, missing.length).setValues([missing]);
+    sheet.getRange(current.sections.candidates.headerRow, firstMissingCol, 1, missing.length).setValues([missing]);
+    return current;
   });
 }
 
@@ -474,15 +493,16 @@ function createNewBallot_(ss, id) {
  * tolerates a sheet whose config rows have been manually reordered. Any update
  * key with no existing row (e.g. a config field — like "Admin-Only-Notes" — added
  * to the model after this particular sheet was created) is appended as a new row,
- * inserted just above the Results marker, so older sheets self-heal on first
+ * inserted just above the first section marker, so older sheets self-heal on first
  * save instead of silently dropping the value.
  *
  * @param {Sheet} sheet
  * @param {Object} updates e.g. {Title, Description, Instructions, Footer, Contact, 'Accept-New', 'Add-Instructions', 'Admin-Only-Notes'}
  */
 function writeBallotConfig_(sheet, updates) {
-  var resultsRow = _findMarkerRow_(sheet, _BALLOT_RESULTS_MARKER);
-  var lastConfigRow = resultsRow === -1 ? _BALLOT_CONFIG_ROWS.length : resultsRow - 1;
+  var layout = _readBallotLayout_(sheet);
+  var firstMarkerRow = layout.firstMarkerRow;
+  var lastConfigRow = layout.configEndRow;
   if (lastConfigRow < 1) return;
   var keys = sheet.getRange(1, 1, lastConfigRow, 1).getValues();
   var seenKeys = {};
@@ -502,16 +522,16 @@ function writeBallotConfig_(sheet, updates) {
   var missingKeys = Object.keys(updates).filter(function (k) { return !seenKeys[k]; });
   if (!missingKeys.length) return;
 
-  // Reuse existing blank config rows (e.g. the spacer row above the Results marker)
+  // Reuse existing blank config rows (e.g. the spacer row above the first marker)
   // before inserting brand-new ones, so an older sheet doesn't accumulate a stray
   // blank line every time a new config field is introduced.
   missingKeys.forEach(function (key) {
     if (blankRows.length) {
       sheet.getRange(blankRows.shift(), 1, 1, 2).setValues([[key, updates[key]]]);
-    } else if (resultsRow !== -1) {
-      sheet.insertRowsBefore(resultsRow, 1);
+    } else if (firstMarkerRow !== -1) {
+      sheet.insertRowsBefore(firstMarkerRow, 1);
       sheet.getRange(lastConfigRow + 1, 1, 1, 2).setValues([[key, updates[key]]]);
-      resultsRow++;
+      firstMarkerRow++;
       lastConfigRow++;
     }
     // else: no marker and no spare blank row — nothing safe to insert relative to,
@@ -520,8 +540,97 @@ function writeBallotConfig_(sheet, updates) {
 }
 
 /**
+ * Section keys in canonical order, and the column-A marker text for each.
+ */
+var _BALLOT_SECTION_KEYS_ = ['results', 'candidates', 'responses'];
+var _BALLOT_SECTION_MARKER_TEXT_ = {
+  results: _BALLOT_RESULTS_MARKER,
+  candidates: _BALLOT_CANDIDATES_MARKER,
+  responses: _BALLOT_RESPONSES_MARKER
+};
+// "<sheet>|<marker>|<rows>" keys already logged as ballot.parse.duplicateMarker in this
+// execution — the layout is read several times per request and one line per finding is enough.
+var _ballotLoggedDuplicates_ = {};
+
+/**
+ * Reads the whole section layout of a ballot sheet from ONE column-A read. Sections may sit
+ * in any order: each runs from its marker to the row before the next marker of any kind
+ * (duplicate occurrences included — a stray copy of a marker is never read as data), or to
+ * the last row when it is the bottom section. A duplicated marker resolves to its first
+ * occurrence and is logged. Recompute after any row insert/delete: every row number here
+ * is a snapshot.
+ *
+ * @param {Sheet} sheet
+ * @return {{lastRow:number,
+ *   markers:{results:number, candidates:number, responses:number},
+ *   duplicates:Array<{marker:string, rows:Array<number>}>,
+ *   sections:Object<string, {markerRow:number, headerRow:?number, firstDataRow:number, endRow:number, nextMarkerRow:number}>,
+ *   firstMarkerRow:number, configEndRow:number}}
+ *   markers/nextMarkerRow/firstMarkerRow are -1 when absent; sections has no key for a
+ *   missing marker; headerRow is null for Results (it has no header row).
+ */
+function _readBallotLayout_(sheet) {
+  var lastRow = sheet.getLastRow();
+  var colA = lastRow > 0 ? sheet.getRange(1, 1, lastRow, 1).getValues() : [];
+  var keyByText = {};
+  _BALLOT_SECTION_KEYS_.forEach(function (k) { keyByText[_BALLOT_SECTION_MARKER_TEXT_[k]] = k; });
+
+  var occurrences = { results: [], candidates: [], responses: [] };
+  var allMarkerRows = []; // ascending
+  for (var i = 0; i < colA.length; i++) {
+    var key = keyByText[String(colA[i][0] || '').trim()];
+    if (!key) continue;
+    occurrences[key].push(i + 1);
+    allMarkerRows.push(i + 1);
+  }
+
+  var markers = {};
+  var duplicates = [];
+  var sections = {};
+  _BALLOT_SECTION_KEYS_.forEach(function (k) {
+    var rows = occurrences[k];
+    markers[k] = rows.length ? rows[0] : -1;
+    if (rows.length > 1) duplicates.push({ marker: _BALLOT_SECTION_MARKER_TEXT_[k], rows: rows });
+    if (!rows.length) return;
+    var markerRow = rows[0];
+    var nextMarkerRow = -1;
+    for (var j = 0; j < allMarkerRows.length; j++) {
+      if (allMarkerRows[j] > markerRow) { nextMarkerRow = allMarkerRows[j]; break; }
+    }
+    var headerRow = k === 'results' ? null : markerRow + 1;
+    sections[k] = {
+      markerRow: markerRow,
+      headerRow: headerRow,
+      firstDataRow: (headerRow || markerRow) + 1,
+      // The bottom section reaches at least its own header row, so an empty last section
+      // still has a well-formed (zero-row) data region.
+      endRow: nextMarkerRow !== -1 ? nextMarkerRow - 1 : Math.max(lastRow, headerRow || markerRow),
+      nextMarkerRow: nextMarkerRow
+    };
+  });
+
+  duplicates.forEach(function (d) {
+    var logKey = sheet.getName() + '|' + d.marker + '|' + d.rows.join(',');
+    if (_ballotLoggedDuplicates_[logKey]) return;
+    _ballotLoggedDuplicates_[logKey] = true;
+    _logBallotEvent_('ballot.parse.duplicateMarker', { sheet: sheet.getName(), marker: d.marker, rows: d.rows });
+  });
+
+  var firstMarkerRow = allMarkerRows.length ? allMarkerRows[0] : -1;
+  return {
+    lastRow: lastRow,
+    markers: markers,
+    duplicates: duplicates,
+    sections: sections,
+    firstMarkerRow: firstMarkerRow,
+    configEndRow: firstMarkerRow !== -1 ? firstMarkerRow - 1 : _BALLOT_CONFIG_ROWS.length
+  };
+}
+
+/**
  * Scans column A for a row whose value exactly matches the (bracketed) marker. Plain
- * look-alike text such as "Responses" is never matched.
+ * look-alike text such as "Responses" is never matched. Diagnostic/test helper only —
+ * model code reads every marker at once through _readBallotLayout_.
  *
  * @param {Sheet} sheet
  * @param {string} marker
@@ -553,15 +662,14 @@ function _assertNotMarkerName_(name) {
 }
 
 /**
- * Reads the config key/value rows (rows 1 through the row before the
- * Results marker).
+ * Reads the config key/value rows (rows 1 through the row before the first section
+ * marker, whichever section that is).
  *
  * @param {Sheet} sheet
  * @return {Object} e.g. {Title, Description, Instructions, Footer, Contact, 'Accept-New', 'Add-Instructions'}
  */
 function readBallotConfig_(sheet) {
-  var resultsRow = _findMarkerRow_(sheet, _BALLOT_RESULTS_MARKER);
-  var lastConfigRow = resultsRow === -1 ? _BALLOT_CONFIG_ROWS.length : resultsRow - 1;
+  var lastConfigRow = _readBallotLayout_(sheet).configEndRow;
   var config = {};
   if (lastConfigRow < 1) return config;
   var values = sheet.getRange(1, 1, lastConfigRow, 2).getValues();
@@ -594,11 +702,11 @@ function _ballotAcceptsNew_(config) {
 
 /**
  * @param {Sheet} sheet
- * @return {number} 1-based row of the Responses header (Date/Name/Weight/Comment/...).
+ * @return {number} 1-based row of the Responses header (Date/Name/Weight/Comment/...), or -1.
  */
 function _getResponsesHeaderRow_(sheet) {
-  var marker = _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER);
-  return marker === -1 ? -1 : marker + 1;
+  var responses = _readBallotLayout_(sheet).sections.responses;
+  return responses ? responses.headerRow : -1;
 }
 
 /**
@@ -611,13 +719,18 @@ function _getResponsesHeaderRow_(sheet) {
  * @return {Array<string>}
  */
 function readBallotCandidates_(sheet) {
-  _reconcileCandidatesWithResponses_(sheet);
-  var headerRow = _getResponsesHeaderRow_(sheet);
-  if (headerRow === -1) return [];
-  var lastCol = sheet.getLastColumn();
-  if (lastCol < _BALLOT_FIRST_CANDIDATE_COL) return [];
-  var values = sheet.getRange(headerRow, _BALLOT_FIRST_CANDIDATE_COL, 1, lastCol - _BALLOT_FIRST_CANDIDATE_COL + 1).getValues()[0];
-  return values.map(function (v) { return String(v || '').trim(); }).filter(function (v) { return v; });
+  return _readBallotCandidatesAndLayout_(sheet).names;
+}
+
+/**
+ * readBallotCandidates_ plus the layout it was read against, so a caller that goes on to
+ * read another section doesn't scan column A again.
+ *
+ * @param {Sheet} sheet
+ * @return {{names:Array<string>, layout:Object}}
+ */
+function _readBallotCandidatesAndLayout_(sheet) {
+  return _reconcileCandidatesWithResponses_(sheet);
 }
 
 /**
@@ -630,15 +743,21 @@ function readBallotCandidates_(sheet) {
  * position alignment between the two sections is preserved either way.
  *
  * @param {Sheet} sheet
+ * @return {{names:Array<string>, layout:Object}} the reconciled Responses-header candidate
+ *   names (blank cells dropped) and the current layout — reconciling writes header cells
+ *   only, never rows, so the layout stays valid.
  */
 function _reconcileCandidatesWithResponses_(sheet) {
   var plan = _planCandidateReconcile_(sheet);
-  if (!plan) return;
-  _withBallotLock_(function () {
-    // Re-plan under the lock: another request may have appended the same columns meanwhile.
-    var current = _planCandidateReconcile_(sheet);
-    if (current) _applyCandidateReconcile_(sheet, current);
-  });
+  if (plan.needed) {
+    plan = _withBallotLock_(function () {
+      // Re-plan under the lock: another request may have appended the same columns meanwhile.
+      var current = _planCandidateReconcile_(sheet);
+      if (current.needed) _applyCandidateReconcile_(sheet, current);
+      return current;
+    });
+  }
+  return { names: plan.compacted.concat(plan.missingNames), layout: plan.layout };
 }
 
 /**
@@ -646,14 +765,17 @@ function _reconcileCandidatesWithResponses_(sheet) {
  * Responses header needs.
  *
  * @param {Sheet} sheet
- * @return {{headerRow:number, existingNames:Array<string>, compacted:Array<string>, missingNames:Array<string>}|null}
- *   null when the header already matches the Candidates table.
+ * @return {{layout:Object, needed:boolean, headerRow:number, existingNames:Array<string>, compacted:Array<string>, missingNames:Array<string>}}
+ *   needed is false when the header already matches the Candidates table (or there is no
+ *   Candidates table to match against); compacted is then the header's names as they stand.
  */
 function _planCandidateReconcile_(sheet) {
-  var candidateRows = readBallotCandidateDetails_(sheet);
-  if (!candidateRows.length) return null;
-  var headerRow = _getResponsesHeaderRow_(sheet);
-  if (headerRow === -1) return null;
+  var read = _readCandidateDetailsAndLayout_(sheet);
+  var candidateRows = read.rows;
+  var responses = read.layout.sections.responses;
+  var plan = { layout: read.layout, needed: false, headerRow: responses ? responses.headerRow : -1, existingNames: [], compacted: [], missingNames: [] };
+  if (!responses) return plan;
+  var headerRow = responses.headerRow;
 
   var lastCol = sheet.getLastColumn();
   var existingNames = lastCol < _BALLOT_FIRST_CANDIDATE_COL ? [] :
@@ -668,15 +790,18 @@ function _planCandidateReconcile_(sheet) {
   // are always written starting at _BALLOT_FIRST_CANDIDATE_COL regardless of the
   // header (see submitBallotResponse_) — so the header, not the data, is what drifted.
   var compacted = existingNames.filter(function (n) { return n; });
+  plan.existingNames = existingNames;
+  plan.compacted = compacted;
+  if (!candidateRows.length) return plan; // nothing to reconcile against: report the header as-is
 
   var existingSet = {};
   compacted.forEach(function (n) { existingSet[n] = true; });
 
-  var missingNames = candidateRows
+  plan.missingNames = candidateRows
     .map(function (it) { return it.name; })
     .filter(function (n) { return n && !existingSet[n]; });
-  if (compacted.length === existingNames.length && !missingNames.length) return null;
-  return { headerRow: headerRow, existingNames: existingNames, compacted: compacted, missingNames: missingNames };
+  plan.needed = compacted.length !== existingNames.length || plan.missingNames.length > 0;
+  return plan;
 }
 
 /**
@@ -708,24 +833,26 @@ function _applyCandidateReconcile_(sheet, plan) {
 }
 
 /**
- * Reads all response rows below the Responses header.
+ * Reads all response rows in the Responses section (header+1 through the row before the
+ * next marker, or the last row), skipping rows with no name in column B.
  *
  * @param {Sheet} sheet
  * @return {Array<{row:number, date:*, name:string, weight:number, comment:string, ranks:Array}>}
  */
 function readBallotResponseRows_(sheet) {
-  var headerRow = _getResponsesHeaderRow_(sheet);
-  var lastRow = sheet.getLastRow();
-  if (headerRow === -1 || lastRow < headerRow + 1) return [];
-  var candidates = readBallotCandidates_(sheet);
-  var numCols = _BALLOT_RESPONSE_FIXED_COLS.length + candidates.length;
-  var values = sheet.getRange(headerRow + 1, 1, lastRow - headerRow, numCols).getValues();
+  var read = _readBallotCandidatesAndLayout_(sheet);
+  var responses = read.layout.sections.responses;
+  if (!responses) return [];
+  var count = responses.endRow - responses.firstDataRow + 1;
+  if (count <= 0) return [];
+  var numCols = _BALLOT_RESPONSE_FIXED_COLS.length + read.names.length;
+  var values = sheet.getRange(responses.firstDataRow, 1, count, numCols).getValues();
   var out = [];
   values.forEach(function (row, i) {
     var name = String(row[1] || '').trim();
     if (!name) return;
     out.push({
-      row: headerRow + 1 + i,
+      row: responses.firstDataRow + i,
       date: row[0],
       name: name,
       weight: Number(row[2]) || 1,
@@ -1014,9 +1141,9 @@ function submitBallotResponse_(id, name, orderedCandidates, comment) {
 
 /**
  * Inserts or deletes rows so the Results section has exactly rows.length
- * rows available, then writes rows into it. Leaves the Candidates/Responses sections
- * (which sit immediately below) untouched — the insert/delete happens strictly
- * between the Results and Candidates markers, so everything below shifts as one block.
+ * rows available, then writes rows into it. Leaves every other section untouched — the
+ * insert/delete happens strictly between the [Results] marker and the next marker below
+ * it (whichever section that is), so everything below shifts as one block.
  * The region is cleared in full first and output starts at column B (column A is
  * markers-only), so older column-A output self-corrects on the next run.
  *
@@ -1024,20 +1151,35 @@ function submitBallotResponse_(id, name, orderedCandidates, comment) {
  * @param {Array<Array>} rows
  */
 function writeBallotResults_(sheet, rows) {
-  _ensureCandidatesSection_(sheet);
-  var resultsRow = _findMarkerRow_(sheet, _BALLOT_RESULTS_MARKER);
-  var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
-  if (resultsRow === -1 || candidatesRow === -1) {
+  var layout = _ensureCandidatesSection_(sheet);
+  var results = layout.sections.results;
+  if (!results || !layout.sections.candidates) {
     throw new Error('Ballot sheet is missing its Results/Candidates markers.');
   }
   // Clear the whole region (every column, col A included) first: column A is
   // markers-only, so output from the older layout that wrote names there must not
   // survive the rewrite; the resize then inserts/deletes blank rows only.
-  var regionRows = candidatesRow - resultsRow - 1;
+  var regionRows = results.endRow - results.firstDataRow + 1;
   if (regionRows > 0) {
-    sheet.getRange(resultsRow + 1, 1, regionRows, Math.max(sheet.getLastColumn(), 1)).clearContent();
+    sheet.getRange(results.firstDataRow, 1, regionRows, Math.max(sheet.getLastColumn(), 1)).clearContent();
   }
-  _resizeSectionRows_(sheet, resultsRow, candidatesRow, rows, _BALLOT_CANDIDATES_FIRST_COL);
+  _resizeSectionRows_(sheet, results.markerRow, results.endRow + 1, rows, _BALLOT_CANDIDATES_FIRST_COL);
+}
+
+/**
+ * Runs the Candidates-side self-repairs and returns the layout they leave behind — the
+ * shared preamble of readBallotCandidateDetails_ and writeBallotCandidateDetails_.
+ *
+ * @param {Sheet} sheet
+ * @param {boolean} ensureResponses also re-create a lost [Responses] section (read path).
+ * @return {Object} layout from _readBallotLayout_.
+ */
+function _prepareCandidatesSection_(sheet, ensureResponses) {
+  var layout = _ensureCandidatesSection_(sheet);
+  layout = _migrateCandidatesColumnsIfNeeded_(sheet, layout);
+  layout = _ensureCandidatesHeaderColumns_(sheet, layout);
+  if (ensureResponses) layout = _ensureResponsesSection_(sheet, layout);
+  return layout;
 }
 
 /**
@@ -1050,59 +1192,72 @@ function writeBallotResults_(sheet, rows) {
  * @return {Array<{name:string, details:string, linkText:string, linkUrl:string}>}
  */
 function readBallotCandidateDetails_(sheet) {
-  _ensureCandidatesSection_(sheet);
-  _migrateCandidatesColumnsIfNeeded_(sheet);
-  _ensureCandidatesHeaderColumns_(sheet);
-  _ensureResponsesSection_(sheet);
-  var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
-  var responsesRow = _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER);
-  if (candidatesRow === -1 || responsesRow === -1) {
-    _logBallotEvent_('ballot.parse.markerMissing', { sheet: sheet.getName(), candidatesRow: candidatesRow, responsesRow: responsesRow });
-    return [];
+  return _readCandidateDetailsAndLayout_(sheet).rows;
+}
+
+/**
+ * readBallotCandidateDetails_ plus the layout it was read against.
+ *
+ * @param {Sheet} sheet
+ * @return {{rows:Array<{name:string, details:string, linkText:string, linkUrl:string}>, layout:Object}}
+ */
+function _readCandidateDetailsAndLayout_(sheet) {
+  var layout = _prepareCandidatesSection_(sheet, true);
+  var candidates = layout.sections.candidates;
+  // Without a [Responses] marker the rows below [Candidates] may be orphaned votes (see
+  // _ensureResponsesSection_), so nothing is read as a candidate until it is repaired.
+  if (!candidates || !layout.sections.responses) {
+    _logBallotEvent_('ballot.parse.markerMissing', { sheet: sheet.getName(), candidatesRow: layout.markers.candidates, responsesRow: layout.markers.responses });
+    return { rows: [], layout: layout };
   }
-  var candidatesHeaderRow = candidatesRow + 1;
-  var count = responsesRow - candidatesHeaderRow - 1;
-  if (count <= 0) return [];
+  var firstRow = candidates.firstDataRow;
+  var count = candidates.endRow - firstRow + 1;
+  if (count <= 0) return { rows: [], layout: layout };
+  // One read: column A (for the warning below) plus the table's own columns.
+  var values = sheet.getRange(firstRow, 1, count, _BALLOT_CANDIDATES_FIRST_COL - 1 + _BALLOT_CANDIDATES_HEADER.length).getValues();
   // Column A is marker-only (see file header) and never read as a candidate — but a name
   // typed there is an easy mistake, so say so rather than let it vanish silently.
   var colARows = [];
-  sheet.getRange(candidatesHeaderRow + 1, 1, count, 1).getValues().forEach(function (r, i) {
-    if (String(r[0] || '').trim()) colARows.push(candidatesHeaderRow + 1 + i);
+  values.forEach(function (r, i) {
+    if (String(r[0] || '').trim()) colARows.push(firstRow + i);
   });
   if (colARows.length) {
     _logBallotEvent_('ballot.parse.candidateInColumnA', { sheet: sheet.getName(), rows: colARows });
   }
-  var values = sheet.getRange(candidatesHeaderRow + 1, _BALLOT_CANDIDATES_FIRST_COL, count, _BALLOT_CANDIDATES_HEADER.length).getValues();
   // A row with no name (e.g. a stray blank row someone left in the sheet) isn't a
-  // candidate — skip it rather than returning a phantom entry that would throw off
-  // the position alignment with the Responses header's candidate columns.
-  return values
+  // candidate — skip it (and keep reading below it) rather than returning a phantom entry
+  // that would throw off the position alignment with the Responses header's candidate columns.
+  var rows = values
     .map(function (r) {
-      return { name: String(r[0] || '').trim(), details: String(r[1] || ''), linkText: String(r[2] || ''), linkUrl: String(r[3] || '') };
+      var c = _BALLOT_CANDIDATES_FIRST_COL - 1;
+      return { name: String(r[c] || '').trim(), details: String(r[c + 1] || ''), linkText: String(r[c + 2] || ''), linkUrl: String(r[c + 3] || '') };
     })
     .filter(function (it) { return it.name; });
+  return { rows: rows, layout: layout };
 }
 
 /**
  * Resizes + rewrites the Candidates table to exactly match `candidateRows` (array of
  * {name, details, linkText, linkUrl}, one per candidate column, in the same order).
- * Leaves the Responses section untouched — the insert/delete happens strictly between
- * the Candidates header and the Responses marker.
+ * Leaves every other section untouched — the insert/delete happens strictly between
+ * the Candidates header and the next marker below it (or the end of the sheet).
  *
  * @param {Sheet} sheet
  * @param {Array<{name:string, details:string, linkText:string, linkUrl:string}>} candidateRows
  */
 function writeBallotCandidateDetails_(sheet, candidateRows) {
-  _ensureCandidatesSection_(sheet);
-  _migrateCandidatesColumnsIfNeeded_(sheet);
-  _ensureCandidatesHeaderColumns_(sheet);
-  var candidatesRow = _findMarkerRow_(sheet, _BALLOT_CANDIDATES_MARKER);
-  var responsesRow = _findMarkerRow_(sheet, _BALLOT_RESPONSES_MARKER);
-  if (candidatesRow === -1 || responsesRow === -1) {
+  var layout = _prepareCandidatesSection_(sheet, false);
+  var candidates = layout.sections.candidates;
+  if (!candidates || !layout.sections.responses) {
     throw new Error('Ballot sheet is missing its Candidates/Responses markers.');
   }
+  if (candidates.headerRow > candidates.endRow) {
+    // The row below [Candidates] is already the next marker: there is no header row to
+    // write beneath, and resizing from it would land inside the next section.
+    throw new Error('Ballot sheet is missing its Candidates header row.');
+  }
   var rows = candidateRows.map(function (it) { return [it.name || '', it.details || '', it.linkText || '', it.linkUrl || '']; });
-  _resizeSectionRows_(sheet, candidatesRow + 1, responsesRow, rows, _BALLOT_CANDIDATES_FIRST_COL);
+  _resizeSectionRows_(sheet, candidates.headerRow, candidates.endRow + 1, rows, _BALLOT_CANDIDATES_FIRST_COL);
 }
 
 /**
@@ -1212,6 +1367,7 @@ if (typeof module !== 'undefined' && module.exports) {
     _migrateCandidatesColumnsIfNeeded_: _migrateCandidatesColumnsIfNeeded_,
     _ensureCandidatesHeaderColumns_: _ensureCandidatesHeaderColumns_,
     _withBallotLock_: _withBallotLock_,
-    _findMarkerRow_: _findMarkerRow_
+    _findMarkerRow_: _findMarkerRow_,
+    _readBallotLayout_: _readBallotLayout_
   };
 }

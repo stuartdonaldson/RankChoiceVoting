@@ -924,6 +924,141 @@ function testHighlightSectionMarkersUnfreezesStaleFourteenRowFreeze() {
   assert.equal(logLinesWith(sandbox, 'ballot.repair.frozenRows').length, 1);
 }
 
+// ---------------------------------------------------------------------------
+// Order-independent layout (rcballot-kix): hand-built sheets in any marker order.
+// ---------------------------------------------------------------------------
+
+const SECTION_MARKERS = { results: '[Results]', candidates: '[Candidates]', responses: '[Responses]' };
+
+/** All 6 orderings of the three section keys. */
+const SECTION_ORDERS = (function () {
+  const keys = ['results', 'candidates', 'responses'];
+  const out = [];
+  keys.forEach((a) => keys.forEach((b) => keys.forEach((c) => {
+    if (a !== b && b !== c && a !== c) out.push([a, b, c]);
+  })));
+  return out;
+}());
+
+/**
+ * Rows (from column A) for each section of a hand-built ballot. Candidates and Responses
+ * agree on candidate names/order, so no reconcile write fires on read. `blankRows` puts a
+ * blank row in the middle of every section's data (never at the very end of the sheet,
+ * where it would be invisible to getLastRow anyway).
+ */
+function sectionRows(key, blankRows) {
+  const blank = blankRows ? [[]] : [];
+  if (key === 'results') {
+    return [['[Results]'], ['', 'Analysis run: earlier']].concat(blank, [['', 'Winner: Alice', 3]]);
+  }
+  if (key === 'candidates') {
+    return [['[Candidates]'], ['', 'Name', 'Details', 'Link Text', 'Link URL'], ['', 'Alice', 'a note']]
+      .concat(blank, [['', 'Bob', 'b note', 'site', 'https://example.com/b']]);
+  }
+  return [['[Responses]'], ['Date', 'Name', 'Weight', 'Comment', 'Alice', 'Bob'], ['2026-10-01', 'V1', 1, '', 1, 2]]
+    .concat(blank, [['2026-10-02', 'V2', 2, 'c2', 2, 1]]);
+}
+
+/**
+ * Builds Ballot-<id> by hand: 8 config rows, a blank spacer, then the three sections in
+ * `order`. Only non-empty cells are written, so getLastRow matches real Sheets.
+ */
+function buildOrderedBallot(ss, id, order, opts) {
+  const sheet = ss.insertSheet('Ballot-' + id);
+  const rows = [
+    ['Title', 'T-' + id], ['Description', 'D'], ['Instructions', 'I'], ['Footer', 'F'],
+    ['Contact', 'C'], ['Accept-New', 'TRUE'], ['Add-Instructions', 'AI'], ['Admin-Only-Notes', 'N'], [],
+  ];
+  order.forEach((key) => { sectionRows(key, opts && opts.blankRows).forEach((r) => rows.push(r)); });
+  rows.forEach((r, i) => r.forEach((v, c) => { if (v !== '' && v != null) sheet.getRange(i + 1, c + 1).setValue(v); }));
+  return sheet;
+}
+
+/** Everything the four section readers return, with sheet row numbers dropped. */
+function readAllSections(SM, sheet) {
+  return {
+    config: SM.readBallotConfig_(sheet),
+    details: SM.readBallotCandidateDetails_(sheet),
+    candidates: SM.readBallotCandidates_(sheet),
+    responses: SM.readBallotResponseRows_(sheet).map((r) => ({ date: r.date, name: r.name, weight: r.weight, comment: r.comment, ranks: r.ranks })),
+  };
+}
+
+/** kix.4 AC1/AC2/AC4: every marker order (with and without blank rows) reads the same data. */
+function testAllMarkerOrdersReadTheSameData() {
+  const canonical = (function () {
+    const { SM, ss } = loadBallotModel();
+    return readAllSections(SM, buildOrderedBallot(ss, 'Canon', ['results', 'candidates', 'responses']));
+  }());
+  assert.deepEqual(canonical.candidates, ['Alice', 'Bob']);
+  assert.deepEqual(canonical.responses.map((r) => r.name), ['V1', 'V2']);
+  assert.equal(canonical.config.Title, 'T-Canon');
+
+  SECTION_ORDERS.forEach((order) => {
+    [false, true].forEach((blankRows) => {
+      const { SM, ss, sandbox } = loadBallotModel();
+      const sheet = buildOrderedBallot(ss, 'Canon', order, { blankRows: blankRows });
+      const label = order.join('/') + (blankRows ? ' +blank rows' : '');
+      const lastRowBefore = sheet.getLastRow();
+      assert.deepEqual(readAllSections(SM, sheet), canonical, label);
+      // A healthy sheet in any order needs no repair: nothing written, no lock taken.
+      assert.equal(sheet.getLastRow(), lastRowBefore, label + ': rows changed');
+      assert.equal(sandbox.LockService._state.waitCount, 0, label + ': lock taken');
+    });
+  });
+}
+
+/** kix.4 AC3: a duplicated marker uses the first occurrence, bounds the section above it, and is logged once. */
+function testDuplicateMarkerUsesFirstOccurrenceAndIsLogged() {
+  const { SM, ss, sandbox } = loadBallotModel();
+  const sheet = buildOrderedBallot(ss, 'Dup', ['results', 'responses', 'candidates']);
+  // A stray copy of [Responses] (plus a would-be vote under it) at the bottom of Candidates.
+  const dupRow = sheet.getLastRow() + 1;
+  sheet.getRange(dupRow, 1).setValue('[Responses]');
+  sheet.getRange(dupRow + 1, 1, 1, 6).setValues([['2026-10-03', 'Stray', 1, '', 1, 2]]);
+
+  const layout = SM._readBallotLayout_(sheet);
+  assert.equal(layout.markers.responses, 13); // first occurrence: config 1..9, Results 10..12, Responses 13
+  assert.deepEqual(layout.duplicates.map((d) => d.marker), ['[Responses]']);
+  assert.equal(layout.sections.candidates.endRow, dupRow - 1); // the duplicate bounds Candidates
+
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice', 'Bob']);
+  assert.deepEqual(SM.readBallotResponseRows_(sheet).map((r) => r.name), ['V1', 'V2']); // 'Stray' never read
+  const lines = logLinesWith(sandbox, 'ballot.parse.duplicateMarker');
+  assert.equal(lines.length, 1); // many layout reads, one log line
+  assert.equal(lines[0].indexOf('"rows":[13,' + dupRow + ']') !== -1, true, lines[0]);
+}
+
+/** kix.4 AC4: with Responses not last, the next section's rows are not read as votes. */
+function testResponsesSectionEndsAtNextMarker() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = buildOrderedBallot(ss, 'RespMid', ['candidates', 'responses', 'results']);
+  // Results output in column B of the following section would read as voter names if
+  // Responses ran to the end of the sheet.
+  const layout = SM._readBallotLayout_(sheet);
+  assert.equal(layout.sections.responses.endRow, layout.markers.results - 1);
+  assert.equal(layout.sections.results.endRow, sheet.getLastRow());
+  assert.equal(layout.configEndRow, 9);
+  assert.deepEqual(SM.readBallotResponseRows_(sheet).map((r) => r.name), ['V1', 'V2']);
+}
+
+/** kix.4 AC5: each section reader scans column A exactly once on a healthy sheet. */
+function testSectionReadersScanColumnAOnce() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = buildOrderedBallot(ss, 'OneScan', ['responses', 'results', 'candidates']);
+  let scans = 0;
+  const origGetRange = sheet.getRange.bind(sheet);
+  sheet.getRange = function (row, col, numRows, numCols) {
+    if (row === 1 && col === 1 && numCols === 1 && numRows > 1) scans++;
+    return origGetRange(row, col, numRows, numCols);
+  };
+  ['readBallotCandidateDetails_', 'readBallotCandidates_', 'readBallotResponseRows_'].forEach((fn) => {
+    scans = 0;
+    SM[fn](sheet);
+    assert.equal(scans, 1, fn + ' column-A scans');
+  });
+}
+
 function run() {
   testCreateNewBallotCreatesSkeleton();
   testListBallotIdsAndFindBallotSheet();
@@ -961,6 +1096,10 @@ function run() {
   testHighlightSectionMarkersUnfreezesStaleFourteenRowFreeze();
   testDuplicateIdThrows();
   testInvalidIdThrows();
+  testAllMarkerOrdersReadTheSameData();
+  testDuplicateMarkerUsesFirstOccurrenceAndIsLogged();
+  testResponsesSectionEndsAtNextMarker();
+  testSectionReadersScanColumnAOnce();
   console.log('test_ballot_model: all tests passed');
 }
 
