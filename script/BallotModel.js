@@ -23,15 +23,21 @@
  *   Row N+2+   One row per respondent
  *
  * Column A is reserved EXCLUSIVELY for section markers/config keys — never for
- * user-entered data — and markers are bracket-decorated ("[Results]", not "Results")
- * as a second, independent guard. Both exist because _findMarkerRow_ does an
- * unscoped top-to-bottom scan of column A for exact marker text: if a candidate's
- * name (user-controlled, arbitrary) ever landed in column A, naming a candidate e.g.
- * "Responses" would shadow the real marker and corrupt every section boundary
- * computed from it (this was a real bug in an earlier version of this file, where
- * the Candidates table's Name column started at col A). Reserving col A for markers
- * only closes the hole entirely; the bracket decoration is defense in depth against
- * any future mistake (or a sheet hand-edited outside the app) reintroducing it.
+ * user-entered or app-generated data — and markers are bracket-decorated ("[Results]",
+ * not "Results") as a second, independent guard. Both exist because _findMarkerRow_
+ * does an unscoped top-to-bottom scan of column A for exact marker text: if a
+ * candidate's name (user-controlled, arbitrary) ever landed in column A, naming a
+ * candidate e.g. "Responses" would shadow the real marker and corrupt every section
+ * boundary computed from it (this was a real bug in an earlier version of this file,
+ * where the Candidates table's Name column started at col A). Reserving col A for
+ * markers only closes the hole entirely; the bracket decoration is defense in depth.
+ * Hence: the Results output and the Candidates table both start at col B; marker
+ * matching is exact bracketed text only (plain "Responses" etc. is never matched or
+ * rewritten); and candidate names equal to any marker word are rejected.
+ *
+ * The one documented exception: the Responses section keeps column A for its Date
+ * column (header "Date" plus app-written timestamps in the response rows) — it sits
+ * below the [Responses] marker, where no marker scan needs to find anything after it.
  *
  * "Admin-Only-Notes" (config key; formerly "Info" — _findMarkerRow_-style legacy
  * migration in readBallotConfig_ upgrades old sheets on first read) is free-text
@@ -64,19 +70,12 @@ var _BALLOT_CANDIDATES_MARKER = '[Candidates]';
 var _BALLOT_CANDIDATES_HEADER = ['Name', 'Details', 'Link Text', 'Link URL'];
 var _BALLOT_CANDIDATES_FIRST_COL = 2; // col B — col A stays blank/reserved throughout the Candidates section
 var _BALLOT_RESPONSES_MARKER = '[Responses]';
-// Legacy marker text recognized by _findMarkerRow_ purely to migrate older sheets in
-// place — the moment one is found, the cell is rewritten to the decorated/current form,
-// so every later scan matches directly. This covers both the pre-bracket-decoration
-// bare text ("Results", "Responses") and the section's former name ("[Items]"/"Items",
-// before it was renamed to "[Candidates]" to reflect that it's the primary candidate list).
-var _BALLOT_LEGACY_MARKER_TEXT_ = {
-  '[Results]': ['Results'],
-  '[Candidates]': ['Candidates', '[Items]', 'Items'],
-  '[Responses]': ['Responses']
-};
+// Bare words (lowercase, brackets stripped) a candidate may not be named: the marker
+// words plus the former "Items" section name. See the file header's column-A rule.
+var _BALLOT_RESERVED_NAMES_ = ['results', 'candidates', 'responses', 'items'];
 var _BALLOT_CONFIG_ROWS = ['Title', 'Description', 'Instructions', 'Footer', 'Contact', 'Accept-New', 'Add-Instructions', 'Admin-Only-Notes'];
 // Legacy config key recognized by readBallotConfig_ purely to migrate older sheets in
-// place, same pattern as _BALLOT_LEGACY_MARKER_TEXT_ above.
+// place (the cell is rewritten to the current key name the first time it is read).
 var _BALLOT_LEGACY_CONFIG_KEYS_ = { 'Admin-Only-Notes': ['Info'] };
 // Fixed Responses columns before the candidate columns begin (col 5 / E).
 var _BALLOT_RESPONSE_FIXED_COLS = ['Date', 'Name', 'Weight', 'Comment'];
@@ -393,8 +392,8 @@ function _ensureCandidatesHeaderColumns_(sheet) {
  * @param {number} afterRow
  * @param {number} beforeMarkerRow
  * @param {Array<Array>} rows
- * @param {number=} startCol defaults to col A (1) — Candidates-section callers pass
- *   _BALLOT_CANDIDATES_FIRST_COL so candidate data never lands in the marker-reserved column A.
+ * @param {number=} startCol defaults to col A (1) — Candidates-section and Results callers
+ *   pass _BALLOT_CANDIDATES_FIRST_COL so their data never lands in the marker-reserved column A.
  */
 function _resizeSectionRows_(sheet, afterRow, beforeMarkerRow, rows, startCol) {
   startCol = startCol || 1;
@@ -503,7 +502,8 @@ function writeBallotConfig_(sheet, updates) {
 }
 
 /**
- * Scans column A for a row whose value exactly matches marker.
+ * Scans column A for a row whose value exactly matches the (bracketed) marker. Plain
+ * look-alike text such as "Responses" is never matched.
  *
  * @param {Sheet} sheet
  * @param {string} marker
@@ -513,21 +513,25 @@ function _findMarkerRow_(sheet, marker) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 1) return -1;
   var values = sheet.getRange(1, 1, lastRow, 1).getValues();
-  var legacyTexts = _BALLOT_LEGACY_MARKER_TEXT_[marker] || [];
   for (var i = 0; i < values.length; i++) {
-    var cell = String(values[i][0] || '').trim();
-    if (cell === marker) return i + 1;
-    if (legacyTexts.indexOf(cell) !== -1) {
-      var legacyRow = i + 1;
-      _withBallotLock_(function () {
-        if (String(sheet.getRange(legacyRow, 1).getValue() || '').trim() === cell) {
-          sheet.getRange(legacyRow, 1).setValue(marker); // one-time upgrade to the current decorated form
-        }
-      });
-      return legacyRow;
-    }
+    if (String(values[i][0] || '').trim() === marker) return i + 1;
   }
   return -1;
+}
+
+/**
+ * Throws if name (trimmed, case-insensitive, with or without surrounding brackets) is
+ * one of the section-marker words — such a candidate would put marker-looking text into
+ * the sheet (e.g. in the Responses header) and invite confusion with section boundaries.
+ *
+ * @param {string} name
+ */
+function _assertNotMarkerName_(name) {
+  var bare = String(name || '').trim().toLowerCase();
+  if (bare.charAt(0) === '[' && bare.charAt(bare.length - 1) === ']') bare = bare.slice(1, -1).trim();
+  if (_BALLOT_RESERVED_NAMES_.indexOf(bare) !== -1) {
+    throw new Error('Candidate name cannot be a section marker.');
+  }
 }
 
 /**
@@ -794,6 +798,7 @@ function _findBallotResponseRowForName_(sheet, name) {
  * @param {string=} linkUrl admin-only link target, opened in a new tab (respondents never pass this).
  */
 function addBallotCandidate_(sheet, phrase, details, linkText, linkUrl) {
+  _assertNotMarkerName_(phrase);
   var headerRow = _getResponsesHeaderRow_(sheet);
   if (headerRow === -1) throw new Error('Ballot has no Responses section.');
   var existingCandidates = readBallotCandidates_(sheet); // BEFORE the new column exists
@@ -929,6 +934,7 @@ function _buildRespondentBranding_(id, config, candidateRows) {
 function addBallotCandidateForId_(id, phrase, details) {
   phrase = String(phrase || '').trim();
   if (!phrase) throw new Error('Item cannot be empty.');
+  _assertNotMarkerName_(phrase);
 
   return _withBallotLock_(function () {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -993,6 +999,8 @@ function submitBallotResponse_(id, name, orderedCandidates, comment) {
  * rows available, then writes rows into it. Leaves the Candidates/Responses sections
  * (which sit immediately below) untouched — the insert/delete happens strictly
  * between the Results and Candidates markers, so everything below shifts as one block.
+ * The region is cleared in full first and output starts at column B (column A is
+ * markers-only), so older column-A output self-corrects on the next run.
  *
  * @param {Sheet} sheet
  * @param {Array<Array>} rows
@@ -1004,7 +1012,14 @@ function writeBallotResults_(sheet, rows) {
   if (resultsRow === -1 || candidatesRow === -1) {
     throw new Error('Ballot sheet is missing its Results/Candidates markers.');
   }
-  _resizeSectionRows_(sheet, resultsRow, candidatesRow, rows);
+  // Clear the whole region (every column, col A included) first: column A is
+  // markers-only, so output from the older layout that wrote names there must not
+  // survive the rewrite; the resize then inserts/deletes blank rows only.
+  var regionRows = candidatesRow - resultsRow - 1;
+  if (regionRows > 0) {
+    sheet.getRange(resultsRow + 1, 1, regionRows, Math.max(sheet.getLastColumn(), 1)).clearContent();
+  }
+  _resizeSectionRows_(sheet, resultsRow, candidatesRow, rows, _BALLOT_CANDIDATES_FIRST_COL);
 }
 
 /**
@@ -1090,6 +1105,7 @@ function saveBallotCandidates_(sheet, candidateRows) {
   var names = candidateRows.map(function (it) {
     var name = String(it.name || '').trim();
     if (!name) throw new Error('Candidate name cannot be empty.');
+    _assertNotMarkerName_(name);
     return name;
   });
   var headerRow = _getResponsesHeaderRow_(sheet);
@@ -1177,6 +1193,7 @@ if (typeof module !== 'undefined' && module.exports) {
     _ensureResponsesSection_: _ensureResponsesSection_,
     _migrateCandidatesColumnsIfNeeded_: _migrateCandidatesColumnsIfNeeded_,
     _ensureCandidatesHeaderColumns_: _ensureCandidatesHeaderColumns_,
-    _withBallotLock_: _withBallotLock_
+    _withBallotLock_: _withBallotLock_,
+    _findMarkerRow_: _findMarkerRow_
   };
 }

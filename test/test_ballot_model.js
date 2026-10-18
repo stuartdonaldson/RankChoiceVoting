@@ -110,8 +110,8 @@ function testWriteBallotConfigSelfHealsMissingAdminOnlyNotesRowOnOldSheet() {
     ['Contact', 'old@example.com'],
     ['Accept-New', 'TRUE'],
   ]);
-  sheet.getRange(7, 1).setValue('Results');
-  sheet.getRange(9, 1).setValue('Responses');
+  sheet.getRange(7, 1).setValue('[Results]');
+  sheet.getRange(9, 1).setValue('[Responses]');
   sheet.getRange(10, 1, 1, 4).setValues([['Date', 'Name', 'Weight', 'Comment']]);
 
   SM.writeBallotConfig_(sheet, {
@@ -128,13 +128,10 @@ function testWriteBallotConfigSelfHealsMissingAdminOnlyNotesRowOnOldSheet() {
   assert.equal(config.Title, 'Old Title'); // pre-existing keys untouched
 
   // Admin-Only-Notes reused the existing blank spacer row (6) — Results/Responses/
-  // header stay put. The bare "Results" text this test seeded gets migrated to
-  // "[Results]" in place the moment writeBallotConfig_ looks it up (via
-  // _findMarkerRow_); "Responses" is never looked up in this test, so it's left
-  // as-is — legacy text is only ever migrated on actual use, not proactively.
+  // header stay put.
   assert.equal(sheet.getRange(6, 1).getValue(), 'Admin-Only-Notes');
   assert.equal(sheet.getRange(7, 1).getValue(), '[Results]');
-  assert.equal(sheet.getRange(9, 1).getValue(), 'Responses');
+  assert.equal(sheet.getRange(9, 1).getValue(), '[Responses]');
   assert.deepEqual(sheet.getRange(10, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
 }
 
@@ -151,8 +148,8 @@ function testWriteBallotConfigInsertsRowWhenNoBlankSpacerExists() {
     ['Footer', 'F'],
     ['Contact', 'C'],
   ]);
-  sheet.getRange(5, 1).setValue('Results'); // no blank row between config and marker
-  sheet.getRange(7, 1).setValue('Responses');
+  sheet.getRange(5, 1).setValue('[Results]'); // no blank row between config and marker
+  sheet.getRange(7, 1).setValue('[Responses]');
   sheet.getRange(8, 1, 1, 4).setValues([['Date', 'Name', 'Weight', 'Comment']]);
 
   SM.writeBallotConfig_(sheet, { Title: 'T', 'Admin-Only-Notes': 'notes' });
@@ -161,11 +158,10 @@ function testWriteBallotConfigInsertsRowWhenNoBlankSpacerExists() {
   assert.equal(config['Admin-Only-Notes'], 'notes');
 
   // A new row was inserted at row 5 (just above Results), shifting Results/Responses/
-  // header down by one row each. Results migrates to "[Results]" (looked up by
-  // writeBallotConfig_); Responses is never looked up here, so stays bare.
+  // header down by one row each.
   assert.equal(sheet.getRange(5, 1).getValue(), 'Admin-Only-Notes');
   assert.equal(sheet.getRange(6, 1).getValue(), '[Results]');
-  assert.equal(sheet.getRange(8, 1).getValue(), 'Responses');
+  assert.equal(sheet.getRange(8, 1).getValue(), '[Responses]');
   assert.deepEqual(sheet.getRange(9, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
 }
 
@@ -397,15 +393,14 @@ function testEnsureCandidatesSectionSelfHealsOldSheetAndBackfillsOnAdd() {
     ['Title', 'T'], ['Description', 'D'], ['Footer', 'F'],
     ['Contact', 'C'], ['Accept-New', 'TRUE'], ['Info', ''],
   ]);
-  sheet.getRange(8, 1).setValue('Results');
-  sheet.getRange(10, 1).setValue('Responses');
+  sheet.getRange(8, 1).setValue('[Results]');
+  sheet.getRange(10, 1).setValue('[Responses]');
   sheet.getRange(11, 1, 1, 6).setValues([['Date', 'Name', 'Weight', 'Comment', 'Alice', 'Bob']]);
 
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet), []); // no Candidates rows yet, but no throw
   // _ensureCandidatesSection_ inserts the Candidates marker+header directly above the
   // (now shifted) Responses marker: old Responses(10) -> 12, Candidates marker lands
-  // at 10. Looking up the Responses marker along the way migrates its bare legacy text
-  // to "[Responses]"; the new Candidates marker is written decorated from the start.
+  // at 10, written decorated.
   assert.equal(sheet.getRange(10, 1).getValue(), '[Candidates]');
   assert.equal(sheet.getRange(11, 1).getValue(), ''); // col A reserved, blank
   assert.deepEqual(sheet.getRange(11, 2, 1, 2).getValues()[0], ['Name', 'Details']);
@@ -467,27 +462,100 @@ function testMigratesExistingOldColumnCandidatesSectionOnRead() {
 }
 
 /**
- * Confirms the old "[Items]" marker (and its bare pre-decoration form "Items") is
- * recognized as a legacy alias for "[Candidates]" and migrated to the decorated
- * "[Candidates]" text in place the first time it's looked up — covers a sheet that
- * hasn't yet been manually renamed since the Items->Candidates rename.
+ * Column A is markers-only: marker matching is exact bracketed text. Plain "Responses" /
+ * "Candidates" / "Results" / "Items" cells (and the former "[Items]" marker) are neither
+ * matched nor rewritten, so a candidate or result line with such a name can never
+ * shadow or become a section boundary.
  */
-function testLegacyItemsMarkerMigratesToCandidatesMarker() {
+function testPlainTextMarkersAreNotMatchedOrRewritten() {
   const { SM, ss } = loadBallotModel();
-  const sheet = ss.insertSheet('Ballot-LegacyItems');
-  sheet.getRange(1, 1, 6, 2).setValues([
-    ['Title', 'T'], ['Description', 'D'], ['Footer', 'F'],
-    ['Contact', 'C'], ['Accept-New', 'TRUE'], ['Info', ''],
-  ]);
-  sheet.getRange(8, 1).setValue('[Results]');
-  sheet.getRange(9, 1).setValue('[Items]');
-  sheet.getRange(10, 2, 1, 2).setValues([['Name', 'Details']]);
-  sheet.getRange(11, 2, 1, 2).setValues([['Alice', 'Loves cats']]);
-  sheet.getRange(12, 1).setValue('[Responses]');
-  sheet.getRange(13, 1, 1, 5).setValues([['Date', 'Name', 'Weight', 'Comment', 'Alice']]);
+  const sheet = SM.createNewBallot_(ss, 'PlainText');
+  // Plain-text look-alikes sitting in column A of the Results region (rows 11..) —
+  // above the real [Candidates]/[Responses] markers, where a top-down scan hits them first.
+  sheet.getRange(10, 1).setValue('[Results]');
+  SM.writeBallotResults_(sheet, [['x'], ['x'], ['x'], ['x']]);
+  ['Responses', 'Candidates', 'Items', '[Items]', 'Results'].forEach((text, i) => {
+    sheet.getRange(11 + i, 1).setValue(text);
+  });
+  const before = sheet.getRange(11, 1, 5, 1).getValues().map((r) => r[0]);
 
-  assert.deepEqual(SM.readBallotCandidateDetails_(sheet), [{ name: 'Alice', details: 'Loves cats', linkText: '', linkUrl: '' }]);
-  assert.equal(sheet.getRange(9, 1).getValue(), '[Candidates]'); // migrated in place
+  SM.writeBallotCandidateDetails_(sheet, [{ name: 'Alice', details: 'a' }]);
+  assert.deepEqual(SM.readBallotCandidateDetails_(sheet).map((it) => it.name), ['Alice']);
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice']);
+  assert.equal(SM._findMarkerRow_(sheet, '[Results]'), 10);
+  assert.equal(SM._findMarkerRow_(sheet, '[Candidates]') > 15, true);
+  assert.equal(SM._findMarkerRow_(sheet, '[Responses]') > SM._findMarkerRow_(sheet, '[Candidates]'), true);
+  assert.deepEqual(sheet.getRange(11, 1, 5, 1).getValues().map((r) => r[0]), before); // not rewritten
+  assert.equal(sheet.getRange(11, 1).getValue(), 'Responses');
+  assert.equal(sheet.getRange(12, 1).getValue(), 'Candidates');
+
+  // A sheet whose ONLY marker-like cells are plain text has no markers.
+  const bare = ss.insertSheet('Ballot-BareOnly');
+  bare.getRange(1, 1, 3, 1).setValues([['Results'], ['Items'], ['Responses']]);
+  assert.equal(SM._findMarkerRow_(bare, '[Results]'), -1);
+  assert.equal(SM._findMarkerRow_(bare, '[Candidates]'), -1);
+  assert.equal(SM._findMarkerRow_(bare, '[Responses]'), -1);
+  assert.deepEqual(bare.getRange(1, 1, 3, 1).getValues().map((r) => r[0]), ['Results', 'Items', 'Responses']);
+}
+
+/** Results output starts at column B and leaves column A blank; stale column-A text is cleared. */
+function testWriteBallotResultsUsesColumnBAndClearsColumnA() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = SM.createNewBallot_(ss, 'ResultsColB');
+  SM.addBallotCandidate_(sheet, 'Alice', '');
+  SM.submitBallotResponse_('ResultsColB', 'V', ['Alice'], '');
+
+  // Legacy-style output previously written from column A (candidate names included).
+  sheet.getRange(10, 1).setValue('[Results]');
+  SM.writeBallotResults_(sheet, [['placeholder']]);
+  sheet.getRange(11, 1, 1, 2).setValues([['Responses', 'old']]);
+
+  SM.writeBallotResults_(sheet, [['Header', 'Winner'], ['Alice', 3], ['Bob', 1]]);
+
+  const candidatesRow = SM._findMarkerRow_(sheet, '[Candidates]');
+  assert.equal(candidatesRow, 14); // 3 rows between [Results] (10) and [Candidates]
+  for (let r = 11; r < candidatesRow; r++) {
+    assert.equal(sheet.getRange(r, 1).getValue(), '', 'col A row ' + r + ' must be blank');
+  }
+  assert.deepEqual(sheet.getRange(11, 2, 3, 2).getValues(), [['Header', 'Winner'], ['Alice', 3], ['Bob', 1]]);
+
+  // Shrinking the output leaves no stale text in any column of the region.
+  SM.writeBallotResults_(sheet, [['only']]);
+  const newCandidatesRow = SM._findMarkerRow_(sheet, '[Candidates]');
+  assert.equal(newCandidatesRow, 12);
+  assert.deepEqual(sheet.getRange(11, 1, 1, 3).getValues()[0], ['', 'only', '']);
+}
+
+/** A region already holding column-A text (old output) is fully cleared on rewrite. */
+function testWriteBallotResultsClearsPreexistingColumnAText() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = SM.createNewBallot_(ss, 'ResultsClear');
+  SM.writeBallotResults_(sheet, [['a'], ['b'], ['c']]);
+  sheet.getRange(11, 1, 3, 3).setValues([['Alice', 'x', 'y'], ['Bob', 'x', 'y'], ['Carol', 'x', 'y']]);
+
+  SM.writeBallotResults_(sheet, [['n1'], ['n2'], ['n3']]);
+  assert.deepEqual(sheet.getRange(11, 1, 3, 3).getValues(), [['', 'n1', ''], ['', 'n2', ''], ['', 'n3', '']]);
+}
+
+/** Candidate names equal to any marker text (bracketed or not, any case/padding) are rejected. */
+function testMarkerNamedCandidatesAreRejected() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = SM.createNewBallot_(ss, 'MarkerNames');
+  SM.addBallotCandidate_(sheet, 'Alice', '');
+  const bad = ['Responses', '[Results]', ' items ', 'CANDIDATES', '[Candidates]', 'Results', '[responses]', '[Items]'];
+
+  bad.forEach((name) => {
+    assert.throws(() => SM.addBallotCandidate_(sheet, name, ''), /Candidate name cannot be a section marker\./, 'addBallotCandidate_ ' + name);
+    assert.throws(() => SM.addBallotCandidateForId_('MarkerNames', name, ''), /Candidate name cannot be a section marker\./, 'addBallotCandidateForId_ ' + name);
+    assert.throws(() => SM.addBallotCandidateForAdmin_('MarkerNames', name, '', '', ''), /Candidate name cannot be a section marker\./, 'addBallotCandidateForAdmin_ ' + name);
+    assert.throws(() => SM.saveBallotCandidates_(sheet, [{ name: name, details: '' }]), /Candidate name cannot be a section marker\./, 'saveBallotCandidates_ ' + name);
+    assert.throws(() => SM.saveBallotCandidatesForId_('MarkerNames', [{ name: name, details: '' }]), /Candidate name cannot be a section marker\./, 'saveBallotCandidatesForId_ ' + name);
+  });
+  // Nothing was written by the rejected calls.
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice']);
+  // Names merely containing a marker word are fine.
+  SM.addBallotCandidate_(sheet, 'Responses to Intervention', '');
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice', 'Responses to Intervention']);
 }
 
 /**
@@ -840,7 +908,10 @@ function run() {
   testAddBallotCandidateForIdAcceptsRespondentDetails();
   testEnsureCandidatesSectionSelfHealsOldSheetAndBackfillsOnAdd();
   testMigratesExistingOldColumnCandidatesSectionOnRead();
-  testLegacyItemsMarkerMigratesToCandidatesMarker();
+  testPlainTextMarkersAreNotMatchedOrRewritten();
+  testWriteBallotResultsUsesColumnBAndClearsColumnA();
+  testWriteBallotResultsClearsPreexistingColumnAText();
+  testMarkerNamedCandidatesAreRejected();
   testPrePopulatedCandidateNotInResponsesIsReconciledIn();
   testReadBallotCandidateDetailsIgnoresBlankRow();
   testReconcileCompactsGapCausedByWiderCandidatesTable();
