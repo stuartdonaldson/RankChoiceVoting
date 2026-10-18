@@ -1157,8 +1157,9 @@ function addBallotCandidateForId_(id, phrase, details) {
 
 /**
  * Picks (and if needed makes room for) the row a new respondent's vote goes in: directly
- * below the last named response row of the Responses section, or below its header when it
- * has none. When that row is the next section's marker, a blank row is inserted in front of
+ * below the last non-empty row of the Responses section — named vote or not, so a stray
+ * unnamed row with content (a hand-typed note) is never overwritten — or below its header
+ * when it has none. When that row is the next section's marker, a blank row is inserted in front of
  * the marker first, so the following section shifts down intact instead of being
  * overwritten. When Responses is the bottom section the row may simply be past the last
  * row. Never sheet.getLastRow()+1 — that is only right while Responses happens to be last.
@@ -1170,7 +1171,16 @@ function addBallotCandidateForId_(id, phrase, details) {
  * @return {number} 1-based row to write the new vote into.
  */
 function _newResponseRow_(sheet, responses, rows) {
-  var row = (rows.length ? rows[rows.length - 1].row : responses.headerRow) + 1;
+  var lastUsed = rows.length ? rows[rows.length - 1].row : responses.headerRow;
+  if (responses.endRow > lastUsed) {
+    var tailStart = lastUsed + 1;
+    var tail = sheet.getRange(tailStart, 1, responses.endRow - lastUsed, Math.max(sheet.getLastColumn(), 1)).getValues();
+    tail.forEach(function (r, i) {
+      var used = r.some(function (v) { return String(v === null || v === undefined ? '' : v).trim() !== ''; });
+      if (used) lastUsed = tailStart + i;
+    });
+  }
+  var row = lastUsed + 1;
   if (row > responses.endRow && responses.nextMarkerRow !== -1) {
     row = responses.nextMarkerRow;
     sheet.insertRowsBefore(row, 1);

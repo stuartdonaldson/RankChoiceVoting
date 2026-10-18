@@ -1150,6 +1150,22 @@ function testNewVoteFillsBlankRowBeforeNextMarker() {
 }
 
 /**
+ * A trailing Responses row with content but no name (e.g. a stray hand-typed note) is
+ * not a vote, but it isn't empty either — a new vote goes below it, never over it.
+ */
+function testNewVoteNeverOverwritesUnnamedRowWithContent() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = buildOrderedBallot(ss, 'Stray', ['responses', 'results', 'candidates']);
+  const resultsRow = SM._readBallotLayout_(sheet).markers.results;
+  sheet.insertRowsBefore(resultsRow, 1);
+  sheet.getRange(resultsRow, 4).setValue('stray note'); // Comment column, no name
+  SM.submitBallotResponse_('Stray', 'V3', ['Alice', 'Bob'], '');
+  assert.equal(sheet.getRange(resultsRow, 4).getValue(), 'stray note');
+  assert.equal(sheet.getRange(resultsRow + 1, 2).getValue(), 'V3');
+  assert.equal(SM._readBallotLayout_(sheet).markers.results, resultsRow + 2);
+}
+
+/**
  * addBallotCandidate_ takes the Responses header row only after the read that may repair
  * the sheet — on an old sheet with no [Candidates] section the repair inserts two rows
  * above [Responses], and a row number taken earlier would put the name in the wrong row.
@@ -1437,6 +1453,7 @@ function run() {
   testSectionReadersScanColumnAOnce();
   testNewVoteLandsInsideResponsesWhenNotLast();
   testNewVoteFillsBlankRowBeforeNextMarker();
+  testNewVoteNeverOverwritesUnnamedRowWithContent();
   testAddBallotCandidateAfterRepairWritesResponsesHeader();
   testNoGetLastRowPlusOneWrites();
   testEachMissingMarkerIsRestoredAndLogged();
