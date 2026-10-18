@@ -1059,6 +1059,85 @@ function testSectionReadersScanColumnAOnce() {
   });
 }
 
+/**
+ * kix.5 AC1/AC2: with Responses not the last section, a new vote lands inside Responses
+ * (the following section shifts down one row intact) and a re-vote overwrites in place.
+ */
+function testNewVoteLandsInsideResponsesWhenNotLast() {
+  ['results', 'candidates'].forEach((after) => {
+    const { SM, ss } = loadBallotModel();
+    const order = after === 'results' ? ['candidates', 'responses', 'results'] : ['results', 'responses', 'candidates'];
+    const sheet = buildOrderedBallot(ss, 'Mid' + after, order);
+    const before = SM._readBallotLayout_(sheet);
+    const nextRow = before.markers[after];
+    const nextBefore = sheet.getRange(nextRow, 1, before.lastRow - nextRow + 1, 6).getValues();
+
+    SM.submitBallotResponse_('Mid' + after, 'V3', ['Bob', 'Alice'], '');
+    const layout = SM._readBallotLayout_(sheet);
+    assert.equal(layout.markers[after], nextRow + 1, after + ' marker shifted by one');
+    assert.deepEqual(sheet.getRange(nextRow + 1, 1, before.lastRow - nextRow + 1, 6).getValues(), nextBefore, after + ' contents intact');
+    assert.equal(sheet.getRange(nextRow, 2).getValue(), 'V3'); // the old marker row is now the new vote
+    assert.deepEqual(SM.readBallotResponseRows_(sheet).map((r) => r.name), ['V1', 'V2', 'V3']);
+
+    // Re-vote: same row, no row inserted.
+    const rowsBefore = sheet.getLastRow();
+    SM.submitBallotResponse_('Mid' + after, 'v2', ['Alice', 'Bob'], 'again');
+    assert.equal(sheet.getLastRow(), rowsBefore);
+    const v2 = SM.readBallotResponseRows_(sheet).filter((r) => r.name.toLowerCase() === 'v2');
+    assert.equal(v2.length, 1);
+    assert.equal(v2[0].row, nextRow - 1);
+    assert.equal(v2[0].comment, 'again');
+    assert.equal(v2[0].weight, 2); // existing weight kept
+  });
+}
+
+/** A new vote goes right below the last named row, filling a blank row before the next marker. */
+function testNewVoteFillsBlankRowBeforeNextMarker() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = buildOrderedBallot(ss, 'Gap', ['responses', 'results', 'candidates']);
+  const resultsRow = SM._readBallotLayout_(sheet).markers.results;
+  sheet.insertRowsBefore(resultsRow, 1); // a spare blank row at the end of Responses
+  SM.submitBallotResponse_('Gap', 'V3', ['Alice', 'Bob'], '');
+  assert.equal(sheet.getRange(resultsRow, 2).getValue(), 'V3');
+  assert.equal(SM._readBallotLayout_(sheet).markers.results, resultsRow + 1); // no extra insert
+}
+
+/**
+ * addBallotCandidate_ takes the Responses header row only after the read that may repair
+ * the sheet — on an old sheet with no [Candidates] section the repair inserts two rows
+ * above [Responses], and a row number taken earlier would put the name in the wrong row.
+ */
+function testAddBallotCandidateAfterRepairWritesResponsesHeader() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = ss.insertSheet('Ballot-OldAdd');
+  sheet.getRange(1, 1, 2, 2).setValues([['Title', 'T'], ['Accept-New', 'TRUE']]);
+  sheet.getRange(8, 1).setValue('[Results]');
+  sheet.getRange(10, 1).setValue('[Responses]');
+  sheet.getRange(11, 1, 1, 5).setValues([['Date', 'Name', 'Weight', 'Comment', 'Alice']]);
+
+  SM.addBallotCandidate_(sheet, 'Bob', '');
+  const headerRow = SM._readBallotLayout_(sheet).sections.responses.headerRow;
+  assert.equal(headerRow, 15); // +2 Candidates marker/header, +2 Candidates rows (Alice backfilled, Bob)
+  assert.deepEqual(sheet.getRange(headerRow, 1, 1, 6).getValues()[0], ['Date', 'Name', 'Weight', 'Comment', 'Alice', 'Bob']);
+  assert.deepEqual(sheet.getRange(11, 2, 1, 6).getValues()[0], ['Name', 'Details', 'Link Text', 'Link URL', '', '']); // Candidates header untouched
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice', 'Bob']);
+  assert.deepEqual(SM.readBallotCandidateDetails_(sheet).map((it) => it.name), ['Alice', 'Bob']);
+}
+
+/** kix.5 AC3: no script code appends at getLastRow()+1 (only section-repair code may append). */
+function testNoGetLastRowPlusOneWrites() {
+  const dir = path.join(__dirname, '..', 'script');
+  const hits = [];
+  fs.readdirSync(dir).filter((f) => f.endsWith('.js')).forEach((f) => {
+    fs.readFileSync(path.join(dir, f), 'utf8').split('\n').forEach((line, i) => {
+      const code = line.replace(/\/\/.*$/, '');
+      if (/^\s*\*/.test(code)) return; // JSDoc/comment line
+      if (/getLastRow\(\)\s*\+\s*1/.test(code)) hits.push(f + ':' + (i + 1));
+    });
+  });
+  assert.deepEqual(hits, []);
+}
+
 function run() {
   testCreateNewBallotCreatesSkeleton();
   testListBallotIdsAndFindBallotSheet();
@@ -1100,6 +1179,10 @@ function run() {
   testDuplicateMarkerUsesFirstOccurrenceAndIsLogged();
   testResponsesSectionEndsAtNextMarker();
   testSectionReadersScanColumnAOnce();
+  testNewVoteLandsInsideResponsesWhenNotLast();
+  testNewVoteFillsBlankRowBeforeNextMarker();
+  testAddBallotCandidateAfterRepairWritesResponsesHeader();
+  testNoGetLastRowPlusOneWrites();
   console.log('test_ballot_model: all tests passed');
 }
 

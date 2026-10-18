@@ -840,18 +840,29 @@ function _applyCandidateReconcile_(sheet, plan) {
  * @return {Array<{row:number, date:*, name:string, weight:number, comment:string, ranks:Array}>}
  */
 function readBallotResponseRows_(sheet) {
+  return _readResponseRowsAndLayout_(sheet).rows;
+}
+
+/**
+ * readBallotResponseRows_ plus the Responses-header candidate names and the layout both
+ * were read against (rows are in ascending sheet-row order).
+ *
+ * @param {Sheet} sheet
+ * @return {{rows:Array<{row:number, date:*, name:string, weight:number, comment:string, ranks:Array}>, names:Array<string>, layout:Object}}
+ */
+function _readResponseRowsAndLayout_(sheet) {
   var read = _readBallotCandidatesAndLayout_(sheet);
+  var result = { rows: [], names: read.names, layout: read.layout };
   var responses = read.layout.sections.responses;
-  if (!responses) return [];
+  if (!responses) return result;
   var count = responses.endRow - responses.firstDataRow + 1;
-  if (count <= 0) return [];
+  if (count <= 0) return result;
   var numCols = _BALLOT_RESPONSE_FIXED_COLS.length + read.names.length;
   var values = sheet.getRange(responses.firstDataRow, 1, count, numCols).getValues();
-  var out = [];
   values.forEach(function (row, i) {
     var name = String(row[1] || '').trim();
     if (!name) return;
-    out.push({
+    result.rows.push({
       row: responses.firstDataRow + i,
       date: row[0],
       name: name,
@@ -860,7 +871,7 @@ function readBallotResponseRows_(sheet) {
       ranks: row.slice(_BALLOT_RESPONSE_FIXED_COLS.length)
     });
   });
-  return out;
+  return result;
 }
 
 /**
@@ -918,13 +929,12 @@ function findRespondentsWithNewCandidates_(sheet) {
  * Finds the last response row for a respondent (case-insensitive), so a
  * re-submission overwrites their existing row instead of adding a duplicate.
  *
- * @param {Sheet} sheet
+ * @param {Array<{row:number, name:string}>} rows as returned by readBallotResponseRows_
  * @param {string} name
  * @return {number} 1-based row, or -1 if not found.
  */
-function _findBallotResponseRowForName_(sheet, name) {
+function _findBallotResponseRowForName_(rows, name) {
   var target = String(name).trim().toLowerCase();
-  var rows = readBallotResponseRows_(sheet);
   for (var i = rows.length - 1; i >= 0; i--) {
     if (rows[i].name.toLowerCase() === target) return rows[i].row;
   }
@@ -944,9 +954,13 @@ function _findBallotResponseRowForName_(sheet, name) {
  */
 function addBallotCandidate_(sheet, phrase, details, linkText, linkUrl) {
   _assertNotMarkerName_(phrase);
-  var headerRow = _getResponsesHeaderRow_(sheet);
-  if (headerRow === -1) throw new Error('Ballot has no Responses section.');
-  var existingCandidates = readBallotCandidates_(sheet); // BEFORE the new column exists
+  // Read (and self-repair) BEFORE taking the header row: a repair can insert rows above
+  // [Responses], which would leave a row number taken earlier pointing at the wrong row.
+  var read = _readBallotCandidatesAndLayout_(sheet);
+  var existingCandidates = read.names; // BEFORE the new column exists
+  var responses = read.layout.sections.responses;
+  if (!responses) throw new Error('Ballot has no Responses section.');
+  var headerRow = responses.headerRow;
   // Computed from the Responses header's own candidate-column count (not
   // sheet.getLastColumn()) — the Candidates table sits in earlier columns and can be
   // wider than the Responses section (e.g. its Link URL column), which would otherwise
@@ -1094,9 +1108,32 @@ function addBallotCandidateForId_(id, phrase, details) {
 }
 
 /**
+ * Picks (and if needed makes room for) the row a new respondent's vote goes in: directly
+ * below the last named response row of the Responses section, or below its header when it
+ * has none. When that row is the next section's marker, a blank row is inserted in front of
+ * the marker first, so the following section shifts down intact instead of being
+ * overwritten. When Responses is the bottom section the row may simply be past the last
+ * row. Never sheet.getLastRow()+1 — that is only right while Responses happens to be last.
+ * Caller holds the ballot lock.
+ *
+ * @param {Sheet} sheet
+ * @param {{headerRow:number, endRow:number, nextMarkerRow:number}} responses layout section
+ * @param {Array<{row:number}>} rows the section's named response rows, ascending
+ * @return {number} 1-based row to write the new vote into.
+ */
+function _newResponseRow_(sheet, responses, rows) {
+  var row = (rows.length ? rows[rows.length - 1].row : responses.headerRow) + 1;
+  if (row > responses.endRow && responses.nextMarkerRow !== -1) {
+    row = responses.nextMarkerRow;
+    sheet.insertRowsBefore(row, 1);
+  }
+  return row;
+}
+
+/**
  * RPC-facing: saves a respondent's ranking (and optional comment). Reuses
- * their existing row and weight if one exists, else appends a new row with
- * weight 1.
+ * their existing row and weight if one exists (overwritten in place), else adds a new
+ * row with weight 1 at the end of the Responses section (see _newResponseRow_).
  *
  * @param {string} id
  * @param {string} name
@@ -1114,16 +1151,19 @@ function submitBallotResponse_(id, name, orderedCandidates, comment) {
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
 
-    var candidates = readBallotCandidates_(sheet);
+    var read = _readResponseRowsAndLayout_(sheet);
+    var candidates = read.names;
+    var responses = read.layout.sections.responses;
+    if (!responses) throw new Error('Ballot has no Responses section.');
     var rankByCandidate = {};
     orderedCandidates.forEach(function (c, idx) {
       rankByCandidate[String(c).trim()] = idx + 1;
     });
 
-    var row = _findBallotResponseRowForName_(sheet, name);
+    var row = _findBallotResponseRowForName_(read.rows, name);
     var weight = 1;
     if (row === -1) {
-      row = sheet.getLastRow() + 1;
+      row = _newResponseRow_(sheet, responses, read.rows);
     } else {
       weight = Number(sheet.getRange(row, 3).getValue()) || 1;
     }
