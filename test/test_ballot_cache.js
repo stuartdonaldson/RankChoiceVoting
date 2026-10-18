@@ -94,7 +94,7 @@ function testAdminWriteConfigRefreshesCache() {
   app.createNewBallot_(ss, 'AdminWrite');
 
   const first = app.getAdminEditData('AdminWrite');
-  assert.equal(first.title, '[TODO: ballot title shown to respondents — delete this bracket and edit the example] 2027 Board of Trustees Election');
+  assert.equal(first.title, '[TODO: ballot title shown to respondents — delete this bracket and edit the example] F3 Active Book Club — Next Book Selection');
 
   app.adminSaveTitle('AdminWrite', 'Updated Title');
 
