@@ -974,6 +974,53 @@ function buildOrderedBallot(ss, id, order, opts) {
   return sheet;
 }
 
+/** Every row whose column A is exactly one of the three markers, as {key: [rows]}. */
+function scanMarkers(sheet) {
+  const out = { results: [], candidates: [], responses: [] };
+  const last = sheet.getLastRow();
+  const col = last ? sheet.getRange(1, 1, last, 1).getValues() : [];
+  col.forEach((r, i) => {
+    Object.keys(SECTION_MARKERS).forEach((k) => { if (String(r[0]).trim() === SECTION_MARKERS[k]) out[k].push(i + 1); });
+  });
+  return out;
+}
+
+const SNAPSHOT_COLS = 12;
+
+/** Trims trailing blank cells/rows so a snapshot ignores sheet extent, not content. */
+function trimRows(rows) {
+  const trimmed = rows.map((r) => {
+    const copy = r.slice();
+    while (copy.length && (copy[copy.length - 1] === '' || copy[copy.length - 1] == null)) copy.pop();
+    return copy;
+  });
+  while (trimmed.length && !trimmed[trimmed.length - 1].length) trimmed.pop();
+  return trimmed;
+}
+
+/**
+ * Values of one section, marker row through the row before the next marker (any kind) or
+ * the last row — computed independently of the model's own layout code.
+ */
+function sectionSnapshot(sheet, key) {
+  const markers = scanMarkers(sheet);
+  const start = markers[key][0];
+  assert.ok(start, 'marker ' + key + ' not found');
+  const all = [].concat(markers.results, markers.candidates, markers.responses).sort((a, b) => a - b);
+  const next = all.find((r) => r > start);
+  const end = next ? next - 1 : sheet.getLastRow();
+  return trimRows(sheet.getRange(start, 1, end - start + 1, SNAPSHOT_COLS).getValues());
+}
+
+function configSnapshot(sheet) {
+  return trimRows(sheet.getRange(1, 1, 9, 2).getValues());
+}
+
+function assertMarkersExactlyOnce(sheet, label) {
+  const m = scanMarkers(sheet);
+  Object.keys(m).forEach((k) => assert.equal(m[k].length, 1, label + ': ' + k + ' marker rows ' + JSON.stringify(m[k])));
+}
+
 /** Everything the four section readers return, with sheet row numbers dropped. */
 function readAllSections(SM, sheet) {
   return {
@@ -1273,6 +1320,80 @@ function testWriteBallotResultsRefusesOnDamagedLayout() {
   assert.equal(logLinesWith(t.sandbox, 'ballot.write.refused').length, 0);
 }
 
+/**
+ * Invariant (rcballot-kix.7): for every marker order, growing/shrinking/rewriting one
+ * section through its real write path leaves the config rows and the other sections'
+ * values (relative to their markers) unchanged, and every marker is found exactly once.
+ */
+function testSectionWritesLeaveOtherSectionsUnchangedInAllOrders() {
+  const cases = [
+    { section: 'results', label: 'results grow', act: (SM, sheet) => SM.writeBallotResults_(sheet, [['r1'], ['r2'], ['r3'], ['r4'], ['r5']]),
+      check: (SM, sheet) => assert.deepEqual(sectionSnapshot(sheet, 'results'), [['[Results]'], ['', 'r1'], ['', 'r2'], ['', 'r3'], ['', 'r4'], ['', 'r5']]) },
+    { section: 'results', label: 'results shrink', act: (SM, sheet) => SM.writeBallotResults_(sheet, [['only']]),
+      check: (SM, sheet) => assert.deepEqual(sectionSnapshot(sheet, 'results'), [['[Results]'], ['', 'only']]) },
+    { section: 'candidates', label: 'candidates grow', act: (SM, sheet) => SM.writeBallotCandidateDetails_(sheet, [
+      { name: 'Alice', details: 'a note' }, { name: 'Bob', details: 'b note', linkText: 'site', linkUrl: 'https://example.com/b' },
+      { name: 'Carol', details: 'c' }, { name: 'Dan', details: 'd' }]),
+      check: (SM, sheet) => assert.deepEqual(SM.readBallotCandidateDetails_(sheet).map((it) => it.name), ['Alice', 'Bob', 'Carol', 'Dan']) },
+    { section: 'candidates', label: 'candidates shrink', act: (SM, sheet) => SM.writeBallotCandidateDetails_(sheet, [{ name: 'Alice', details: 'a note' }]),
+      check: (SM, sheet) => assert.deepEqual(sectionSnapshot(sheet, 'candidates').slice(2), [['', 'Alice', 'a note']]) },
+    { section: 'responses', label: 'responses grow (new vote)', act: (SM, sheet, id) => SM.submitBallotResponse_(id, 'V3', ['Bob', 'Alice'], 'new'),
+      check: (SM, sheet) => assert.deepEqual(SM.readBallotResponseRows_(sheet).map((r) => r.name + ':' + r.ranks.join(',')), ['V1:1,2', 'V2:2,1', 'V3:2,1']) },
+    { section: 'responses', label: 'responses re-vote in place', act: (SM, sheet, id) => SM.submitBallotResponse_(id, 'v1', ['Bob', 'Alice'], 'changed'),
+      check: (SM, sheet) => {
+        const rows = SM.readBallotResponseRows_(sheet);
+        assert.deepEqual(rows.map((r) => r.name + ':' + r.ranks.join(',')), ['v1:2,1', 'V2:2,1']);
+      } },
+    // Grows Candidates by a row and Responses by a header column: only Results is a bystander.
+    { section: 'candidates', also: 'responses', label: 'addBallotCandidate_', act: (SM, sheet) => SM.addBallotCandidate_(sheet, 'Carol', 'c'),
+      check: (SM, sheet) => assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice', 'Bob', 'Carol']) },
+  ];
+
+  SECTION_ORDERS.forEach((order) => {
+    // Each section's grow-then-shrink runs as a sequence on one sheet; other cases get a fresh one.
+    const sequences = [
+      cases.filter((c) => c.section === 'results'),
+      cases.filter((c) => c.section === 'candidates' && !c.also),
+      cases.slice(4, 5), cases.slice(5, 6),
+      cases.filter((c) => c.also),
+    ];
+    sequences.forEach((seq) => {
+      const { SM, ss } = loadBallotModel();
+      const id = 'Inv' + order.map((k) => k[0]).join('');
+      const sheet = buildOrderedBallot(ss, id, order);
+      seq.forEach((c) => {
+        const label = order.join('/') + ' ' + c.label;
+        const bystanders = Object.keys(SECTION_MARKERS).filter((k) => k !== c.section && k !== c.also);
+        const before = bystanders.map((k) => sectionSnapshot(sheet, k));
+        const configBefore = configSnapshot(sheet);
+        c.act(SM, sheet, id);
+        assertMarkersExactlyOnce(sheet, label);
+        assert.deepEqual(bystanders.map((k) => sectionSnapshot(sheet, k)), before, label + ': other sections changed');
+        assert.deepEqual(configSnapshot(sheet), configBefore, label + ': config rows changed');
+        c.check(SM, sheet);
+        assertMarkersExactlyOnce(sheet, label + ' (after read)');
+      });
+    });
+  });
+}
+
+/** writeBallotConfig_ inserts a missing key above the first marker, whichever section it is. */
+function testWriteBallotConfigInsertsAboveFirstMarkerInAnyOrder() {
+  SECTION_ORDERS.forEach((order) => {
+    const { SM, ss } = loadBallotModel();
+    const sheet = buildOrderedBallot(ss, 'Cfg', order);
+    sheet.getRange(9, 1, 1, 2).setValues([['Spare', 'x']]); // no blank spacer row left to reuse
+    const others = Object.keys(SECTION_MARKERS).map((k) => sectionSnapshot(sheet, k));
+    SM.writeBallotConfig_(sheet, { Title: 'New', 'Extra-Key': 'v' });
+    assert.equal(sheet.getRange(10, 1).getValue(), 'Extra-Key', order.join('/'));
+    assert.equal(sheet.getRange(11, 1).getValue(), SECTION_MARKERS[order[0]], order.join('/'));
+    assert.deepEqual(Object.keys(SECTION_MARKERS).map((k) => sectionSnapshot(sheet, k)), others, order.join('/'));
+    const config = SM.readBallotConfig_(sheet);
+    assert.equal(config.Title, 'New');
+    assert.equal(config['Extra-Key'], 'v');
+  });
+}
+
 function run() {
   testCreateNewBallotCreatesSkeleton();
   testListBallotIdsAndFindBallotSheet();
@@ -1321,6 +1442,8 @@ function run() {
   testEachMissingMarkerIsRestoredAndLogged();
   testMissingResponsesMarkerWithOrphanedRowsIsNotRepaired();
   testWriteBallotResultsRefusesOnDamagedLayout();
+  testWriteBallotConfigInsertsAboveFirstMarkerInAnyOrder();
+  testSectionWritesLeaveOtherSectionsUnchangedInAllOrders();
   console.log('test_ballot_model: all tests passed');
 }
 
