@@ -2080,7 +2080,28 @@ function testWriteBallotConfigMarkerOnRowOneAndCallCounts() {
   assert.deepEqual(healthy.getRange(1, 1, 4, 2).getValues(), [['Title', 'x2'], ['Description', 'y'], ['Instructions', 'I'], ['Footer', 'f2']]);
 }
 
+/** AC7 (submit): a new vote is 1 setValues at the bottom, 2 (insert + setValues) when a row must be made; a re-vote is 1. */
+function testSubmitBallotResponseCallCounts() {
+  const { SM, ss } = loadBallotModel();
+  buildOrderedBallot(ss, 'Sub1', ['results', 'candidates', 'responses']);
+  const sheet = ss.getSheetByName('Ballot-Sub1');
+  let c = countCalls(sheet, () => SM.submitBallotResponse_('Sub1', 'V3', ['Bob', 'Alice'], 'hi'));
+  assert.deepEqual([c.writes, c.reads], [1, 1], 'new vote, Responses at the bottom');
+  c = countCalls(sheet, () => SM.submitBallotResponse_('Sub1', 'v3', ['Alice', 'Bob'], 'again'));
+  assert.deepEqual([c.writes, c.reads], [1, 1], 're-vote');
+  assert.deepEqual(SM.readBallotResponseRows_(sheet).map((r) => r.name + ':' + r.ranks.join(',')), ['V1:1,2', 'V2:2,1', 'v3:1,2']);
+
+  const t = loadBallotModel();
+  const mid = buildOrderedBallot(t.ss, 'Sub2', ['results', 'responses', 'candidates']);
+  const others = ['results', 'candidates'].map((k) => sectionSnapshot(mid, k));
+  c = countCalls(mid, () => t.SM.submitBallotResponse_('Sub2', 'V3', ['Bob', 'Alice'], ''));
+  assert.deepEqual([c.writes, c.reads], [2, 2], 'new vote needing an inserted row');
+  assert.deepEqual(['results', 'candidates'].map((k) => sectionSnapshot(mid, k)), others);
+  assert.deepEqual(t.SM.readBallotResponseRows_(mid).map((r) => r.name), ['V1', 'V2', 'V3']);
+}
+
 function run() {
+  testSubmitBallotResponseCallCounts();
   testWriteBallotConfigMarkerOnRowOneAndCallCounts();
   testWriteBallotResultsCallCounts();
   testApplyBallotOpsUpdateMergesAndAppendMakesRoom();

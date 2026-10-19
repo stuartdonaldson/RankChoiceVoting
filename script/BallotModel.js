@@ -1174,42 +1174,12 @@ function addBallotCandidateForId_(id, phrase, details) {
 }
 
 /**
- * Picks (and if needed makes room for) the row a new respondent's vote goes in: directly
- * below the last non-empty row of the Responses section — named vote or not, so a stray
- * unnamed row with content (a hand-typed note) is never overwritten — or below its header
- * when it has none. When that row is the next section's marker, a blank row is inserted in front of
- * the marker first, so the following section shifts down intact instead of being
- * overwritten. When Responses is the bottom section the row may simply be past the last
- * row. Never sheet.getLastRow()+1 — that is only right while Responses happens to be last.
- * Caller holds the ballot lock.
- *
- * @param {Sheet} sheet
- * @param {{headerRow:number, endRow:number, nextMarkerRow:number}} responses layout section
- * @param {Array<{row:number}>} rows the section's named response rows, ascending
- * @return {number} 1-based row to write the new vote into.
- */
-function _newResponseRow_(sheet, responses, rows) {
-  var lastUsed = rows.length ? rows[rows.length - 1].row : responses.headerRow;
-  if (responses.endRow > lastUsed) {
-    var tailStart = lastUsed + 1;
-    var tail = sheet.getRange(tailStart, 1, responses.endRow - lastUsed, Math.max(sheet.getLastColumn(), 1)).getValues();
-    tail.forEach(function (r, i) {
-      var used = r.some(function (v) { return String(v === null || v === undefined ? '' : v).trim() !== ''; });
-      if (used) lastUsed = tailStart + i;
-    });
-  }
-  var row = lastUsed + 1;
-  if (row > responses.endRow && responses.nextMarkerRow !== -1) {
-    row = responses.nextMarkerRow;
-    sheet.insertRowsBefore(row, 1);
-  }
-  return row;
-}
-
-/**
  * RPC-facing: saves a respondent's ranking (and optional comment). Reuses
- * their existing row and weight if one exists (overwritten in place), else adds a new
- * row with weight 1 at the end of the Responses section (see _newResponseRow_).
+ * their existing row and weight (from the snapshot) if one exists, else appends a new
+ * row with weight 1 below the Responses section's last row with content (the applier
+ * inserts a row before the next marker when there is no room). Cells are keyed by header
+ * label; a rank column is ensured for every candidate. Runs the repair path once
+ * (_withBallotWrite_).
  *
  * @param {string} id
  * @param {string} name
@@ -1226,49 +1196,33 @@ function submitBallotResponse_(id, name, orderedCandidates, comment) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
-    var rep = _repairBallotSheet_(sheet);
-    var snap = rep.snap;
-    var t = snap.tables.responses;
-    if (!t) throw new Error('Ballot has no Responses section.');
-    if (t.headerRow === null || _responsesMissingName_(snap)) {
-      _logBallotEvent_('ballot.write.refused', { sheet: sheet.getName(), reason: 'responsesMissingName' });
-      throw new Error('Ballot sheet layout is damaged — the Responses header has no Name column.');
-    }
-    var view = _ballotViewFromSnapshot_(snap);
-    var rankByCandidate = {};
-    orderedCandidates.forEach(function (c, idx) {
-      rankByCandidate[String(c).trim()] = idx + 1;
+    _withBallotWrite_(sheet, function (snap) {
+      var t = snap.tables.responses;
+      if (!t) throw new Error('Ballot has no Responses section.');
+      if (t.headerRow === null || _responsesMissingName_(snap)) {
+        _logBallotEvent_('ballot.write.refused', { sheet: sheet.getName(), reason: 'responsesMissingName' });
+        throw new Error('Ballot sheet layout is damaged — the Responses header has no Name column.');
+      }
+      var view = _ballotViewFromSnapshot_(snap);
+      var rankByCandidate = {};
+      orderedCandidates.forEach(function (c, idx) {
+        rankByCandidate[String(c).trim()] = idx + 1;
+      });
+
+      var row = _findBallotResponseRowForName_(view.rows, name);
+      var weight = 1;
+      if (row !== -1) {
+        view.rows.forEach(function (r) { if (r.row === row) weight = Number(r.weight) || 1; });
+      }
+      var cells = { Date: new Date(), Name: name, Weight: weight, Comment: String(comment || '').trim() };
+      var names = _snapCandidates_(snap).map(function (c) { return c.name; });
+      names.forEach(function (n) { cells[n] = rankByCandidate.hasOwnProperty(n) ? rankByCandidate[n] : ''; });
+
+      var ops = [{ section: 'responses', ensureColumns: names }];
+      if (row === -1) ops.push({ section: 'responses', append: [cells] });
+      else ops.push({ section: 'responses', update: [{ row: row, cells: cells }] });
+      return _applyBallotOps_(sheet, snap, ops);
     });
-
-    var row = _findBallotResponseRowForName_(view.rows, name);
-    var base = [];
-    var weight = 1;
-    if (row === -1) {
-      row = _newResponseRow_(sheet, snap.layout.sections.responses, view.rows);
-    } else {
-      base = rep.grid[row - 1] || [];
-      if (t.col.Weight) weight = Number(_gridCell_(rep.grid, row, t.col.Weight)) || 1;
-    }
-
-    // Every cell is placed by its header label: the fixed columns, and each candidate's
-    // rank under the column bearing its name (rcballot-8i5.3). Cells in between (orphan
-    // rank columns, unlabelled columns) keep what the row already had.
-    var put = {};
-    var fixed = { Date: new Date(), Name: name, Weight: weight, Comment: String(comment || '').trim() };
-    Object.keys(fixed).forEach(function (label) { if (t.col[label]) put[t.col[label]] = fixed[label]; });
-    _snapCandidates_(snap).forEach(function (c) {
-      if (c.rankCol !== null) put[c.rankCol] = rankByCandidate.hasOwnProperty(c.name) ? rankByCandidate[c.name] : '';
-    });
-    var cols = Object.keys(put).map(Number);
-    var minCol = Math.min.apply(null, cols);
-    var maxCol = Math.max.apply(null, cols);
-    var values = [];
-    for (var c = minCol; c <= maxCol; c++) {
-      if (put.hasOwnProperty(c)) values.push(put[c]);
-      else values.push(base[c - 1] === undefined || base[c - 1] === null ? '' : base[c - 1]);
-    }
-    sheet.getRange(row, minCol, 1, values.length).setValues([values]);
-
     return { ok: true };
   });
 }
