@@ -490,6 +490,17 @@ function testMigratesExistingOldColumnCandidatesSectionOnRepair() {
   assertSnapshotMatchesOldReaders(SM, sheet, 'testMigratesExistingOldColumnCandidatesSectionOnRead');
 }
 
+/** Test helper: 1-based row of the exact (bracketed) marker in column A, or -1. */
+function findMarkerRow(sheet, marker) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 1) return -1;
+  const values = sheet.getRange(1, 1, lastRow, 1).getValues();
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || '').trim() === marker) return i + 1;
+  }
+  return -1;
+}
+
 /**
  * Column A is markers-only: marker matching is exact bracketed text. Plain "Responses" /
  * "Candidates" / "Results" / "Items" cells (and the former "[Items]" marker) are neither
@@ -511,9 +522,9 @@ function testPlainTextMarkersAreNotMatchedOrRewritten() {
   SM.writeBallotCandidateDetails_(sheet, [{ name: 'Alice', details: 'a' }]);
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet).map((it) => it.name), ['Alice']);
   assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice']);
-  assert.equal(SM._findMarkerRow_(sheet, '[Results]'), 10);
-  assert.equal(SM._findMarkerRow_(sheet, '[Candidates]') > 15, true);
-  assert.equal(SM._findMarkerRow_(sheet, '[Responses]') > SM._findMarkerRow_(sheet, '[Candidates]'), true);
+  assert.equal(findMarkerRow(sheet, '[Results]'), 10);
+  assert.equal(findMarkerRow(sheet, '[Candidates]') > 15, true);
+  assert.equal(findMarkerRow(sheet, '[Responses]') > findMarkerRow(sheet, '[Candidates]'), true);
   assert.deepEqual(sheet.getRange(11, 1, 5, 1).getValues().map((r) => r[0]), before); // not rewritten
   assert.equal(sheet.getRange(11, 1).getValue(), 'Responses');
   assert.equal(sheet.getRange(12, 1).getValue(), 'Candidates');
@@ -521,9 +532,9 @@ function testPlainTextMarkersAreNotMatchedOrRewritten() {
   // A sheet whose ONLY marker-like cells are plain text has no markers.
   const bare = ss.insertSheet('Ballot-BareOnly');
   bare.getRange(1, 1, 3, 1).setValues([['Results'], ['Items'], ['Responses']]);
-  assert.equal(SM._findMarkerRow_(bare, '[Results]'), -1);
-  assert.equal(SM._findMarkerRow_(bare, '[Candidates]'), -1);
-  assert.equal(SM._findMarkerRow_(bare, '[Responses]'), -1);
+  assert.equal(findMarkerRow(bare, '[Results]'), -1);
+  assert.equal(findMarkerRow(bare, '[Candidates]'), -1);
+  assert.equal(findMarkerRow(bare, '[Responses]'), -1);
   assert.deepEqual(bare.getRange(1, 1, 3, 1).getValues().map((r) => r[0]), ['Results', 'Items', 'Responses']);
 }
 
@@ -541,7 +552,7 @@ function testWriteBallotResultsUsesColumnBAndClearsColumnA() {
 
   SM.writeBallotResults_(sheet, [['Header', 'Winner'], ['Alice', 3], ['Bob', 1]]);
 
-  const candidatesRow = SM._findMarkerRow_(sheet, '[Candidates]');
+  const candidatesRow = findMarkerRow(sheet, '[Candidates]');
   assert.equal(candidatesRow, 14); // 3 rows between [Results] (10) and [Candidates]
   for (let r = 11; r < candidatesRow; r++) {
     assert.equal(sheet.getRange(r, 1).getValue(), '', 'col A row ' + r + ' must be blank');
@@ -550,7 +561,7 @@ function testWriteBallotResultsUsesColumnBAndClearsColumnA() {
 
   // Shrinking the output leaves no stale text in any column of the region.
   SM.writeBallotResults_(sheet, [['only']]);
-  const newCandidatesRow = SM._findMarkerRow_(sheet, '[Candidates]');
+  const newCandidatesRow = findMarkerRow(sheet, '[Candidates]');
   assert.equal(newCandidatesRow, 12);
   assert.deepEqual(sheet.getRange(11, 1, 1, 3).getValues()[0], ['', 'only', '']);
 }
