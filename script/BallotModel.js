@@ -465,42 +465,6 @@ function _ensureCandidatesHeaderColumns_(sheet, layout) {
 }
 
 /**
- * Inserts/deletes rows so exactly rows.length rows are available directly below
- * `afterRow`, ending just before `beforeMarkerRow`, then writes rows into that space.
- * Shared resize primitive behind both the Results section (writeBallotResults_) and
- * the Candidates section (writeBallotCandidateDetails_) — everything at/after
- * beforeMarkerRow shifts as one block, so content further down the sheet is never
- * disturbed.
- *
- * @param {Sheet} sheet
- * @param {number} afterRow
- * @param {number} beforeMarkerRow
- * @param {Array<Array>} rows
- * @param {number=} startCol defaults to col A (1) — Candidates-section and Results callers
- *   pass _BALLOT_CANDIDATES_FIRST_COL so their data never lands in the marker-reserved column A.
- */
-function _resizeSectionRows_(sheet, afterRow, beforeMarkerRow, rows, startCol) {
-  startCol = startCol || 1;
-  var available = beforeMarkerRow - afterRow - 1;
-  var needed = rows.length;
-  if (needed > available) {
-    sheet.insertRowsAfter(afterRow, needed - available);
-  } else if (needed < available) {
-    sheet.deleteRows(afterRow + 1, available - needed);
-  }
-
-  if (needed > 0) {
-    var maxCols = rows.reduce(function (m, r) { return Math.max(m, r.length); }, 1);
-    var padded = rows.map(function (r) {
-      var copy = r.slice();
-      while (copy.length < maxCols) copy.push('');
-      return copy;
-    });
-    sheet.getRange(afterRow + 1, startCol, needed, maxCols).setValues(padded);
-  }
-}
-
-/**
  * Returns the sheet for a ballot id, creating a placeholder skeleton if it
  * does not already exist.
  *
