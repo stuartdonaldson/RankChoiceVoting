@@ -228,6 +228,8 @@
   .admin-only-badge { display: inline-block; background: var(--warning-badge-bg); color: var(--warning-badge-text); font-size: 0.65em; font-weight: bold; text-transform: uppercase; padding: 2px 6px; border-radius: var(--radius-badge); margin-left: 8px; vertical-align: middle; }
 
   /* --- Candidate/topic rows (shared by edit + ballot views) --- */
+  ul#orphanList { list-style: none; padding: 0; margin: 12px 0; }
+  ul#orphanList li { background: var(--surface-secondary); border: 1px solid var(--border); border-radius: var(--radius-button); padding: 8px 10px; margin-bottom: 6px; }
   ul#candidateList, ul#topicList { list-style: none; padding: 0; margin: 12px 0; }
   ul#candidateList li, ul#topicList li { background: var(--surface-secondary); border: 1px solid var(--border); border-radius: var(--radius-button); padding: 8px 10px; margin-bottom: 6px; }
   ul#topicList li { display: flex; flex-direction: column; user-select: none; }
@@ -358,6 +360,13 @@
 
       <p class="subsection-header">Candidates</p>
       <ul id="candidateList"></ul>
+      <div class="field-status" id="candidateListStatus"></div>
+      <div id="orphanBlock" class="hidden">
+        <p class="subsection-header">Unlinked vote columns</p>
+        <p class="field-help">These Responses columns match no candidate (for example after a delete or a hand rename) and are not counted. Link one to a candidate that has no column of its own to count its votes for that candidate.</p>
+        <ul id="orphanList"></ul>
+        <div class="field-status" id="orphanStatus"></div>
+      </div>
 
       <div class="field-block">
         <button type="button" class="secondary" id="addCandidateBtn">+ Add Candidate</button>
@@ -773,6 +782,51 @@
       });
     }
 
+    var candidateListStatus = document.getElementById('candidateListStatus');
+    var orphanBlock = document.getElementById('orphanBlock');
+    var orphanList = document.getElementById('orphanList');
+    var orphanStatus = document.getElementById('orphanStatus');
+
+    function renderOrphans() {
+      var orphans = fieldData.orphanColumns || [];
+      orphanBlock.classList.toggle('hidden', !orphans.length);
+      orphanList.innerHTML = '';
+      orphans.forEach(function (o) {
+        var li = document.createElement('li');
+        var label = document.createElement('span');
+        label.className = 'topic-text';
+        label.textContent = o.label + ' ';
+        var select = document.createElement('select');
+        fieldData.candidates.forEach(function (c) {
+          var opt = document.createElement('option');
+          opt.value = c.name;
+          opt.textContent = c.name;
+          select.appendChild(opt);
+        });
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'secondary';
+        btn.textContent = 'Link to candidate';
+        btn.addEventListener('click', function () {
+          if (!select.value) return;
+          btn.disabled = true;
+          setStatus(orphanStatus, 'Linking…', false);
+          callApi_('adminLinkOrphanColumn', ballotId, o.label, select.value).then(function () {
+            fieldData.orphanColumns = fieldData.orphanColumns.filter(function (x) { return x !== o; });
+            renderOrphans();
+            setStatus(orphanStatus, '', false);
+          }, function (err) {
+            btn.disabled = false;
+            setStatus(orphanStatus, 'Could not link: ' + err.message, true);
+          });
+        });
+        li.appendChild(label);
+        li.appendChild(select);
+        li.appendChild(btn);
+        orphanList.appendChild(li);
+      });
+    }
+
     function renderCandidates(candidates) {
       candidateList.innerHTML = '';
       candidates.forEach(function (candidate, i) {
@@ -803,6 +857,57 @@
       row.appendChild(handle);
       row.appendChild(text);
       row.appendChild(editBtn);
+
+      function moveTo(newIndex) {
+        var from = fieldData.candidates.indexOf(candidate);
+        if (newIndex < 0 || newIndex >= fieldData.candidates.length) return;
+        var next = fieldData.candidates.slice();
+        next.splice(from, 1);
+        next.splice(newIndex, 0, candidate);
+        setStatus(candidateListStatus, 'Saving…', false);
+        callApi_('adminReorderCandidates', ballotId, next.map(function (c) { return c.name; })).then(function () {
+          fieldData.candidates = next;
+          renderCandidates(next);
+          setStatus(candidateListStatus, '', false);
+        }, function (err) {
+          setStatus(candidateListStatus, 'Could not reorder: ' + err.message, true);
+        });
+      }
+      var upBtn = document.createElement('button');
+      upBtn.type = 'button';
+      upBtn.className = 'pencil-btn';
+      upBtn.textContent = '▲';
+      upBtn.setAttribute('aria-label', 'Move ' + candidate.name + ' up');
+      upBtn.addEventListener('click', function () { moveTo(fieldData.candidates.indexOf(candidate) - 1); });
+      var downBtn = document.createElement('button');
+      downBtn.type = 'button';
+      downBtn.className = 'pencil-btn';
+      downBtn.textContent = '▼';
+      downBtn.setAttribute('aria-label', 'Move ' + candidate.name + ' down');
+      downBtn.addEventListener('click', function () { moveTo(fieldData.candidates.indexOf(candidate) + 1); });
+      var delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'pencil-btn';
+      delBtn.textContent = '🗑️';
+      delBtn.setAttribute('aria-label', 'Delete ' + candidate.name);
+      delBtn.addEventListener('click', function () {
+        if (!window.confirm('Delete "' + candidate.name + '"? Its votes are kept in an unlinked column and no longer counted.')) return;
+        setStatus(candidateListStatus, 'Deleting…', false);
+        callApi_('adminDeleteCandidate', ballotId, candidate.name).then(function () {
+          fieldData.candidates = fieldData.candidates.filter(function (c) { return c !== candidate; });
+          renderCandidates(fieldData.candidates);
+          setStatus(candidateListStatus, '', false);
+          // Its rank column (if any) is now an orphan: reload the list from the server.
+          callApi_('getAdminEditData', ballotId).then(function (data) {
+            if (data && !data.error) { fieldData.orphanColumns = data.orphanColumns; renderOrphans(); }
+          }, function () {});
+        }, function (err) {
+          setStatus(candidateListStatus, 'Could not delete: ' + err.message, true);
+        });
+      });
+      row.appendChild(upBtn);
+      row.appendChild(downBtn);
+      row.appendChild(delBtn);
 
       var details = document.createElement('div');
       details.className = 'topic-info-content' + (candidate.details ? '' : ' empty');
@@ -1025,6 +1130,7 @@
         adminOnlyNotesDisplay.textContent = data.adminOnlyNotes;
         renderAddSettingsDisplay();
         renderCandidates(data.candidates);
+        renderOrphans();
         setAppVersionFooter_(data.appVersion, data.appDeployTarget);
         loadStatus.classList.add('hidden');
         editRoot.classList.remove('hidden');

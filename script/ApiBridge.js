@@ -38,6 +38,9 @@ var _API_WHITELIST_ = {
   adminSaveAddSettings: adminSaveAddSettings,
   adminSaveCandidate: adminSaveCandidate,
   adminAddCandidate: adminAddCandidate,
+  adminDeleteCandidate: adminDeleteCandidate,
+  adminReorderCandidates: adminReorderCandidates,
+  adminLinkOrphanColumn: adminLinkOrphanColumn,
   // Admin analysis (webAdmin.js)
   getAdminAnalysisData_: getAdminAnalysisData_
 };
