@@ -303,11 +303,14 @@ function getAdminAnalysisData_(id) {
  * @return {Object} or {error:'no_ballot'} if the id doesn't match a ballot sheet.
  */
 function getAdminEditData(id) {
-  // Served straight from the cache when warm — see BallotCache.js — so opening this
-  // ballot to edit it doesn't need to open the spreadsheet at all. A miss falls back to
-  // reading (and re-caching) the sheet directly, same content as before this cache existed.
-  var cached = getCachedBallotData_(id);
-  if (!cached) return { error: 'no_ballot' };
+  // Admin edit-page load is one of the two places sheet repairs run (the other is the
+  // locked write entries — rcballot-8i5.7): a healthy sheet costs one read and no lock. A
+  // repair rebuilds the cache; otherwise config/candidates are served from the cache when
+  // warm (see BallotCache.js), falling back to a sheet read on a miss.
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = findBallotSheet_(ss, id);
+  if (!sheet) return { error: 'no_ballot' };
+  var cached = _repairBallotSheet_(sheet).repaired ? refreshBallotCache_(id, sheet) : getCachedBallotData_(id, sheet);
 
   var config = cached.config;
   var candidateRows = cached.candidates;
@@ -341,6 +344,7 @@ function _adminWriteConfig_(id, updates) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
+    _repairBallotSheet_(sheet);
     writeBallotConfig_(sheet, updates);
     refreshBallotCache_(id, sheet); // keep the cache (BallotCache.js) in sync with this write
     return { ok: true };
@@ -403,6 +407,7 @@ function adminSaveCandidate(id, index, name, details, linkText, linkUrl) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
+    _repairBallotSheet_(sheet);
 
     var candidates = readBallotCandidates_(sheet);
     var rows = readBallotCandidateDetails_(sheet);
@@ -509,6 +514,14 @@ function runBallotAnalysis_(sheet) {
  * @return {{rcv:Object, condorcet:Object}|{error:string}}
  */
 function _runBallotAnalysisLocked_(sheet) {
+  // A Responses header with no 'Name' label keys no votes: refuse rather than report a
+  // ballot with "no responses" (rcballot-8i5.7). The admin edit-page load repairs the known
+  // legacy cause (labels on the [Responses] marker row).
+  if (_responsesMissingName_(_readBallot_(sheet))) {
+    _logBallotEvent_('ballot.analysis.refused', { sheet: sheet.getName(), reason: 'responsesMissingName' });
+    return { error: 'Ballot sheet layout is damaged: the Responses header has no "Name" column. ' +
+      'Open this ballot\'s edit page (which repairs the known cause), then run the analysis again.' };
+  }
   var candidateNames = readBallotCandidates_(sheet);
   // Deduped to one ballot per respondent (case-insensitive name, latest wins) — a
   // respondent who re-voted must only count once, using their most recent ranking.

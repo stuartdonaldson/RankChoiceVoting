@@ -1077,6 +1077,11 @@ function getBallotForRespondent_(id, name) {
   var result = _buildRespondentBranding_(id, freshCache.config, freshCache.candidates);
 
   var rows = readBallotResponseRows_(sheet);
+  if (_responsesMissingName_(_readBallot_(sheet))) {
+    // No vote can be keyed by name on this sheet: the respondent's saved ranking would
+    // silently not load. Repaired on the next admin edit-page load or write (rcballot-8i5.7).
+    _logBallotEvent_('ballot.parse.responsesMissingName', { sheet: sheet.getName() });
+  }
   var target = name.toLowerCase();
   var existing = null;
   for (var i = rows.length - 1; i >= 0; i--) {
@@ -1159,6 +1164,7 @@ function addBallotCandidateForId_(id, phrase, details) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
+    _repairBallotSheet_(sheet);
     var config = readBallotConfig_(sheet);
     if (!_ballotAcceptsNew_(config)) throw new Error('This ballot is not accepting new items.');
     addBallotCandidate_(sheet, phrase, details);
@@ -1220,6 +1226,7 @@ function submitBallotResponse_(id, name, orderedCandidates, comment) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
+    _repairBallotSheet_(sheet);
 
     var read = _readResponseRowsAndLayout_(sheet);
     var candidates = read.names;
@@ -1453,6 +1460,7 @@ function saveBallotCandidatesForId_(id, candidateRows) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
+    _repairBallotSheet_(sheet);
     saveBallotCandidates_(sheet, candidateRows);
     refreshBallotCache_(id, sheet); // keep the cache (BallotCache.js) in sync with this write
   });
@@ -1478,6 +1486,7 @@ function addBallotCandidateForAdmin_(id, name, details, linkText, linkUrl) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
+    _repairBallotSheet_(sheet);
     addBallotCandidate_(sheet, name, details, linkText, linkUrl);
     _highlightSectionMarkers_(sheet);
     refreshBallotCache_(id, sheet); // keep the cache (BallotCache.js) in sync with this write
@@ -1810,6 +1819,116 @@ function _snapResponses_(snap) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Repair path (rcballot-8i5.7). One entry, _repairBallotSheet_, run on admin edit-page load
+// and at the start of the locked write entries. A healthy sheet costs one getDataRange read
+// and takes no lock; otherwise each step re-plans from a fresh snapshot under the lock.
+// ---------------------------------------------------------------------------
+
+/**
+ * Plans the "labels on the marker row" repair: a legacy Responses layout where the
+ * [Responses] marker row carries Name|Weight|Comment in cols B-D and the header row below
+ * holds Date + candidate names with B-D blank (live: Ballot-ABC-2026-7 on SIT and PROD).
+ * Each marker-row cell (col B on) whose text is a fixed Responses label missing from the
+ * header, sitting above a blank header cell, is planned to move down into that cell. Pure.
+ *
+ * @param {Array<Array<*>>} grid
+ * @param {Object} snap from _parseBallot_(grid)
+ * @return {?{markerRow:number, headerRow:number, cells:Array<{col:number, label:string}>}} null when nothing to do.
+ */
+function _planHeaderOnMarkerRow_(grid, snap) {
+  var section = snap.layout.sections.responses;
+  var table = snap.tables.responses;
+  if (!section || !table || table.headerRow === null || !table.missing.length) return null;
+  var missing = {};
+  table.missing.forEach(function (l) { missing[_labelKey_(l)] = l; });
+  var marker = grid[section.markerRow - 1] || [];
+  var cells = [];
+  for (var c = 2; c <= marker.length; c++) {
+    var lk = _labelKey_(_gridCell_(grid, section.markerRow, c));
+    if (!lk || !missing.hasOwnProperty(lk)) continue;
+    if (_cellHasContent_(_gridCell_(grid, table.headerRow, c))) continue;
+    cells.push({ col: c, label: missing[lk] });
+    delete missing[lk];
+  }
+  return cells.length ? { markerRow: section.markerRow, headerRow: table.headerRow, cells: cells } : null;
+}
+
+/**
+ * Writes a _planHeaderOnMarkerRow_ plan: header cells only, one setValues per contiguous
+ * run of columns. The marker row is left as it is (its cols B+ are never read). Caller
+ * holds the ballot lock.
+ */
+function _applyHeaderOnMarkerRow_(sheet, plan) {
+  var cells = plan.cells.slice().sort(function (a, b) { return a.col - b.col; });
+  var i = 0;
+  while (i < cells.length) {
+    var j = i;
+    while (j + 1 < cells.length && cells[j + 1].col === cells[j].col + 1) j++;
+    var run = cells.slice(i, j + 1).map(function (x) { return x.label; });
+    sheet.getRange(plan.headerRow, cells[i].col, 1, run.length).setValues([run]);
+    i = j + 1;
+  }
+  _logBallotEvent_('ballot.repair.headerOnMarkerRow', {
+    sheet: sheet.getName(), row: plan.headerRow,
+    cols: cells.map(function (x) { return x.col; }), labels: cells.map(function (x) { return x.label; })
+  });
+}
+
+/**
+ * Repair steps in the order they run. Each has a pure `plan(grid, snap)` (null = nothing to
+ * do) and an `apply(sheet, plan)` that writes under the ballot lock.
+ */
+var _BALLOT_REPAIR_STEPS_ = [
+  {
+    name: 'sections',
+    plan: function (grid, snap) { return _ballotMarkersComplete_(snap.layout) ? null : true; },
+    apply: function (sheet) { _ensureBallotSections_(sheet); }
+  },
+  { name: 'headerOnMarkerRow', plan: _planHeaderOnMarkerRow_, apply: _applyHeaderOnMarkerRow_ }
+];
+
+/**
+ * The locked repair path: runs every repair step a ballot sheet needs. Healthy sheet: one
+ * getDataRange read, no lock, no write. Otherwise, under the lock, each step re-plans
+ * from a fresh read and applies; each write is logged as ballot.repair.<kind>.
+ *
+ * @param {Sheet} sheet
+ * @return {{repaired:boolean, snap:Object}} snap reflects the sheet after any repair.
+ */
+function _repairBallotSheet_(sheet) {
+  var first = _readBallotGridAndSnap_(sheet);
+  var needed = _BALLOT_REPAIR_STEPS_.some(function (step) { return step.plan(first.grid, first.snap) !== null; });
+  if (!needed) return { repaired: false, snap: first.snap };
+  return _withBallotLock_(function () {
+    var wrote = false;
+    _BALLOT_REPAIR_STEPS_.forEach(function (step) {
+      var cur = _readBallotGridAndSnap_(sheet);
+      var plan = step.plan(cur.grid, cur.snap);
+      if (plan === null) return;
+      step.apply(sheet, plan);
+      wrote = true;
+    });
+    return { repaired: wrote, snap: _readBallot_(sheet) };
+  });
+}
+
+/** @return {{grid:Array<Array<*>>, snap:Object}} one getDataRange read and its parse. */
+function _readBallotGridAndSnap_(sheet) {
+  var grid = sheet.getDataRange().getValues();
+  return { grid: grid, snap: _parseBallot_(grid) };
+}
+
+/**
+ * @param {Object} snap
+ * @return {boolean} true when a [Responses] section exists but its header has no 'Name'
+ *   label — no vote can be keyed, so reading it would silently report 0 votes.
+ */
+function _responsesMissingName_(snap) {
+  var t = snap.tables.responses;
+  return !!t && t.missing.indexOf(_BALLOT_SECTIONS_.responses.key) !== -1;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     getBallotSheetName_: getBallotSheetName_,
@@ -1851,6 +1970,9 @@ if (typeof module !== 'undefined' && module.exports) {
     _snapCandidates_: _snapCandidates_,
     _snapResponses_: _snapResponses_,
     _snapOrphanColumns_: _snapOrphanColumns_,
-    _snapMissingLabels_: _snapMissingLabels_
+    _snapMissingLabels_: _snapMissingLabels_,
+    _planHeaderOnMarkerRow_: _planHeaderOnMarkerRow_,
+    _repairBallotSheet_: _repairBallotSheet_,
+    _responsesMissingName_: _responsesMissingName_
   };
 }

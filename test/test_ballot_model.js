@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { createFakeSpreadsheet, createFakeGasGlobals } = require('./fakeGas');
+const { prodAbc2026_7Rows, writeGrid } = require('./ballotFixtures');
 
 /**
  * Loads script/BallotCache.js and script/BallotModel.js into one fresh vm context wired to a
@@ -1672,6 +1673,62 @@ function testReadBallotIsOneGetValuesAndWritesNothing() {
   assert.deepEqual(SM._snapCandidates_(snap).map((c) => c.name), ['Alice', 'Bob']);
 }
 
+// ---------------------------------------------------------------------------
+// Legacy Responses layout: labels on the marker row (rcballot-8i5.7).
+// ---------------------------------------------------------------------------
+
+/** 8i5.7 AC1/AC2: PROD Ballot-ABC-2026-7 — the repair moves Name|Weight|Comment down; the snapshot then reads all 5 votes. */
+function testHeaderOnMarkerRowRepairRestoresLegacyVotes() {
+  const { SM, ss, sandbox } = loadBallotModel();
+  const sheet = writeGrid(ss.insertSheet('Ballot-ABC-2026-7'), prodAbc2026_7Rows());
+
+  const before = SM._readBallot_(sheet);
+  assert.equal(SM._responsesMissingName_(before), true);
+  assert.equal(SM._snapResponses_(before).length, 0); // the bug: votes invisible to the snapshot
+  assert.deepEqual(SM._planHeaderOnMarkerRow_(rectGrid(prodAbc2026_7Rows()), before),
+    { markerRow: 66, headerRow: 67, cells: [{ col: 2, label: 'Name' }, { col: 3, label: 'Weight' }, { col: 4, label: 'Comment' }] });
+
+  const log = spyWrites(sheet, sandbox.LockService._state);
+  const result = SM._repairBallotSheet_(sheet);
+  assert.equal(result.repaired, true);
+  // AC2: exactly one write — the three blank header cells B-D of row 67 — under the lock.
+  assert.deepEqual(log.writes, ['setValues']);
+  assert.deepEqual(log.unlocked, []);
+  assert.deepEqual(sheet.getRange(67, 1, 1, 5).getValues()[0], ['Date', 'Name', 'Weight', 'Comment', 'The Death of Ivan Ilyich']);
+  assert.deepEqual(sheet.getRange(66, 1, 1, 4).getValues()[0], ['[Responses]', 'Name', 'Weight', 'Comment']); // marker row untouched
+  const lines = logLinesWith(sandbox, 'ballot.repair.headerOnMarkerRow');
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].indexOf('"row":67') !== -1 && lines[0].indexOf('"cols":[2,3,4]') !== -1, true, lines[0]);
+
+  // AC1: 5 responses, ranks by name equal to what the old (positional) readers return.
+  const snap = assertSnapshotMatchesOldReaders(SM, sheet, 'PROD ABC-2026-7 after repair');
+  const votes = SM._snapResponses_(snap);
+  assert.deepEqual(votes.map((v) => v.name), ['Little John', 'Crazy Ivan', 'Paul Cooley', 'Glory', 'Pogo']);
+  assert.deepEqual(votes[0].ranks, { 'The Death of Ivan Ilyich': 2, 'Man’s Search for Meaning': 1, 'The Foreign Correspondent': 3,
+    'Admiral McRaven Commencement Speech': 4, 'Blood in the Machine': 5 });
+  assert.deepEqual(snap.problems, []);
+
+  // Idempotent: a second run finds nothing to do and takes no lock.
+  const waits = sandbox.LockService._state.waitCount;
+  log.writes.length = 0;
+  assert.equal(SM._repairBallotSheet_(sheet).repaired, false);
+  assert.deepEqual(log.writes, []);
+  assert.equal(sandbox.LockService._state.waitCount, waits);
+}
+
+/** 8i5.7: a write entry (here a respondent's vote) runs the same repair first, so the vote is keyed correctly. */
+function testWriteEntryRepairsHeaderOnMarkerRow() {
+  const { SM, ss, sandbox } = loadBallotModel();
+  const sheet = writeGrid(ss.insertSheet('Ballot-ABC-2026-7'), prodAbc2026_7Rows());
+  SM.submitBallotResponse_('ABC-2026-7', 'Glory', ['Blood in the Machine'], 'revote');
+  assert.equal(logLinesWith(sandbox, 'ballot.repair.headerOnMarkerRow').length, 1);
+  const votes = SM._snapResponses_(SM._readBallot_(sheet));
+  assert.equal(votes.length, 5);
+  const glory = votes.find((v) => v.name === 'Glory');
+  assert.equal(glory.row, 71); // re-vote overwrote in place
+  assert.equal(glory.ranks['Blood in the Machine'], 1);
+}
+
 function run() {
   testCreateNewBallotCreatesSkeleton();
   testListBallotIdsAndFindBallotSheet();
@@ -1732,6 +1789,8 @@ function run() {
   testSnapshotSkipsBlankKeyRowsMidSection();
   testSnapshotMapsLegacyConfigKey();
   testReadBallotIsOneGetValuesAndWritesNothing();
+  testHeaderOnMarkerRowRepairRestoresLegacyVotes();
+  testWriteEntryRepairsHeaderOnMarkerRow();
   console.log('test_ballot_model: all tests passed');
 }
 

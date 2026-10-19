@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { createFakeSpreadsheet, createFakeGasGlobals } = require('./fakeGas');
+const { prodAbc2026_7Rows, writeGrid } = require('./ballotFixtures');
 
 /**
  * Loads BallotCache.js, BallotModel.js, onOpen.js (for _getWebAppUrl_), webAdmin.js,
@@ -224,6 +225,40 @@ function testAdminMutatingEntryPointsRunUnderLock() {
   assert.equal(state.held, false);
 }
 
+function logLines(app, tag) {
+  return app.Logger._lines.filter(function (l) { return String(l).indexOf(tag) !== -1; });
+}
+
+/**
+ * rcballot-8i5.7 AC3 + admin-load repair: on the legacy PROD Ballot-ABC-2026-7 layout,
+ * analysis refuses (logged, nothing written) instead of reporting "no responses"; the
+ * respondent page logs the damage; opening the admin edit page repairs it, after which
+ * analysis runs over all 5 votes.
+ */
+function testLegacyResponsesLayoutRefusedThenRepairedOnAdminLoad() {
+  const { app, ss } = loadApp();
+  const sheet = writeGrid(ss.insertSheet('Ballot-ABC-2026-7'), prodAbc2026_7Rows());
+  const before = JSON.stringify(sheet.getDataRange().getValues());
+
+  const refused = app.getAdminAnalysisData_('ABC-2026-7');
+  assert.ok(/no "Name" column/.test(refused.error), refused.error);
+  assert.equal(JSON.stringify(sheet.getDataRange().getValues()), before, 'refusal wrote to the sheet');
+  const lines = logLines(app, 'ballot.analysis.refused');
+  assert.equal(lines.length, 1);
+  assert.ok(lines[0].indexOf('"reason":"responsesMissingName"') !== -1, lines[0]);
+
+  app.getBallotForRespondent_('ABC-2026-7', 'Pogo');
+  assert.equal(logLines(app, 'ballot.parse.responsesMissingName').length, 1);
+
+  const edit = app.getAdminEditData('ABC-2026-7');
+  assert.equal(edit.candidates.length, 5);
+  assert.equal(logLines(app, 'ballot.repair.headerOnMarkerRow').length, 1);
+
+  const results = app.getAdminAnalysisData_('ABC-2026-7');
+  assert.equal(results.error, undefined, results.error);
+  assert.equal(results.rcv.summary.reduce(function (n, r) { return n + (Number(r[2]) || 0); }, 0) >= 5, true);
+}
+
 function run() {
   testCacheMissBuildsFromSheetAndPopulatesCache();
   testGetCachedBallotDataReturnsNullForUnknownBallot();
@@ -235,6 +270,7 @@ function run() {
   testOnEditIgnoresNonBallotSheetsAndMissingEvent();
   testGetAdminListDataUsesCacheForTitleAndCandidateCount();
   testAdminMutatingEntryPointsRunUnderLock();
+  testLegacyResponsesLayoutRefusedThenRepairedOnAdminLoad();
   console.log('test_ballot_cache: all tests passed');
 }
 
