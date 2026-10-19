@@ -346,9 +346,8 @@ function _adminWriteConfig_(id, updates) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
-    _repairBallotSheet_(sheet);
-    writeBallotConfig_(sheet, updates);
-    refreshBallotCache_(id, sheet); // keep the cache (BallotCache.js) in sync with this write
+    var snap = writeBallotConfig_(sheet, updates); // repairs first (_withBallotWrite_)
+    refreshBallotCache_(id, sheet, _ballotViewFromSnapshot_(snap)); // keep the cache (BallotCache.js) in sync with this write
     return { ok: true };
   });
 }

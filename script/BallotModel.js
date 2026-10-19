@@ -535,55 +535,40 @@ function createNewBallot_(ss, id) {
 }
 
 /**
- * Overwrites the config key/value rows for a ballot. Keys already present are
- * matched by scanning column A rather than assuming fixed row numbers, so it
- * tolerates a sheet whose config rows have been manually reordered. Any update
- * key with no existing row (e.g. a config field — like "Admin-Only-Notes" — added
- * to the model after this particular sheet was created) is appended as a new row,
- * inserted just above the first section marker, so older sheets self-heal on first
- * save instead of silently dropping the value.
+ * Writes config key/value pairs. Keys already present (matched by trimmed column-A text, so
+ * hand-reordered config rows are fine) are updated in place; any key with no row (e.g. a
+ * config field — like "Admin-Only-Notes" — added after this sheet was created) goes on the
+ * row below the last config row with content, reusing blank rows above the first section
+ * marker and otherwise inserting rows in front of it — also when a marker sits on row 1.
+ * Runs the repair path first (_withBallotWrite_).
  *
  * @param {Sheet} sheet
  * @param {Object} updates e.g. {Title, Description, Instructions, Footer, Contact, 'Accept-New', 'Add-Instructions', 'Admin-Only-Notes'}
+ * @return {Object} the snapshot after the write.
  */
 function writeBallotConfig_(sheet, updates) {
-  var layout = _readBallotLayout_(sheet);
-  var firstMarkerRow = layout.firstMarkerRow;
-  var lastConfigRow = layout.configEndRow;
-  if (lastConfigRow < 1) return;
-  var keys = sheet.getRange(1, 1, lastConfigRow, 1).getValues();
-  var seenKeys = {};
-  var blankRows = [];
-  for (var i = 0; i < keys.length; i++) {
-    var key = String(keys[i][0] || '').trim();
-    if (key) {
-      seenKeys[key] = true;
-      if (updates.hasOwnProperty(key)) {
-        sheet.getRange(i + 1, 2).setValue(updates[key]);
-      }
-    } else {
-      blankRows.push(i + 1);
-    }
-  }
-
-  var missingKeys = Object.keys(updates).filter(function (k) { return !seenKeys[k]; });
-  if (!missingKeys.length) return;
-
-  // Reuse existing blank config rows (e.g. the spacer row above the first marker)
-  // before inserting brand-new ones, so an older sheet doesn't accumulate a stray
-  // blank line every time a new config field is introduced.
-  missingKeys.forEach(function (key) {
-    if (blankRows.length) {
-      sheet.getRange(blankRows.shift(), 1, 1, 2).setValues([[key, updates[key]]]);
-    } else if (firstMarkerRow !== -1) {
-      sheet.insertRowsBefore(firstMarkerRow, 1);
-      sheet.getRange(lastConfigRow + 1, 1, 1, 2).setValues([[key, updates[key]]]);
-      firstMarkerRow++;
-      lastConfigRow++;
-    }
-    // else: no marker and no spare blank row — nothing safe to insert relative to,
-    // so this key is left unwritten (matches the historical no-op behavior).
+  return _withBallotWrite_(sheet, function (snap) {
+    return _applyBallotOps_(sheet, snap, _planBallotConfigOps_(snap, updates));
   });
+}
+
+/**
+ * @param {Object} snap
+ * @param {Object} updates key -> value
+ * @return {Array<Object>} config ops: update for existing keys, append for new ones.
+ */
+function _planBallotConfigOps_(snap, updates) {
+  var update = [];
+  var append = [];
+  Object.keys(updates).forEach(function (key) {
+    var entry = snap.config.byKey[key];
+    if (entry) update.push({ row: entry.row, cells: { Value: updates[key] } });
+    else append.push({ Key: key, Value: updates[key] });
+  });
+  var ops = [];
+  if (update.length) ops.push({ section: 'config', update: update });
+  if (append.length) ops.push({ section: 'config', append: append });
+  return ops;
 }
 
 /**
