@@ -1374,10 +1374,12 @@ function testWriteBallotResultsRefusesOnDamagedLayout() {
   // A deleted [Candidates] marker: the repair inserts a fresh section above [Responses],
   // which leaves the old Candidates header inside the Results region — refused, and the
   // Results region (old candidate rows included) is left exactly as the repair left it.
+  // writeBallotResults_ runs the full repair path (rcballot-8i5.4), which also refills the
+  // empty new Candidates table from the Responses header — so `before` is taken after it.
   let t = loadBallotModel();
   let sheet = buildOrderedBallot(t.ss, 'LostCand', ['results', 'candidates', 'responses']);
   sheet.getRange(rowOf(sheet, '[Candidates]'), 1).setValue('');
-  t.SM._ensureBallotSections_(sheet);
+  t.SM._repairBallotSheet_(sheet);
   let before = wholeSheet(sheet);
   assert.throws(() => t.SM.writeBallotResults_(sheet, [['x']]), /layout is damaged/);
   assert.deepEqual(wholeSheet(sheet), before);
@@ -2034,7 +2036,27 @@ function testUniqueCandidateNameHelpers() {
   SM._assertUniqueCandidateNames_(['A', 'B']);
 }
 
+/** AC7 (results): a rewrite is one setValues plus at most one insert/delete — no clearContent; healthy sheet: one repair read. */
+function testWriteBallotResultsCallCounts() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = buildOrderedBallot(ss, 'ResCount', ['results', 'candidates', 'responses']); // 2 output rows
+  const others = ['candidates', 'responses'].map((k) => sectionSnapshot(sheet, k));
+  [[[['a'], ['b']], 1, 1], [[['a'], ['b'], ['c'], ['d']], 2, 2], [[['only']], 2, 2], [[], 1, 2]].forEach(([rows, writes, reads]) => {
+    const c = countCalls(sheet, () => SM.writeBallotResults_(sheet, rows));
+    assert.deepEqual([c.writes, c.reads], [writes, reads], rows.length + ' rows');
+    assert.deepEqual(sectionSnapshot(sheet, 'results'), [['[Results]']].concat(rows.map((r) => [''].concat(r))));
+    assert.deepEqual(['candidates', 'responses'].map((k) => sectionSnapshot(sheet, k)), others);
+  });
+  // Results as the bottom section grows past the last row without an insert.
+  const t = loadBallotModel();
+  const bottom = buildOrderedBallot(t.ss, 'ResBottom', ['candidates', 'responses', 'results']);
+  const c = countCalls(bottom, () => t.SM.writeBallotResults_(bottom, [['1'], ['2'], ['3']]));
+  assert.deepEqual([c.writes, c.reads], [1, 1]);
+  assert.deepEqual(sectionSnapshot(bottom, 'results'), [['[Results]'], ['', '1'], ['', '2'], ['', '3']]);
+}
+
 function run() {
+  testWriteBallotResultsCallCounts();
   testApplyBallotOpsUpdateMergesAndAppendMakesRoom();
   testApplyBallotOpsEnsureColumnsWithAppend();
   testApplyBallotOpsRenameColumn();

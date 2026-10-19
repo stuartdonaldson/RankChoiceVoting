@@ -1295,12 +1295,13 @@ function submitBallotResponse_(id, name, orderedCandidates, comment) {
  * after repair, when any marker is duplicated, or when the region holds what looks like
  * another section's header row absorbed into it (Candidates: col B "Name" + col C
  * "Details"; Responses: col A "Date" + col B "Name") — the signature of a deleted marker.
+ * Pure: evaluated on the snapshot.
  *
- * @param {Sheet} sheet
- * @param {Object} layout from _readBallotLayout_
+ * @param {Object} snap from _parseBallot_ (grid attached)
  * @return {?{reason:string, markers:(Array<string>|undefined), row:(number|undefined)}} null when safe.
  */
-function _resultsRewriteRefusal_(sheet, layout) {
+function _resultsRewriteRefusal_(snap) {
+  var layout = snap.layout;
   var missing = _BALLOT_SECTION_KEYS_.filter(function (k) { return layout.markers[k] === -1; });
   if (missing.length) {
     return { reason: 'markerMissing', markers: missing.map(function (k) { return _BALLOT_SECTION_MARKER_TEXT_[k]; }) };
@@ -1309,51 +1310,41 @@ function _resultsRewriteRefusal_(sheet, layout) {
     return { reason: 'duplicateMarker', markers: layout.duplicates.map(function (d) { return d.marker; }) };
   }
   var results = layout.sections.results;
-  var count = results.endRow - results.firstDataRow + 1;
-  if (count <= 0) return null;
-  var values = sheet.getRange(results.firstDataRow, 1, count, 3).getValues();
-  for (var i = 0; i < values.length; i++) {
-    var a = String(values[i][0] || '').trim();
-    var b = String(values[i][1] || '').trim();
-    var c = String(values[i][2] || '').trim();
+  for (var row = results.firstDataRow; row <= results.endRow; row++) {
+    var a = String(_gridCell_(snap.grid, row, 1)).trim();
+    var b = String(_gridCell_(snap.grid, row, 2)).trim();
+    var c = String(_gridCell_(snap.grid, row, 3)).trim();
     if (b === _BALLOT_CANDIDATES_HEADER[0] && c === _BALLOT_CANDIDATES_HEADER[1]) {
-      return { reason: 'absorbedCandidatesHeader', row: results.firstDataRow + i };
+      return { reason: 'absorbedCandidatesHeader', row: row };
     }
     if (a === _BALLOT_RESPONSE_FIXED_COLS[0] && b === _BALLOT_RESPONSE_FIXED_COLS[1]) {
-      return { reason: 'absorbedResponsesHeader', row: results.firstDataRow + i };
+      return { reason: 'absorbedResponsesHeader', row: row };
     }
   }
   return null;
 }
 
 /**
- * Inserts or deletes rows so the Results section has exactly rows.length
- * rows available, then writes rows into it. Leaves every other section untouched — the
- * insert/delete happens strictly between the [Results] marker and the next marker below
- * it (whichever section that is), so everything below shifts as one block.
- * The region is cleared in full first and output starts at column B (column A is
- * markers-only), so older column-A output self-corrects on the next run.
+ * Rewrites the Results section with exactly `rows` (output from column B; column A is
+ * markers-only and is cleared, as is every other column of the region, so older column-A
+ * output self-corrects). Leaves every other section untouched — rows are inserted/deleted
+ * strictly between [Results] and the next marker (whichever section that is). Runs the
+ * repair path first (_withBallotWrite_), then refuses on _resultsRewriteRefusal_.
  *
  * @param {Sheet} sheet
  * @param {Array<Array>} rows
+ * @return {Object} the snapshot after the write.
  */
 function writeBallotResults_(sheet, rows) {
-  var layout = _ensureBallotSections_(sheet);
-  var refusal = _resultsRewriteRefusal_(sheet, layout);
-  if (refusal) {
-    refusal.sheet = sheet.getName();
-    _logBallotEvent_('ballot.write.refused', refusal);
-    throw new Error('Ballot sheet layout is damaged — fix the markers before running analysis.');
-  }
-  var results = layout.sections.results;
-  // Clear the whole region (every column, col A included) first: column A is
-  // markers-only, so output from the older layout that wrote names there must not
-  // survive the rewrite; the resize then inserts/deletes blank rows only.
-  var regionRows = results.endRow - results.firstDataRow + 1;
-  if (regionRows > 0) {
-    sheet.getRange(results.firstDataRow, 1, regionRows, Math.max(sheet.getLastColumn(), 1)).clearContent();
-  }
-  _resizeSectionRows_(sheet, results.markerRow, results.endRow + 1, rows, _BALLOT_CANDIDATES_FIRST_COL);
+  return _withBallotWrite_(sheet, function (snap) {
+    var refusal = _resultsRewriteRefusal_(snap);
+    if (refusal) {
+      refusal.sheet = sheet.getName();
+      _logBallotEvent_('ballot.write.refused', refusal);
+      throw new Error('Ballot sheet layout is damaged — fix the markers before running analysis.');
+    }
+    return _applyBallotOps_(sheet, snap, [{ section: 'results', replaceAll: rows }]);
+  });
 }
 
 /**
