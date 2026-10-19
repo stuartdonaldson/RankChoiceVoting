@@ -15,11 +15,10 @@
  *   Row 11+    Analysis output — cleared and rewritten by runBallotAnalysis_
  *   Row M      "[Candidates]" marker (col A)
  *   Row M+1    Candidates header: (col A blank) Name (col B) | Details (col C)
- *   Row M+2+   One row per candidate — name/details start at col B, position-aligned
- *              with the Responses header's candidate columns (candidate i's row here
- *              == candidate column i)
+ *   Row M+2+   One row per candidate — name/details start at col B
  *   Row N      "[Responses]" marker (col A)
- *   Row N+1    Responses header: Date | Name | Weight | Comment | <candidate1> | <candidate2> | ...
+ *   Row N+1    Responses header: Date | Name | Weight | Comment | <candidate name> | ... — one rank
+ *              column per candidate, matched to the Candidates table BY NAME (any order)
  *   Row N+2+   One row per respondent
  *
  * That is the order createBallotSheet_ writes, but nothing depends on it: the three
@@ -46,26 +45,26 @@
  * column (header "Date" plus app-written timestamps in the response rows) — it sits
  * below the [Responses] marker, where no marker scan needs to find anything after it.
  *
- * "Admin-Only-Notes" (config key; formerly "Info" — _findMarkerRow_-style legacy
- * migration in readBallotConfig_ upgrades old sheets on first read) is free-text
+ * "Admin-Only-Notes" (config key; formerly "Info" — read under the new name, and renamed
+ * on the sheet by the repair path) is free-text
  * notes about the ballot (e.g. purpose, audience, scheduling context) — shown in
  * the admin list as a per-row disclosure, never exposed to respondents (see
  * getBallotForRespondent_, which omits it).
  *
  * The Candidates table is the PRIMARY identification of candidates — it is the
  * source of truth for who is a candidate, including ones pre-populated there ahead
- * of any votes. The Responses header's candidate columns (E onward) are a derived,
- * position-aligned mirror that response rows key their ranks off of; readBallotCandidates_
- * reconciles the two on every read (via _reconcileCandidatesWithResponses_), appending
- * a Responses column for any Candidates-table entry that doesn't have one yet, so a
- * candidate typed only into the Candidates table still shows up everywhere (respondent
- * page, admin edit form, analysis) even before its first vote. Existing Responses
- * columns are never reordered or removed by this reconciliation, so previously recorded
- * ranks stay aligned to their column. The table also carries a per-candidate "Details"
- * note editable from the admin page; it is kept in sync by saveBallotCandidates_/
- * addBallotCandidate_, not by hand-editing. A ballot created before the Candidates
- * table existed has no Candidates marker — _ensureBallotSections_ inserts it (empty)
- * the first time anything here needs it, so older sheets self-heal rather than throwing.
+ * of any votes. Each candidate's ranks live in the Responses column whose header is its
+ * name (trim, case-insensitive); columns are found by label, never by position, so a
+ * hand-sorted or hand-trimmed Candidates table cannot move a rank to another candidate.
+ * A Responses rank column matching no candidate is an ORPHAN: kept, shown on the admin
+ * edit page, never counted.
+ *
+ * READS NEVER WRITE (rcballot-8i5.3). Every reader is one getDataRange read parsed by
+ * _parseBallot_ (see the Snapshot section). Repairs — lost markers, the legacy "Info" key,
+ * the old column-A Candidates layout, a missing/incomplete Candidates header, labels left
+ * on the [Responses] marker row, an empty Candidates table on a pre-Candidates ballot,
+ * candidates without a rank column — run only through _repairBallotSheet_, called on admin
+ * edit-page load (getAdminEditData) and by the write paths, under the ballot lock.
  *
  * webBallot.js (respondent UI) and webAdmin.js (analysis) both read/write
  * through this module so the sheet layout only needs to be understood once.
@@ -723,33 +722,14 @@ function _assertNotMarkerName_(name) {
 
 /**
  * Reads the config key/value rows (rows 1 through the row before the first section
- * marker, whichever section that is).
+ * marker, whichever section that is). Snapshot-backed (one read, no write): a legacy key
+ * ('Info') reads as its current name and is renamed on the sheet only by the repair path.
  *
  * @param {Sheet} sheet
  * @return {Object} e.g. {Title, Description, Instructions, Footer, Contact, 'Accept-New', 'Add-Instructions'}
  */
 function readBallotConfig_(sheet) {
-  var lastConfigRow = _readBallotLayout_(sheet).configEndRow;
-  var config = {};
-  if (lastConfigRow < 1) return config;
-  var values = sheet.getRange(1, 1, lastConfigRow, 2).getValues();
-  values.forEach(function (row, i) {
-    var key = String(row[0] || '').trim();
-    if (!key) return;
-    Object.keys(_BALLOT_LEGACY_CONFIG_KEYS_).forEach(function (currentKey) {
-      if (_BALLOT_LEGACY_CONFIG_KEYS_[currentKey].indexOf(key) !== -1) {
-        var legacyKey = key;
-        _withBallotLock_(function () {
-          if (String(sheet.getRange(i + 1, 1).getValue() || '').trim() === legacyKey) {
-            sheet.getRange(i + 1, 1).setValue(currentKey); // one-time upgrade to the current key name
-          }
-        });
-        key = currentKey;
-      }
-    });
-    config[key] = row[1];
-  });
-  return config;
+  return _readBallotView_(sheet).config;
 }
 
 /**
@@ -761,6 +741,8 @@ function _ballotAcceptsNew_(config) {
 }
 
 /**
+ * Unreferenced since rcballot-8i5.3 (delete in rcballot-8i5.5).
+ *
  * @param {Sheet} sheet
  * @return {number} 1-based row of the Responses header (Date/Name/Weight/Comment/...), or -1.
  */
@@ -770,21 +752,20 @@ function _getResponsesHeaderRow_(sheet) {
 }
 
 /**
- * Reads the candidate names from the Responses header row (columns E+), first
- * reconciling that header against the Candidates table (the primary source of
- * candidate identity) so a candidate typed only into the Candidates table — e.g.
- * pre-populated ahead of any votes — is always included.
+ * Candidate names, in Candidates-table order (the table is the source of candidate
+ * identity). Snapshot-backed: one read, no write. A candidate with no Responses rank
+ * column is still listed (its ranks read ''); the repair path adds the column.
  *
  * @param {Sheet} sheet
  * @return {Array<string>}
  */
 function readBallotCandidates_(sheet) {
-  return _readBallotCandidatesAndLayout_(sheet).names;
+  return _readBallotView_(sheet).names;
 }
 
 /**
- * readBallotCandidates_ plus the layout it was read against, so a caller that goes on to
- * read another section doesn't scan column A again.
+ * Superseded by the snapshot readers (rcballot-8i5.3); kept until rcballot-8i5.5. Repairs
+ * as it reads — no reader calls it any more.
  *
  * @param {Sheet} sheet
  * @return {{names:Array<string>, layout:Object}}
@@ -794,6 +775,10 @@ function _readBallotCandidatesAndLayout_(sheet) {
 }
 
 /**
+ * SUPERSEDED (rcballot-8i5.3; delete in rcballot-8i5.5): unreferenced. Its positional
+ * gap-compaction would now misattribute votes — the repair path's rankColumns step
+ * replaces it.
+ *
  * Ensures every candidate listed in the Candidates table (the primary source of
  * candidate identity — see file header) has a matching column in the Responses
  * header, appending one for each that's missing. Never reorders or removes existing
@@ -893,19 +878,21 @@ function _applyCandidateReconcile_(sheet, plan) {
 }
 
 /**
- * Reads all response rows in the Responses section (header+1 through the row before the
- * next marker, or the last row), skipping rows with no name in column B.
+ * Reads all response rows in the Responses section, skipping rows with no Name.
+ * Snapshot-backed: one read, no write. ranks[i] is the rank for readBallotCandidates_()[i],
+ * found by that candidate's NAME in the Responses header (never by position); rank columns
+ * matching no candidate (orphans) are left out.
  *
  * @param {Sheet} sheet
- * @return {Array<{row:number, date:*, name:string, weight:number, comment:string, ranks:Array}>}
+ * @return {Array<{row:number, date:*, name:string, weight:number, comment:string, ranks:Array, ranksByName:Object}>}
  */
 function readBallotResponseRows_(sheet) {
-  return _readResponseRowsAndLayout_(sheet).rows;
+  return _readBallotView_(sheet).rows;
 }
 
 /**
- * readBallotResponseRows_ plus the Responses-header candidate names and the layout both
- * were read against (rows are in ascending sheet-row order).
+ * Superseded by the snapshot readers (rcballot-8i5.3); kept until rcballot-8i5.5. Positional
+ * and repairs as it reads — no reader or writer calls it any more.
  *
  * @param {Sheet} sheet
  * @return {{rows:Array<{row:number, date:*, name:string, weight:number, comment:string, ranks:Array}>, names:Array<string>, layout:Object}}
@@ -969,18 +956,23 @@ function countUniqueBallotRespondents_(sheet) {
 /**
  * Finds respondents whose latest submitted ranking predates one or more of the
  * ballot's current candidates, so they may want to come back and rank the new
- * addition(s). Detected via a blank rank cell: _reconcileCandidatesWithResponses_
- * only ever appends new candidate columns and never backfills existing rows, so
- * a response row written before a candidate existed has a genuinely empty cell
- * under that candidate's column — there's no other way a rank cell goes blank,
- * since submitBallotResponse_ always writes every candidate known at submit time.
+ * addition(s). Detected via a blank rank: a candidate added after a response was written
+ * has a blank cell (or no column at all) for that response, since submitBallotResponse_
+ * writes every candidate known at submit time.
  *
  * @param {Sheet} sheet
  * @return {Array<string>} respondent names (as last submitted), one per stale respondent
  */
 function findRespondentsWithNewCandidates_(sheet) {
-  var rows = _latestResponseByRespondent_(readBallotResponseRows_(sheet));
-  return rows
+  return _staleRespondents_(_latestResponseByRespondent_(readBallotResponseRows_(sheet)));
+}
+
+/**
+ * @param {Array<{name:string, ranks:Array}>} latestRows one row per respondent
+ * @return {Array<string>} names of respondents with any blank rank.
+ */
+function _staleRespondents_(latestRows) {
+  return latestRows
     .filter(function (r) { return r.ranks.some(function (v) { return v === '' || v === null || v === undefined; }); })
     .map(function (r) { return r.name; });
 }
@@ -1002,9 +994,10 @@ function _findBallotResponseRowForName_(rows, name) {
 }
 
 /**
- * Appends a new candidate column to the Responses header row, and a matching row
- * to the Candidates table (position-aligned — this candidate's Candidates-table row
- * ends up at the same index as its new column). Caller must check Accept-New first.
+ * Appends a new candidate: a row at the end of the Candidates table, and a rank column in
+ * the Responses header — reusing an existing column already labelled with this name
+ * (e.g. an orphan left by a hand-deleted candidate), else appended after the last used
+ * Responses column. Runs the repair path first. Caller must check Accept-New first.
  *
  * @param {Sheet} sheet
  * @param {string} phrase
@@ -1014,29 +1007,41 @@ function _findBallotResponseRowForName_(rows, name) {
  */
 function addBallotCandidate_(sheet, phrase, details, linkText, linkUrl) {
   _assertNotMarkerName_(phrase);
-  // Read (and self-repair) BEFORE taking the header row: a repair can insert rows above
-  // [Responses], which would leave a row number taken earlier pointing at the wrong row.
-  var read = _readBallotCandidatesAndLayout_(sheet);
-  var existingCandidates = read.names; // BEFORE the new column exists
-  var responses = read.layout.sections.responses;
-  if (!responses) throw new Error('Ballot has no Responses section.');
-  var headerRow = responses.headerRow;
-  // Computed from the Responses header's own candidate-column count (not
-  // sheet.getLastColumn()) — the Candidates table sits in earlier columns and can be
-  // wider than the Responses section (e.g. its Link URL column), which would otherwise
-  // throw off where the next candidate column belongs.
-  var nextCol = _BALLOT_FIRST_CANDIDATE_COL + existingCandidates.length;
-  sheet.getRange(headerRow, nextCol).setValue(phrase);
-
-  var candidateRows = readBallotCandidateDetails_(sheet);
-  // Backfill any candidates that predate the Candidates table (e.g. a ballot created, or
-  // a candidate added, before this feature existed) with blank details, so positions
-  // never drift between the Candidates table and the Responses header's candidate columns.
-  while (candidateRows.length < existingCandidates.length) {
-    candidateRows.push({ name: existingCandidates[candidateRows.length], details: '', linkText: '', linkUrl: '' });
-  }
+  var snap = _repairBallotSheet_(sheet).snap;
+  if (!snap.tables.responses) throw new Error('Ballot has no Responses section.');
+  var candidateRows = _snapCandidates_(snap).map(function (c) {
+    return { name: c.name, details: c.details, linkText: c.linkText, linkUrl: c.linkUrl };
+  });
   candidateRows.push({ name: phrase, details: details || '', linkText: linkText || '', linkUrl: linkUrl || '' });
   writeBallotCandidateDetails_(sheet, candidateRows);
+
+  // Re-read: the Candidates resize may have shifted the Responses section.
+  var cur = _readBallotGridAndSnap_(sheet);
+  var responses = cur.snap.tables.responses;
+  if (responses.headerRow === null) throw new Error('Ballot sheet is missing its Responses header row.');
+  if (_snapRankColumns_(cur.snap)[_labelKey_(phrase)]) return;
+  sheet.getRange(responses.headerRow, _nextResponsesCol_(cur.grid, cur.snap)).setValue(phrase);
+}
+
+/**
+ * @param {Array<Array<*>>} grid
+ * @param {Object} snap from _parseBallot_(grid), with a [Responses] section
+ * @return {number} the first column right of every labelled Responses header cell and of
+ *   any content in the Responses section's rows — where a new rank column may go without
+ *   adopting existing (unlabelled) data.
+ */
+function _nextResponsesCol_(grid, snap) {
+  var section = snap.layout.sections.responses;
+  var t = snap.tables.responses;
+  var last = _BALLOT_RESPONSE_FIXED_COLS.length;
+  Object.keys(t.col).forEach(function (l) { if (t.col[l] > last) last = t.col[l]; });
+  for (var row = section.headerRow; row <= section.endRow; row++) {
+    var cells = grid[row - 1] || [];
+    for (var c = cells.length; c > last; c--) {
+      if (_cellHasContent_(cells[c - 1])) { last = c; break; }
+    }
+  }
+  return last + 1;
 }
 
 /**
@@ -1064,24 +1069,18 @@ function getBallotForRespondent_(id, name) {
   if (!sheet) return null;
 
   // A name means this respondent's saved ranking (Responses section) is needed, which
-  // always requires the live sheet — read config/candidates fresh here too, rather than
-  // from cache, since readBallotCandidates_'s reconciliation against the Responses
-  // header must run against the real sheet for the rank-column alignment below to be
-  // trustworthy. refreshBallotCache_ also backfills any candidate that predates the
-  // Candidates table, and re-warms the cache from this same read for the next
-  // (nameless) load. `candidates` is name-only, in the same Responses-header-aligned
-  // order, for the rank lookup further down.
-  var freshCache = refreshBallotCache_(id, sheet);
-  var candidates = freshCache.candidates.map(function (it) { return it.name; });
-
+  // always requires the live sheet: one snapshot read serves config, candidates and
+  // responses, and re-warms the cache for the next (nameless) load. No sheet write.
+  var view = _readBallotView_(sheet);
+  var freshCache = refreshBallotCache_(id, sheet, view);
   var result = _buildRespondentBranding_(id, freshCache.config, freshCache.candidates);
 
-  var rows = readBallotResponseRows_(sheet);
-  if (_responsesMissingName_(_readBallot_(sheet))) {
+  if (_responsesMissingName_(view.snap)) {
     // No vote can be keyed by name on this sheet: the respondent's saved ranking would
     // silently not load. Repaired on the next admin edit-page load or write (rcballot-8i5.7).
     _logBallotEvent_('ballot.parse.responsesMissingName', { sheet: sheet.getName() });
   }
+  var rows = view.rows;
   var target = name.toLowerCase();
   var existing = null;
   for (var i = rows.length - 1; i >= 0; i--) {
@@ -1089,8 +1088,10 @@ function getBallotForRespondent_(id, name) {
   }
   if (!existing) return result;
 
-  var withRank = candidates.map(function (c, idx) {
-    var rank = Number(existing.ranks[idx]);
+  // Ranks by candidate NAME (rcballot-8i5.3), so a hand-sorted or hand-trimmed Candidates
+  // table cannot hand this respondent's rank for one candidate to another.
+  var withRank = view.names.map(function (c) {
+    var rank = Number(existing.ranksByName[c]);
     return { candidate: c, rank: isNaN(rank) ? Infinity : rank };
   });
   withRank.sort(function (a, b) { return a.rank - b.rank; });
@@ -1226,31 +1227,48 @@ function submitBallotResponse_(id, name, orderedCandidates, comment) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
-    _repairBallotSheet_(sheet);
-
-    var read = _readResponseRowsAndLayout_(sheet);
-    var candidates = read.names;
-    var responses = read.layout.sections.responses;
-    if (!responses) throw new Error('Ballot has no Responses section.');
+    var rep = _repairBallotSheet_(sheet);
+    var snap = rep.snap;
+    var t = snap.tables.responses;
+    if (!t) throw new Error('Ballot has no Responses section.');
+    if (t.headerRow === null || _responsesMissingName_(snap)) {
+      _logBallotEvent_('ballot.write.refused', { sheet: sheet.getName(), reason: 'responsesMissingName' });
+      throw new Error('Ballot sheet layout is damaged — the Responses header has no Name column.');
+    }
+    var view = _ballotViewFromSnapshot_(snap);
     var rankByCandidate = {};
     orderedCandidates.forEach(function (c, idx) {
       rankByCandidate[String(c).trim()] = idx + 1;
     });
 
-    var row = _findBallotResponseRowForName_(read.rows, name);
+    var row = _findBallotResponseRowForName_(view.rows, name);
+    var base = [];
     var weight = 1;
     if (row === -1) {
-      row = _newResponseRow_(sheet, responses, read.rows);
+      row = _newResponseRow_(sheet, snap.layout.sections.responses, view.rows);
     } else {
-      weight = Number(sheet.getRange(row, 3).getValue()) || 1;
+      base = rep.grid[row - 1] || [];
+      if (t.col.Weight) weight = Number(_gridCell_(rep.grid, row, t.col.Weight)) || 1;
     }
 
-    var ranks = candidates.map(function (c) {
-      return rankByCandidate.hasOwnProperty(c) ? rankByCandidate[c] : '';
+    // Every cell is placed by its header label: the fixed columns, and each candidate's
+    // rank under the column bearing its name (rcballot-8i5.3). Cells in between (orphan
+    // rank columns, unlabelled columns) keep what the row already had.
+    var put = {};
+    var fixed = { Date: new Date(), Name: name, Weight: weight, Comment: String(comment || '').trim() };
+    Object.keys(fixed).forEach(function (label) { if (t.col[label]) put[t.col[label]] = fixed[label]; });
+    _snapCandidates_(snap).forEach(function (c) {
+      if (c.rankCol !== null) put[c.rankCol] = rankByCandidate.hasOwnProperty(c.name) ? rankByCandidate[c.name] : '';
     });
-    sheet.getRange(row, 1, 1, _BALLOT_RESPONSE_FIXED_COLS.length + candidates.length).setValues([
-      [new Date(), name, weight, String(comment || '').trim()].concat(ranks)
-    ]);
+    var cols = Object.keys(put).map(Number);
+    var minCol = Math.min.apply(null, cols);
+    var maxCol = Math.max.apply(null, cols);
+    var values = [];
+    for (var c = minCol; c <= maxCol; c++) {
+      if (put.hasOwnProperty(c)) values.push(put[c]);
+      else values.push(base[c - 1] === undefined || base[c - 1] === null ? '' : base[c - 1]);
+    }
+    sheet.getRange(row, minCol, 1, values.length).setValues([values]);
 
     return { ok: true };
   });
@@ -1339,20 +1357,20 @@ function _prepareCandidatesSection_(sheet) {
 }
 
 /**
- * Reads the Candidates table (Name/Details per row), position-aligned with the
- * Responses header's candidate columns — candidate i corresponds to candidate column i.
- * This table is the primary source of candidate identity (see file header); it may
- * list candidates that don't have a Responses column yet.
+ * Reads the Candidates table (Name/Details/Link Text/Link URL per row, columns found by
+ * header label), in sheet order — the primary source of candidate identity (see file
+ * header). Snapshot-backed: one read, no write. Rows with no Name are skipped.
  *
  * @param {Sheet} sheet
  * @return {Array<{name:string, details:string, linkText:string, linkUrl:string}>}
  */
 function readBallotCandidateDetails_(sheet) {
-  return _readCandidateDetailsAndLayout_(sheet).rows;
+  return _readBallotView_(sheet).candidates;
 }
 
 /**
- * readBallotCandidateDetails_ plus the layout it was read against.
+ * Superseded by the snapshot readers (rcballot-8i5.3); kept until rcballot-8i5.5. Repairs
+ * as it reads — no reader calls it any more.
  *
  * @param {Sheet} sheet
  * @return {{rows:Array<{name:string, details:string, linkText:string, linkUrl:string}>, layout:Object}}
@@ -1417,17 +1435,19 @@ function writeBallotCandidateDetails_(sheet, candidateRows) {
 }
 
 /**
- * Admin-facing: overwrites every candidate's name + details in one pass, given a
- * full ordered list matching the ballot's current candidate positions (position,
- * not name, is the join key — renaming a candidate never touches response data,
- * since ranks are keyed by column index). Throws if the count doesn't match the
- * ballot's current candidate count (stale form — caller should reload and retry).
+ * Admin-facing: overwrites every candidate's name + details in one pass, given a full
+ * list in the ballot's current Candidates-table order (as getAdminEditData returns it).
+ * A rename relabels that candidate's own Responses rank column (found by its old name), so
+ * recorded ranks follow the candidate. Throws if the count doesn't match the ballot's
+ * current candidate count (stale form — caller should reload and retry). Runs the repair
+ * path first.
  *
  * @param {Sheet} sheet
  * @param {Array<{name:string, details:string, linkText:string, linkUrl:string}>} candidateRows
  */
 function saveBallotCandidates_(sheet, candidateRows) {
-  var candidates = readBallotCandidates_(sheet);
+  var snap = _repairBallotSheet_(sheet).snap;
+  var candidates = _snapCandidates_(snap);
   if (candidateRows.length !== candidates.length) {
     throw new Error('Candidate count changed since the page was loaded — reload and try again.');
   }
@@ -1437,10 +1457,12 @@ function saveBallotCandidates_(sheet, candidateRows) {
     _assertNotMarkerName_(name);
     return name;
   });
-  var headerRow = _getResponsesHeaderRow_(sheet);
-  if (names.length) {
-    sheet.getRange(headerRow, _BALLOT_FIRST_CANDIDATE_COL, 1, names.length).setValues([names]);
-  }
+  var responses = snap.tables.responses;
+  candidates.forEach(function (c, i) {
+    if (c.rankCol !== null && c.rankLabel !== names[i]) {
+      sheet.getRange(responses.headerRow, c.rankCol).setValue(names[i]);
+    }
+  });
   writeBallotCandidateDetails_(sheet, candidateRows.map(function (it, i) {
     return { name: names[i], details: String(it.details || ''), linkText: String(it.linkText || ''), linkUrl: String(it.linkUrl || '') };
   }));
@@ -1819,6 +1841,78 @@ function _snapResponses_(snap) {
   });
 }
 
+/**
+ * Everything the public readers return, derived from one snapshot (rcballot-8i5.3).
+ * Candidates are in Candidates-table order; each response's ranks array is aligned to
+ * that list and filled by candidate NAME. Orphan rank columns are listed apart and never
+ * reach `rows`, so analysis cannot count them.
+ *
+ * @param {Object} snap from _parseBallot_
+ * @return {{snap:Object, config:Object, names:Array<string>,
+ *   candidates:Array<{name:string, details:string, linkText:string, linkUrl:string}>,
+ *   rows:Array<{row:number, date:*, name:string, weight:number, comment:string, ranks:Array, ranksByName:Object}>,
+ *   orphans:Array<{label:string, col:number}>}}
+ */
+function _ballotViewFromSnapshot_(snap) {
+  var config = {};
+  Object.keys(snap.config.byKey).forEach(function (k) { config[k] = snap.config.byKey[k].value; });
+  var cands = _snapCandidates_(snap);
+  var names = cands.map(function (c) { return c.name; });
+  return {
+    snap: snap,
+    config: config,
+    names: names,
+    candidates: cands.map(function (c) { return { name: c.name, details: c.details, linkText: c.linkText, linkUrl: c.linkUrl }; }),
+    rows: _snapResponses_(snap).map(function (r) {
+      return {
+        row: r.row, date: r.date, name: r.name, weight: r.weight, comment: r.comment,
+        ranks: names.map(function (n) { return r.ranks[n]; }),
+        ranksByName: r.ranks
+      };
+    }),
+    orphans: _snapOrphanColumns_(snap)
+  };
+}
+
+// "<sheet>|<code>|<detail>" keys already logged by _logSnapshotProblems_ in this execution.
+var _ballotLoggedProblems_ = {};
+
+/**
+ * Logs a snapshot's problems, each once per execution (readers run several times per
+ * request). duplicateMarker keeps _readBallotLayout_'s tag, payload and de-dup key; every
+ * other code logs as ballot.parse.<code>. Logging only — never a sheet write.
+ */
+function _logSnapshotProblems_(sheet, snap) {
+  var name = sheet.getName();
+  snap.problems.forEach(function (p) {
+    if (p.code === 'duplicateMarker') {
+      var dupKey = name + '|' + p.marker + '|' + p.rows.join(',');
+      if (_ballotLoggedDuplicates_[dupKey]) return;
+      _ballotLoggedDuplicates_[dupKey] = true;
+      _logBallotEvent_('ballot.parse.duplicateMarker', { sheet: name, marker: p.marker, rows: p.rows });
+      return;
+    }
+    var data = { sheet: name };
+    Object.keys(p).forEach(function (k) { if (k !== 'code') data[k] = p[k]; });
+    var key = name + '|' + p.code + '|' + JSON.stringify(data);
+    if (_ballotLoggedProblems_[key]) return;
+    _ballotLoggedProblems_[key] = true;
+    _logBallotEvent_('ballot.parse.' + p.code, data);
+  });
+}
+
+/**
+ * One snapshot read of a ballot sheet, problems logged, as the readers' view. No write, no lock.
+ *
+ * @param {Sheet} sheet
+ * @return {Object} see _ballotViewFromSnapshot_.
+ */
+function _readBallotView_(sheet) {
+  var snap = _readBallot_(sheet);
+  _logSnapshotProblems_(sheet, snap);
+  return _ballotViewFromSnapshot_(snap);
+}
+
 // ---------------------------------------------------------------------------
 // Repair path (rcballot-8i5.7). One entry, _repairBallotSheet_, run on admin edit-page load
 // and at the start of the locked write entries. A healthy sheet costs one getDataRange read
@@ -1875,9 +1969,116 @@ function _applyHeaderOnMarkerRow_(sheet, plan) {
   });
 }
 
+/** Legacy config keys (e.g. 'Info') to rename to their current key. Pure. */
+function _planLegacyConfigKeys_(grid, snap) {
+  var out = [];
+  Object.keys(snap.config.byKey).forEach(function (key) {
+    var e = snap.config.byKey[key];
+    if (e.legacyKey) out.push({ row: e.row, from: e.legacyKey, to: key });
+  });
+  return out.length ? out : null;
+}
+
+function _applyLegacyConfigKeys_(sheet, plan) {
+  plan.forEach(function (p) { sheet.getRange(p.row, 1).setValue(p.to); });
+  _logBallotEvent_('ballot.repair.legacyConfigKey', { sheet: sheet.getName(), keys: plan });
+}
+
+/** Candidates table still on the pre-column-A-reservation layout (header 'Name' in col A). Pure. */
+function _planCandidatesOldColumns_(grid, snap) {
+  var t = snap.tables.candidates;
+  if (!t || t.headerRow === null || !snap.layout.sections.responses) return null;
+  return _labelKey_(_gridCell_(grid, t.headerRow, 1)) === _labelKey_(_BALLOT_CANDIDATES_HEADER[0]) ? { headerRow: t.headerRow } : null;
+}
+
+function _applyCandidatesOldColumns_(sheet, plan) {
+  _migrateCandidatesColumnsIfNeeded_(sheet);
+  _logBallotEvent_('ballot.repair.candidatesOldColumns', { sheet: sheet.getName(), row: plan.headerRow });
+}
+
+/**
+ * Candidates header row missing or incomplete. Only while [Responses] exists (without it,
+ * rows below [Candidates] may be orphaned votes). Pure. Kinds:
+ *   insert — no room for a header (next marker directly below), or the row below the marker
+ *            holds content but none of the fixed labels: it is a candidate, so a header row
+ *            is inserted above it (live: SIT Ballot-ABC-2026-08);
+ *   append — some fixed labels present but others missing: the missing ones are written
+ *            right of the last labelled column (blank row: written from col B).
+ */
+function _planCandidatesHeader_(grid, snap) {
+  var t = snap.tables.candidates;
+  var section = snap.layout.sections.candidates;
+  if (!t || !snap.layout.sections.responses || !t.missing.length) return null;
+  if (t.headerRow === null) return { kind: 'insert', markerRow: section.markerRow };
+  var fixedPresent = t.labels.filter(function (l) { return _BALLOT_CANDIDATES_HEADER.indexOf(l) !== -1; }).length;
+  var rowHasContent = _gridRowHasContent_(grid, t.headerRow, _BALLOT_CANDIDATES_FIRST_COL, Math.max((grid[t.headerRow - 1] || []).length, _BALLOT_CANDIDATES_FIRST_COL));
+  if (!fixedPresent && rowHasContent) return { kind: 'insert', markerRow: section.markerRow };
+  if (!fixedPresent && t.labels.length) return null; // unrecognised labels only: leave to a human
+  var last = _BALLOT_CANDIDATES_FIRST_COL - 1;
+  Object.keys(t.col).forEach(function (l) { if (t.col[l] > last) last = t.col[l]; });
+  return { kind: 'append', headerRow: t.headerRow, col: last + 1, labels: t.missing.slice() };
+}
+
+function _applyCandidatesHeader_(sheet, plan) {
+  if (plan.kind === 'insert') {
+    sheet.insertRowsAfter(plan.markerRow, 1);
+    sheet.getRange(plan.markerRow + 1, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).setValues([_BALLOT_CANDIDATES_HEADER]);
+  } else {
+    sheet.getRange(plan.headerRow, plan.col, 1, plan.labels.length).setValues([plan.labels]);
+  }
+  _logBallotEvent_('ballot.repair.candidatesHeader', { sheet: sheet.getName(), kind: plan.kind, row: plan.kind === 'insert' ? plan.markerRow + 1 : plan.headerRow, labels: plan.labels || _BALLOT_CANDIDATES_HEADER });
+}
+
+/**
+ * A Candidates table with no content below its header while the Responses header has rank
+ * columns: a ballot from before the Candidates table existed. Each rank-column label
+ * becomes a Candidates row (blank details). Not applied once the table has any row, so a
+ * hand-deleted candidate stays deleted (its column is an orphan). Pure.
+ */
+function _planCandidatesFromResponses_(grid, snap) {
+  var t = snap.tables.candidates;
+  if (!t || t.headerRow === null || !t.col[_BALLOT_SECTIONS_.candidates.key] || t.rowsUsed !== t.headerRow) return null;
+  if (!snap.tables.responses || _responsesMissingName_(snap)) return null;
+  var rankCols = _snapRankColumns_(snap);
+  var labels = Object.keys(rankCols).map(function (k) { return rankCols[k]; })
+    .sort(function (a, b) { return a.col - b.col; }).map(function (r) { return r.label; });
+  if (!labels.length) return null;
+  var section = snap.layout.sections.candidates;
+  return { headerRow: t.headerRow, nameCol: t.col[_BALLOT_SECTIONS_.candidates.key], available: section.endRow - t.headerRow, names: labels };
+}
+
+function _applyCandidatesFromResponses_(sheet, plan) {
+  var n = plan.names.length;
+  if (n > plan.available) sheet.insertRowsAfter(plan.headerRow + plan.available, n - plan.available);
+  sheet.getRange(plan.headerRow + 1, plan.nameCol, n, 1).setValues(plan.names.map(function (x) { return [x]; }));
+  _logBallotEvent_('ballot.repair.candidatesFromResponses', { sheet: sheet.getName(), row: plan.headerRow + 1, count: n });
+}
+
+/** Candidates with no Responses rank column: one is appended for each. Pure. */
+function _planRankColumns_(grid, snap) {
+  var t = snap.tables.responses;
+  if (!t || t.headerRow === null || _responsesMissingName_(snap)) return null;
+  var seen = {};
+  var labels = [];
+  _snapCandidates_(snap).forEach(function (c) {
+    var k = _labelKey_(c.name);
+    if (c.rankCol !== null || seen[k]) return;
+    seen[k] = true;
+    labels.push(c.name);
+  });
+  if (!labels.length) return null;
+  return { headerRow: t.headerRow, col: _nextResponsesCol_(grid, snap), labels: labels };
+}
+
+function _applyRankColumns_(sheet, plan) {
+  sheet.getRange(plan.headerRow, plan.col, 1, plan.labels.length).setValues([plan.labels]);
+  _logBallotEvent_('ballot.repair.rankColumns', { sheet: sheet.getName(), row: plan.headerRow, col: plan.col, labels: plan.labels });
+}
+
 /**
  * Repair steps in the order they run. Each has a pure `plan(grid, snap)` (null = nothing to
- * do) and an `apply(sheet, plan)` that writes under the ballot lock.
+ * do) and an `apply(sheet, plan)` that writes under the ballot lock. The repair path is
+ * the ONLY place these run (rcballot-8i5.3): never from a reader.
  */
 var _BALLOT_REPAIR_STEPS_ = [
   {
@@ -1885,21 +2086,27 @@ var _BALLOT_REPAIR_STEPS_ = [
     plan: function (grid, snap) { return _ballotMarkersComplete_(snap.layout) ? null : true; },
     apply: function (sheet) { _ensureBallotSections_(sheet); }
   },
-  { name: 'headerOnMarkerRow', plan: _planHeaderOnMarkerRow_, apply: _applyHeaderOnMarkerRow_ }
+  { name: 'legacyConfigKey', plan: _planLegacyConfigKeys_, apply: _applyLegacyConfigKeys_ },
+  { name: 'candidatesOldColumns', plan: _planCandidatesOldColumns_, apply: _applyCandidatesOldColumns_ },
+  { name: 'candidatesHeader', plan: _planCandidatesHeader_, apply: _applyCandidatesHeader_ },
+  { name: 'headerOnMarkerRow', plan: _planHeaderOnMarkerRow_, apply: _applyHeaderOnMarkerRow_ },
+  { name: 'candidatesFromResponses', plan: _planCandidatesFromResponses_, apply: _applyCandidatesFromResponses_ },
+  { name: 'rankColumns', plan: _planRankColumns_, apply: _applyRankColumns_ }
 ];
 
 /**
  * The locked repair path: runs every repair step a ballot sheet needs. Healthy sheet: one
  * getDataRange read, no lock, no write. Otherwise, under the lock, each step re-plans
- * from a fresh read and applies; each write is logged as ballot.repair.<kind>.
+ * from a fresh read and applies; each write is logged as ballot.repair.<kind>. Called only
+ * from admin edit-page load (getAdminEditData) and the write paths.
  *
  * @param {Sheet} sheet
- * @return {{repaired:boolean, snap:Object}} snap reflects the sheet after any repair.
+ * @return {{repaired:boolean, snap:Object, grid:Array<Array<*>>}} reflecting the sheet after any repair.
  */
 function _repairBallotSheet_(sheet) {
   var first = _readBallotGridAndSnap_(sheet);
   var needed = _BALLOT_REPAIR_STEPS_.some(function (step) { return step.plan(first.grid, first.snap) !== null; });
-  if (!needed) return { repaired: false, snap: first.snap };
+  if (!needed) return { repaired: false, snap: first.snap, grid: first.grid };
   return _withBallotLock_(function () {
     var wrote = false;
     _BALLOT_REPAIR_STEPS_.forEach(function (step) {
@@ -1909,7 +2116,8 @@ function _repairBallotSheet_(sheet) {
       step.apply(sheet, plan);
       wrote = true;
     });
-    return { repaired: wrote, snap: _readBallot_(sheet) };
+    var after = _readBallotGridAndSnap_(sheet);
+    return { repaired: wrote, snap: after.snap, grid: after.grid };
   });
 }
 

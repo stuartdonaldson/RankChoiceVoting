@@ -17,7 +17,8 @@
  *      callers in BallotModel.js/webAdmin.js/webBallot.js.
  *   2. onEdit(e) (Triggers.js — a simple trigger, so no installable-trigger setup is
  *      needed) rebuilds the cache whenever someone hand-edits a Ballot-<id> sheet
- *      directly in Sheets, so a manual edit never leaves the cache stale.
+ *      directly in Sheets, so a manual edit never leaves the cache stale. It only reads:
+ *      a repair racing a hand edit could clobber it (rcballot-8i5.3).
  *   3. A cache miss (key never written, or Properties lost it) transparently falls
  *      back to reading the sheet and populating the cache — see getCachedBallotData_.
  *
@@ -54,29 +55,23 @@ function _readBallotCacheRaw_(id) {
 }
 
 /**
- * Reads config + candidates fresh from `sheet` and writes them into the cache,
- * overwriting whatever was there. Call this right after any write to a ballot's
- * config or Candidates table so the cache never lags behind what was just saved.
+ * Reads config + candidates fresh from `sheet` (one snapshot read — or the caller's view
+ * from one) and writes them into the cache, overwriting whatever was there. Read-only on
+ * the sheet (rcballot-8i5.3): it runs from onEdit and on cache misses, so it never repairs.
+ * Call this right after any write to a ballot's config or Candidates table so the cache
+ * never lags behind what was just saved.
  *
  * @param {string} id
  * @param {Sheet} sheet
+ * @param {Object=} view from _readBallotView_ / _ballotViewFromSnapshot_, when the caller has one.
  * @return {{config:Object, candidates:Array, updatedAt:string}}
  */
-function refreshBallotCache_(id, sheet) {
-  // readBallotCandidates_ runs the Candidates<->Responses-header reconciliation (appending
-  // any Responses column a Candidates-table entry is still missing) — read it first so the
-  // detail rows read right after reflect a fully reconciled sheet. Its return value (plain
-  // names, Responses-header order) also backfills any candidate that predates the
-  // Candidates table with a blank-detail entry, matching what getAdminEditData/
-  // getBallotForRespondent_ used to backfill inline before this cache existed.
-  var candidateNames = readBallotCandidates_(sheet);
-  var candidateRows = readBallotCandidateDetails_(sheet);
-  while (candidateRows.length < candidateNames.length) {
-    candidateRows.push({ name: candidateNames[candidateRows.length], details: '', linkText: '', linkUrl: '' });
-  }
+function refreshBallotCache_(id, sheet, view) {
+  view = view || _readBallotView_(sheet);
+  var candidateRows = view.candidates;
 
   var data = {
-    config: readBallotConfig_(sheet),
+    config: view.config,
     candidates: candidateRows,
     updatedAt: new Date().toISOString()
   };

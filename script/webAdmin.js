@@ -151,12 +151,13 @@ function _renderAdminList_(createError, prefillId) {
 
   html += '<div class="ballot-list">';
   ids.forEach(function (id) {
-    var sheet = findBallotSheet_(ss, id);
-    var config = readBallotConfig_(sheet);
-    var candidateCount = readBallotCandidates_(sheet).length;
-    var responseCount = readBallotResponseRows_(sheet).length;
-    var uniqueRespondentCount = countUniqueBallotRespondents_(sheet);
-    var staleRespondents = findRespondentsWithNewCandidates_(sheet);
+    var view = _readBallotView_(findBallotSheet_(ss, id)); // one read per ballot
+    var latest = _latestResponseByRespondent_(view.rows);
+    var config = view.config;
+    var candidateCount = view.names.length;
+    var responseCount = view.rows.length;
+    var uniqueRespondentCount = latest.length;
+    var staleRespondents = _staleRespondents_(latest);
     var ballotUrl = baseUrl + '?cmd=ballot&id=' + encodeURIComponent(id);
     var adminNotes = String(config['Admin-Only-Notes'] || '').trim();
 
@@ -235,20 +236,17 @@ function getAdminListData_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var ids = listBallotIds_(ss);
   return ids.map(function (id) {
-    var sheet = findBallotSheet_(ss, id);
-    // Response counts/staleness are inherently dynamic (change on every submission), so
-    // those still read the live sheet — but title/notes come from the cache (BallotCache.js)
-    // when warm, sparing a couple of sheet reads per ballot card on every list-page load.
-    var cached = getCachedBallotData_(id, sheet);
-    var config = cached.config;
+    // One snapshot read per ballot card serves every field (rcballot-8i5.3); no write.
+    var view = _readBallotView_(findBallotSheet_(ss, id));
+    var latest = _latestResponseByRespondent_(view.rows);
     return {
       id: id,
-      title: config.Title || id,
-      candidateCount: cached.candidates.length,
-      responseCount: readBallotResponseRows_(sheet).length,
-      uniqueRespondentCount: countUniqueBallotRespondents_(sheet),
-      adminNotes: String(config['Admin-Only-Notes'] || '').trim(),
-      staleRespondents: findRespondentsWithNewCandidates_(sheet)
+      title: view.config.Title || id,
+      candidateCount: view.names.length,
+      responseCount: view.rows.length,
+      uniqueRespondentCount: latest.length,
+      adminNotes: String(view.config['Admin-Only-Notes'] || '').trim(),
+      staleRespondents: _staleRespondents_(latest)
     };
   });
 }
@@ -304,16 +302,19 @@ function getAdminAnalysisData_(id) {
  */
 function getAdminEditData(id) {
   // Admin edit-page load is one of the two places sheet repairs run (the other is the
-  // locked write entries — rcballot-8i5.7): a healthy sheet costs one read and no lock. A
-  // repair rebuilds the cache; otherwise config/candidates are served from the cache when
-  // warm (see BallotCache.js), falling back to a sheet read on a miss.
+  // write paths — rcballot-8i5.7/.3): a healthy sheet costs one read and no lock, and that
+  // same snapshot serves the page (a repair also rebuilds the cache). Orphan rank columns
+  // — Responses columns matching no candidate, e.g. after a hand-deleted Candidates row —
+  // are returned for display; they are never counted by analysis.
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = findBallotSheet_(ss, id);
   if (!sheet) return { error: 'no_ballot' };
-  var cached = _repairBallotSheet_(sheet).repaired ? refreshBallotCache_(id, sheet) : getCachedBallotData_(id, sheet);
+  var rep = _repairBallotSheet_(sheet);
+  var view = _ballotViewFromSnapshot_(rep.snap);
+  if (rep.repaired) refreshBallotCache_(id, sheet, view);
 
-  var config = cached.config;
-  var candidateRows = cached.candidates;
+  var config = view.config;
+  var candidateRows = view.candidates;
 
   var baseUrl = _getWebAppUrl_();
   return {
@@ -327,6 +328,7 @@ function getAdminEditData(id) {
     addInstructions: config['Add-Instructions'] || '',
     adminOnlyNotes: config['Admin-Only-Notes'] || '',
     candidates: candidateRows,
+    orphanColumns: view.orphans.map(function (o) { return { label: o.label, col: o.col }; }),
     ballotUrl: baseUrl + '?cmd=ballot&id=' + encodeURIComponent(id),
     adminListUrl: baseUrl + '?cmd=admin',
     appVersion: (typeof APP_VERSION !== 'undefined' && APP_VERSION) || '',
@@ -407,13 +409,9 @@ function adminSaveCandidate(id, index, name, details, linkText, linkUrl) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
-    _repairBallotSheet_(sheet);
-
-    var candidates = readBallotCandidates_(sheet);
-    var rows = readBallotCandidateDetails_(sheet);
-    while (rows.length < candidates.length) {
-      rows.push({ name: candidates[rows.length], details: '', linkText: '', linkUrl: '' });
-    }
+    // Index is into the Candidates-table order getAdminEditData returned; read after the
+    // repair so a backfilled candidate is a real row, not padding.
+    var rows = _ballotViewFromSnapshot_(_repairBallotSheet_(sheet).snap).candidates;
     if (index < 0 || index >= rows.length) throw new Error('Invalid candidate index.');
 
     rows[index] = {
@@ -517,15 +515,18 @@ function _runBallotAnalysisLocked_(sheet) {
   // A Responses header with no 'Name' label keys no votes: refuse rather than report a
   // ballot with "no responses" (rcballot-8i5.7). The admin edit-page load repairs the known
   // legacy cause (labels on the [Responses] marker row).
-  if (_responsesMissingName_(_readBallot_(sheet))) {
+  var view = _readBallotView_(sheet);
+  if (_responsesMissingName_(view.snap)) {
     _logBallotEvent_('ballot.analysis.refused', { sheet: sheet.getName(), reason: 'responsesMissingName' });
     return { error: 'Ballot sheet layout is damaged: the Responses header has no "Name" column. ' +
       'Open this ballot\'s edit page (which repairs the known cause), then run the analysis again.' };
   }
-  var candidateNames = readBallotCandidates_(sheet);
+  // Candidates in Candidates-table order; each ballot's ranks are aligned to it BY NAME, and
+  // orphan rank columns (no matching candidate) are not part of any ballot (rcballot-8i5.3).
+  var candidateNames = view.names;
   // Deduped to one ballot per respondent (case-insensitive name, latest wins) — a
   // respondent who re-voted must only count once, using their most recent ranking.
-  var responseRows = _latestResponseByRespondent_(readBallotResponseRows_(sheet));
+  var responseRows = _latestResponseByRespondent_(view.rows);
 
   if (candidateNames.length < 2) {
     return { error: 'Ballot needs at least two candidates before it can be analyzed.' };

@@ -19,7 +19,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { createFakeSpreadsheet, createFakeGasGlobals } = require('./fakeGas');
-const { prodAbc2026_7Rows, writeGrid } = require('./ballotFixtures');
+const { prodAbc2026_7Rows, sitAbc2026_08Rows, writeGrid } = require('./ballotFixtures');
 
 /**
  * Loads BallotCache.js, BallotModel.js, onOpen.js (for _getWebAppUrl_), webAdmin.js,
@@ -163,17 +163,29 @@ function testOnEditIgnoresNonBallotSheetsAndMissingEvent() {
   assert.equal(app.PropertiesService.getScriptProperties().getProperty('ballotCache:NotABallot'), null);
 }
 
-function testGetAdminListDataUsesCacheForTitleAndCandidateCount() {
+/** 8i5.3 AC4: the admin list costs one getValues per ballot (one snapshot serves every field) and writes nothing. */
+function testGetAdminListDataIsOneReadPerBallot() {
   const { app, ss } = loadApp();
   const sheet = app.createNewBallot_(ss, 'ListCache');
   app.writeBallotConfig_(sheet, { Title: 'Listed Ballot' });
   app.addBallotCandidate_(sheet, 'Cand A');
-  app.refreshBallotCache_('ListCache', sheet);
+  app.addBallotCandidate_(sheet, 'Cand B');
+  app.submitBallotResponse_('ListCache', 'V1', ['Cand A'], '');
+  const legacy = writeGrid(ss.insertSheet('Ballot-ABC-2026-7'), prodAbc2026_7Rows());
+  const sheets = [sheet, legacy];
+  sheets.forEach(function (sh) { sh._getValuesCalls = 0; sh._writeCalls = 0; });
 
   const list = app.getAdminListData_();
+  sheets.forEach(function (sh) {
+    assert.equal(sh._getValuesCalls, 1, sh.getName() + ' getValues');
+    assert.equal(sh._writeCalls, 0, sh.getName() + ' writes');
+  });
   const entry = list.find(function (b) { return b.id === 'ListCache'; });
   assert.equal(entry.title, 'Listed Ballot');
-  assert.equal(entry.candidateCount, 1);
+  assert.equal(entry.candidateCount, 2);
+  assert.equal(entry.responseCount, 1);
+  assert.equal(entry.uniqueRespondentCount, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(entry.staleRespondents)), ['V1']); // left Cand B blank
 }
 
 /**
@@ -259,6 +271,79 @@ function testLegacyResponsesLayoutRefusedThenRepairedOnAdminLoad() {
   assert.equal(results.rcv.summary.reduce(function (n, r) { return n + (Number(r[2]) || 0); }, 0) >= 5, true);
 }
 
+/** 8i5.3 AC2: onEdit only reads — even on a damaged sheet a repair would change. */
+function testOnEditNeverWrites() {
+  [prodAbc2026_7Rows, sitAbc2026_08Rows].forEach(function (rows, i) {
+    const { app, ss } = loadApp();
+    const sheet = writeGrid(ss.insertSheet('Ballot-Edit' + i), rows());
+    sheet._writeCalls = 0;
+    app.onEdit({ range: sheet.getRange(1, 2) });
+    assert.equal(sheet._writeCalls, 0, 'onEdit wrote');
+    assert.equal(app.LockService._state.waitCount, 0);
+    assert.ok(app._readBallotCacheRaw_('Edit' + i)); // but did refresh the cache
+  });
+}
+
+/** 8i5.3 AC3: admin edit-page load repairs a damaged sheet (missing [Responses]) and logs it; the cache follows. */
+function testAdminEditLoadRepairsMissingResponses() {
+  const { app, ss } = loadApp();
+  const sheet = app.createNewBallot_(ss, 'NoResp');
+  sheet.deleteRows(13, 2); // [Responses] marker + header lost
+  sheet.getRange(13, 2, 2, 2).setValues([['Alice', 'a'], ['Bob', 'b']]); // hand-pasted candidates
+
+  assert.deepEqual(app.getCachedBallotData_('NoResp').candidates.length, 0); // reads: nothing, and no repair
+  assert.equal(app.findBallotSheet_(ss, 'NoResp').getRange(15, 1).getValue(), '');
+
+  const edit = app.getAdminEditData('NoResp');
+  assert.equal(sheet.getRange(15, 1).getValue(), '[Responses]');
+  assert.deepEqual(edit.candidates.map(function (c) { return c.name; }), ['Alice', 'Bob']);
+  assert.equal(logLines(app, 'ballot.repair.responsesSection').length, 1);
+  assert.equal(logLines(app, 'ballot.repair.rankColumns').length, 1);
+  assert.equal(app._readBallotCacheRaw_('NoResp').candidates.length, 2); // repair refreshed the cache
+}
+
+/** SIT Ballot-ABC-2026-08 through the real entry points: no candidates until the admin edit page loads, then all 8. */
+function testHeaderlessCandidatesShownAfterAdminLoad() {
+  const { app, ss } = loadApp();
+  writeGrid(ss.insertSheet('Ballot-ABC-2026-08'), sitAbc2026_08Rows());
+  assert.equal(app.getBallotForRespondent_('ABC-2026-08', '').candidates.length, 0);
+  const edit = app.getAdminEditData('ABC-2026-08');
+  assert.equal(edit.candidates.length, 8);
+  assert.deepEqual(JSON.parse(JSON.stringify(edit.orphanColumns)), []);
+  assert.equal(app.getBallotForRespondent_('ABC-2026-08', '').candidates.length, 8); // cache refreshed by the repair
+  const pogo = app.getBallotForRespondent_('ABC-2026-08', 'Pogo');
+  assert.equal(pogo.candidates[0], 'The Boys in the Boat'); // unranked ('' -> 0) sorts first, as before
+  assert.equal(pogo.candidates[1], 'The Good Life'); // Pogo's 1st choice
+  const results = app.getAdminAnalysisData_('ABC-2026-08');
+  assert.equal(results.error, undefined, results.error);
+  assert.equal(results.rcv.winner, 'The Good Life');
+}
+
+/** 8i5.3 AC5/AC6: a hand-deleted candidate's column is an orphan: shown on the edit page, excluded from analysis; ranks follow names. */
+function testOrphanColumnShownOnEditPageAndExcludedFromAnalysis() {
+  const { app, ss } = loadApp();
+  const sheet = app.createNewBallot_(ss, 'Orphan');
+  ['Alice', 'Bob', 'Carol'].forEach(function (n) { app.addBallotCandidateForAdmin_('Orphan', n, '', '', ''); });
+  app.submitBallotResponse_('Orphan', 'V1', ['Alice', 'Carol', 'Bob'], '');
+  app.submitBallotResponse_('Orphan', 'V2', ['Alice', 'Bob', 'Carol'], '');
+  app.submitBallotResponse_('Orphan', 'V3', ['Carol', 'Bob', 'Alice'], '');
+  // Hand-delete Alice's Candidates row (she would have won); her Responses column stays.
+  const layout = app._readBallotLayout_(sheet);
+  sheet.deleteRows(layout.sections.candidates.firstDataRow, 1);
+
+  const edit = app.getAdminEditData('Orphan');
+  assert.deepEqual(edit.candidates.map(function (c) { return c.name; }), ['Bob', 'Carol']);
+  assert.deepEqual(JSON.parse(JSON.stringify(edit.orphanColumns)), [{ label: 'Alice', col: 5 }]);
+
+  const results = app.getAdminAnalysisData_('Orphan');
+  assert.equal(results.error, undefined, results.error);
+  const counted = results.rcv.summary.slice(1).map(function (r) { return r[0]; });
+  assert.equal(counted.indexOf('Alice'), -1, 'orphan counted: ' + JSON.stringify(counted));
+  // Without Alice, by name: V1 Carol>Bob, V2 Bob>Carol, V3 Carol>Bob — Carol wins 2-1.
+  assert.equal(results.rcv.winner, 'Carol');
+  assert.equal(results.condorcet.condorcet.winner, 'Carol');
+}
+
 function run() {
   testCacheMissBuildsFromSheetAndPopulatesCache();
   testGetCachedBallotDataReturnsNullForUnknownBallot();
@@ -268,9 +353,13 @@ function run() {
   testAddBallotTopicRefreshesCache();
   testOnEditRefreshesCacheAfterManualSheetEdit();
   testOnEditIgnoresNonBallotSheetsAndMissingEvent();
-  testGetAdminListDataUsesCacheForTitleAndCandidateCount();
+  testGetAdminListDataIsOneReadPerBallot();
   testAdminMutatingEntryPointsRunUnderLock();
   testLegacyResponsesLayoutRefusedThenRepairedOnAdminLoad();
+  testOnEditNeverWrites();
+  testAdminEditLoadRepairsMissingResponses();
+  testHeaderlessCandidatesShownAfterAdminLoad();
+  testOrphanColumnShownOnEditPageAndExcludedFromAnalysis();
   console.log('test_ballot_cache: all tests passed');
 }
 

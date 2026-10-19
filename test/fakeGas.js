@@ -34,6 +34,7 @@ class FakeRange {
   }
 
   setValue(value) {
+    this.sheet._writeCalls += 1;
     this.sheet._setCell(this.row, this.col, value);
     return this;
   }
@@ -52,6 +53,7 @@ class FakeRange {
   }
 
   setValues(values) {
+    this.sheet._writeCalls += 1;
     values.forEach((rowValues, r) => {
       rowValues.forEach((value, c) => {
         this.sheet._setCell(this.row + r, this.col + c, value);
@@ -61,6 +63,7 @@ class FakeRange {
   }
 
   clearContent() {
+    this.sheet._writeCalls += 1;
     for (let r = 0; r < this.numRows; r++) {
       for (let c = 0; c < this.numCols; c++) {
         this.sheet._setCell(this.row + r, this.col + c, '');
@@ -71,8 +74,8 @@ class FakeRange {
 
   // Formatting is a no-op store (tests only need these to be chainable and not throw);
   // nothing in this project's logic branches on cell formatting.
-  setBackground(color) { this._background = color; return this; }
-  setFontWeight(weight) { this._fontWeight = weight; return this; }
+  setBackground(color) { this.sheet._writeCalls += 1; this._background = color; return this; }
+  setFontWeight(weight) { this.sheet._writeCalls += 1; this._fontWeight = weight; return this; }
 }
 
 class FakeSheet {
@@ -83,6 +86,9 @@ class FakeSheet {
     this._lastCol = 0;
     this._frozenRows = 0;
     this._getValuesCalls = 0; // every FakeRange.getValues() on this sheet, for read-count assertions
+    // every mutating call (setValue/setValues/clearContent/format/insert/delete rows/freeze),
+    // for "reads never write" assertions — reset it before the code under test runs.
+    this._writeCalls = 0;
   }
 
   _getCell(row, col) {
@@ -114,11 +120,12 @@ class FakeSheet {
     return this.getRange(1, 1, Math.max(this._lastRow, 1), Math.max(this._lastCol, 1));
   }
 
-  setFrozenRows(n) { this._frozenRows = n; return this; }
+  setFrozenRows(n) { this._writeCalls += 1; this._frozenRows = n; return this; }
   getFrozenRows() { return this._frozenRows; }
 
   /** Shifts every row after `afterRow` down by `howMany`, growing lastRow. */
   insertRowsAfter(afterRow, howMany) {
+    this._writeCalls += 1;
     const moved = new Map();
     for (const [key, value] of this._cells.entries()) {
       const [rowStr, colStr] = key.split('_');
@@ -134,11 +141,12 @@ class FakeSheet {
 
   /** Shifts row `beforeRow` and everything below it down by `howMany`. */
   insertRowsBefore(beforeRow, howMany) {
-    return this.insertRowsAfter(beforeRow - 1, howMany);
+    return this.insertRowsAfter(beforeRow - 1, howMany); // counted there
   }
 
   /** Removes rows [startRow, startRow+howMany-1] and shifts rows below up. */
   deleteRows(startRow, howMany) {
+    this._writeCalls += 1;
     const endRow = startRow + howMany - 1;
     const moved = new Map();
     for (const [key, value] of this._cells.entries()) {
