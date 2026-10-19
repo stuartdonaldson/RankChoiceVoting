@@ -61,6 +61,7 @@ function testCreateNewBallotCreatesSkeleton() {
   assert.deepEqual(sheet.getRange(12, 2, 1, 2).getValues()[0], ['Name', 'Details']);
   assert.equal(sheet.getRange(13, 1).getValue(), '[Responses]');
   assert.deepEqual(sheet.getRange(14, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testCreateNewBallotCreatesSkeleton');
 }
 
 function testListBallotIdsAndFindBallotSheet() {
@@ -91,6 +92,7 @@ function testWriteThenReadConfigRoundTrips() {
   assert.equal(config.Footer, 'Closes Friday');
   assert.equal(config.Contact, 'admin@example.com');
   assert.equal(config['Accept-New'], 'FALSE');
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testWriteThenReadConfigRoundTrips');
 }
 
 /**
@@ -133,6 +135,7 @@ function testWriteBallotConfigSelfHealsMissingAdminOnlyNotesRowOnOldSheet() {
   assert.equal(sheet.getRange(7, 1).getValue(), '[Results]');
   assert.equal(sheet.getRange(9, 1).getValue(), '[Responses]');
   assert.deepEqual(sheet.getRange(10, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testWriteBallotConfigSelfHealsMissingAdminOnlyNotesRowOnOldSheet');
 }
 
 /**
@@ -163,6 +166,7 @@ function testWriteBallotConfigInsertsRowWhenNoBlankSpacerExists() {
   assert.equal(sheet.getRange(6, 1).getValue(), '[Results]');
   assert.equal(sheet.getRange(8, 1).getValue(), '[Responses]');
   assert.deepEqual(sheet.getRange(9, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testWriteBallotConfigInsertsRowWhenNoBlankSpacerExists');
 }
 
 /**
@@ -184,6 +188,7 @@ function testLegacyInfoKeyMigratesToAdminOnlyNotes() {
   assert.equal(config['Admin-Only-Notes'], 'old notes');
   assert.equal(config.Info, undefined);
   assert.equal(sheet.getRange(6, 1).getValue(), 'Admin-Only-Notes'); // migrated in place
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testLegacyInfoKeyMigratesToAdminOnlyNotes');
 }
 
 function testCandidatesAndSubmitResponseRoundTrip() {
@@ -216,6 +221,7 @@ function testCandidatesAndSubmitResponseRoundTrip() {
   assert.equal(rows2.length, 1);
   assert.equal(rows2[0].comment, 'updated');
   assert.deepEqual(rows2[0].ranks, [1, 2, 3]);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testCandidatesAndSubmitResponseRoundTrip');
 }
 
 /**
@@ -244,6 +250,7 @@ function testCountUniqueBallotRespondents() {
 
   assert.equal(SM.readBallotResponseRows_(sheet).length, 3);
   assert.equal(SM.countUniqueBallotRespondents_(sheet), 2);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testCountUniqueBallotRespondents');
 }
 
 /**
@@ -270,6 +277,7 @@ function testFindRespondentsWithNewCandidates() {
   // Voter One re-ranks including Carol — no longer stale. Voter Two still is.
   SM.submitBallotResponse_('StaleCheck', 'Voter One', ['Carol', 'Alice', 'Bob'], '');
   assert.deepEqual(SM.findRespondentsWithNewCandidates_(sheet), ['Voter Two']);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testFindRespondentsWithNewCandidates');
 }
 
 /**
@@ -287,6 +295,7 @@ function testGetBallotForRespondentIncludesItemDetails() {
   const result = SM.getBallotForRespondent_('RespondentDetails', '');
   assert.deepEqual(result.itemDetails, { Alice: { details: 'Loves cats', linkText: '', linkUrl: '' } }); // Bob has no entry (empty details)
   assert.deepEqual(result.candidates, ['Alice', 'Bob']);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testGetBallotForRespondentIncludesItemDetails');
 }
 
 function testAddBallotCandidateTracksDetailsPositionAligned() {
@@ -303,6 +312,7 @@ function testAddBallotCandidateTracksDetailsPositionAligned() {
     { name: 'Bob', details: '', linkText: '', linkUrl: '' },
     { name: 'Carol', details: 'Prefers mornings', linkText: '', linkUrl: '' },
   ]);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testAddBallotCandidateTracksDetailsPositionAligned');
 }
 
 function testSaveBallotCandidatesRenamesAndUpdatesDetailsWithoutDisturbingResponses() {
@@ -329,6 +339,7 @@ function testSaveBallotCandidatesRenamesAndUpdatesDetailsWithoutDisturbingRespon
   const rows = SM.readBallotResponseRows_(sheet);
   assert.equal(rows.length, 1);
   assert.deepEqual(rows[0].ranks, [2, 1]); // Alice(now Alicia)=2, Bob(now Robert)=1
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testSaveBallotCandidatesRenamesAndUpdatesDetailsWithoutDisturbingResponses');
 }
 
 function testSaveBallotCandidatesRejectsCountMismatch() {
@@ -361,6 +372,7 @@ function testAddBallotCandidateForAdminAndSaveBallotCandidatesForId() {
 
   const sheet = SM.findBallotSheet_(ss, 'IdWrappers');
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet), [{ name: 'Dana Renamed', details: 'updated', linkText: '', linkUrl: '' }]);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testAddBallotCandidateForAdminAndSaveBallotCandidatesForId');
 }
 
 /**
@@ -414,6 +426,7 @@ function testEnsureCandidatesSectionSelfHealsOldSheetAndBackfillsOnAdd() {
     { name: 'Bob', details: '', linkText: '', linkUrl: '' },
     { name: 'Carol', details: 'newest candidate', linkText: '', linkUrl: '' },
   ]);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testEnsureCandidatesSectionSelfHealsOldSheetAndBackfillsOnAdd');
 }
 
 /**
@@ -459,6 +472,7 @@ function testMigratesExistingOldColumnCandidatesSectionOnRead() {
 
   // Candidates/Responses section untouched by the migration.
   assert.deepEqual(SM.readBallotCandidates_(sheet), ['book 1', 'book 2', 'book 3']);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testMigratesExistingOldColumnCandidatesSectionOnRead');
 }
 
 /**
@@ -594,6 +608,7 @@ function testPrePopulatedCandidateNotInResponsesIsReconciledIn() {
   // sees the reconciled, complete candidate list.
   const result = SM.getBallotForRespondent_('PrePopulated', '');
   assert.deepEqual(result.candidates, ['Alice', 'Bob']);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testPrePopulatedCandidateNotInResponsesIsReconciledIn');
 }
 
 /**
@@ -616,6 +631,7 @@ function testReadBallotCandidateDetailsIgnoresBlankRow() {
     { name: 'Alice', details: '', linkText: '', linkUrl: '' },
     { name: 'Bob', details: '', linkText: '', linkUrl: '' },
   ]);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testReadBallotCandidateDetailsIgnoresBlankRow');
 }
 
 /**
@@ -644,6 +660,7 @@ function testReconcileCompactsGapCausedByWiderCandidatesTable() {
   // Alice=2, Bob=1 — proves the header lines up with the vote columns rather than
   // being shifted right by a gap column.
   assert.deepEqual(rows[0].ranks, [2, 1]);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testReconcileCompactsGapCausedByWiderCandidatesTable');
 }
 
 function testDuplicateIdThrows() {
@@ -690,6 +707,7 @@ function testMissingResponsesSectionSelfHealsAndReturnsCandidates() {
   assert.deepEqual(sheet.getRange(16, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
   assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice', 'Bob']);
   assert.equal(logLinesWith(sandbox, 'ballot.repair.responsesSection').length, 1);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testMissingResponsesSectionSelfHealsAndReturnsCandidates');
 }
 
 /**
@@ -704,6 +722,7 @@ function testMissingResponsesSectionWithColumnAContentIsNotRepaired() {
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet), []);
   assert.equal(sheet.getLastRow(), 13);
   assert.equal(logLinesWith(sandbox, 'ballot.parse.responsesMarkerMissing').length > 0, true);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testMissingResponsesSectionWithColumnAContentIsNotRepaired');
 }
 
 /** A candidate typed into column A is ignored (col A is marker-only) but logged. */
@@ -717,6 +736,7 @@ function testCandidateInColumnAIsLoggedAndIgnored() {
   const lines = logLinesWith(sandbox, 'ballot.parse.candidateInColumnA');
   assert.equal(lines.length > 0, true);
   assert.equal(lines[0].indexOf('14') !== -1, true);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testCandidateInColumnAIsLoggedAndIgnored');
 }
 
 /** Every cache rebuild logs what discovery found. */
@@ -965,13 +985,19 @@ function sectionRows(key, blankRows) {
  */
 function buildOrderedBallot(ss, id, order, opts) {
   const sheet = ss.insertSheet('Ballot-' + id);
+  const rows = orderedBallotRows(id, order, opts);
+  rows.forEach((r, i) => r.forEach((v, c) => { if (v !== '' && v != null) sheet.getRange(i + 1, c + 1).setValue(v); }));
+  return sheet;
+}
+
+/** The plain 2D grid buildOrderedBallot writes (rows may be ragged/empty). */
+function orderedBallotRows(id, order, opts) {
   const rows = [
     ['Title', 'T-' + id], ['Description', 'D'], ['Instructions', 'I'], ['Footer', 'F'],
     ['Contact', 'C'], ['Accept-New', 'TRUE'], ['Add-Instructions', 'AI'], ['Admin-Only-Notes', 'N'], [],
   ];
   order.forEach((key) => { sectionRows(key, opts && opts.blankRows).forEach((r) => rows.push(r)); });
-  rows.forEach((r, i) => r.forEach((v, c) => { if (v !== '' && v != null) sheet.getRange(i + 1, c + 1).setValue(v); }));
-  return sheet;
+  return rows;
 }
 
 /** Every row whose column A is exactly one of the three markers, as {key: [rows]}. */
@@ -1410,6 +1436,242 @@ function testWriteBallotConfigInsertsAboveFirstMarkerInAnyOrder() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Snapshot reader (rcballot-8i5.1): _parseBallot_ / _readBallot_ and derivations.
+// ---------------------------------------------------------------------------
+
+/** The old readers' output, ranks re-keyed by Responses-header name (old ranks are positional over it). */
+function oldReadersView(SM, sheet) {
+  const names = SM.readBallotCandidates_(sheet);
+  return {
+    config: SM.readBallotConfig_(sheet),
+    details: SM.readBallotCandidateDetails_(sheet),
+    candidates: names,
+    responses: SM.readBallotResponseRows_(sheet).map((r) => {
+      const ranks = {};
+      names.forEach((n, i) => { ranks[n] = r.ranks[i]; });
+      return { row: r.row, date: r.date, name: r.name, weight: r.weight, comment: r.comment, ranks: ranks };
+    }),
+  };
+}
+
+/** The same view derived from a snapshot. */
+function snapshotView(SM, snap) {
+  const config = {};
+  Object.keys(snap.config.byKey).forEach((k) => { config[k] = snap.config.byKey[k].value; });
+  const cands = SM._snapCandidates_(snap);
+  return {
+    config: config,
+    details: cands.map((c) => ({ name: c.name, details: c.details, linkText: c.linkText, linkUrl: c.linkUrl })),
+    candidates: cands.map((c) => c.name),
+    responses: SM._snapResponses_(snap).map((r) => ({ row: r.row, date: r.date, name: r.name, weight: r.weight, comment: r.comment, ranks: r.ranks })),
+  };
+}
+
+/**
+ * 8i5.1 AC2: snapshot-derived config/candidates/details/ranks-by-name equal the old readers'.
+ * The old readers run first (they may self-repair an old-format sheet); the snapshot then
+ * reads the sheet they leave behind.
+ */
+function assertSnapshotMatchesOldReaders(SM, sheet, label) {
+  const old = oldReadersView(SM, sheet);
+  const snap = SM._readBallot_(sheet);
+  const view = snapshotView(SM, snap);
+  assert.deepEqual(view, old, label);
+  // Strict too (types matter: 1 vs '1'); JSON drops the vm-realm prototypes strict mode would trip on.
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(view)), JSON.parse(JSON.stringify(old)), label + ' (strict)');
+  assert.deepEqual(SM._snapOrphanColumns_(snap), [], label + ': orphans');
+  return snap;
+}
+
+/** Pads a ragged grid to a rectangle, as getDataRange().getValues() would return it. */
+function rectGrid(rows) {
+  const width = Math.max.apply(null, rows.map((r) => r.length).concat([1]));
+  return rows.map((r) => { const out = r.slice(); while (out.length < width) out.push(''); return out; });
+}
+
+function rowIndexOf(rows, col, text) {
+  const i = rows.findIndex((r) => r[col] === text);
+  assert.ok(i !== -1, text + ' not found');
+  return i;
+}
+
+/** Loads only BallotModel.js into a context with NO GAS globals. */
+function loadBallotModelWithoutGas() {
+  const sandbox = { module: { exports: {} } };
+  vm.createContext(sandbox);
+  const src = fs.readFileSync(path.join(__dirname, '..', 'script', 'BallotModel.js'), 'utf8');
+  vm.runInContext(src, sandbox, { filename: 'BallotModel.js' });
+  ['SpreadsheetApp', 'Logger', 'LockService', 'PropertiesService', 'Utilities', 'CacheService'].forEach((g) => {
+    assert.equal(g in sandbox, false, g + ' leaked into the sandbox');
+  });
+  return sandbox.module.exports;
+}
+
+/** AC1: parse + every derivation runs on a plain array with no GAS globals at all. */
+function testParseBallotNeedsNoGasGlobals() {
+  const SM = loadBallotModelWithoutGas();
+  const snap = SM._parseBallot_(orderedBallotRows('Pure', ['results', 'candidates', 'responses']));
+  assert.deepEqual(snap.problems, []);
+  assert.equal(snap.config.byKey.Title.value, 'T-Pure');
+  assert.equal(snap.config.byKey.Title.row, 1);
+  assert.equal(snap.config.rowsUsed, 8);
+  assert.deepEqual(snap.resultsRows, [{ row: 11, values: ['Analysis run: earlier'] }, { row: 12, values: ['Winner: Alice', 3] }]);
+  const c = snap.tables.candidates;
+  assert.equal(c.headerRow, 14);
+  assert.deepEqual(c.labels, ['Name', 'Details', 'Link Text', 'Link URL']);
+  assert.deepEqual(c.col, { Name: 2, Details: 3, 'Link Text': 4, 'Link URL': 5 });
+  assert.deepEqual(c.rows.map((r) => [r.row, r.key]), [[15, 'Alice'], [16, 'Bob']]);
+  assert.equal(c.rowsUsed, 16);
+  const r = snap.tables.responses;
+  assert.deepEqual(r.col, { Date: 1, Name: 2, Weight: 3, Comment: 4, Alice: 5, Bob: 6 });
+  assert.deepEqual(r.rows[1].cells, { Date: '2026-10-02', Name: 'V2', Weight: 2, Comment: 'c2', Alice: 2, Bob: 1 });
+  assert.deepEqual(SM._snapCandidates_(snap).map((x) => [x.name, x.rankCol]), [['Alice', 5], ['Bob', 6]]);
+  assert.deepEqual(SM._snapResponses_(snap).map((x) => [x.name, x.weight, x.ranks]), [['V1', 1, { Alice: 1, Bob: 2 }], ['V2', 2, { Alice: 2, Bob: 1 }]]);
+  assert.deepEqual(SM._snapMissingLabels_(snap), { candidates: [], responses: [] });
+  // Degenerate input: empty sheet / nothing at all.
+  const empty = SM._parseBallot_([['']]);
+  assert.equal(empty.layout.lastRow, 0);
+  assert.equal(empty.tables.candidates, null);
+  assert.equal(empty.resultsRows, null);
+  assert.deepEqual(SM._snapResponses_(empty), []);
+  assert.deepEqual(empty.problems.map((p) => p.section), ['results', 'candidates', 'responses']);
+}
+
+/** AC2: all 6 marker orders, with and without blank rows: snapshot == old readers, layout == _readBallotLayout_. */
+function testSnapshotMatchesOldReadersInAllMarkerOrders() {
+  SECTION_ORDERS.forEach((order) => {
+    [false, true].forEach((blankRows) => {
+      const { SM, ss } = loadBallotModel();
+      const sheet = buildOrderedBallot(ss, 'Snap', order, { blankRows: blankRows });
+      const label = order.join('/') + (blankRows ? ' +blank rows' : '');
+      const snap = assertSnapshotMatchesOldReaders(SM, sheet, label);
+      assert.deepEqual(snap.layout, SM._readBallotLayout_(sheet), label + ': layout');
+      assert.deepEqual(snap.problems, [], label + ': problems');
+      assert.deepEqual(SM._parseBallot_(rectGrid(orderedBallotRows('Snap', order, { blankRows: blankRows }))), snap, label + ': grid vs sheet');
+    });
+  });
+}
+
+/** AC3: a hand-sorted Candidates table; labels matched trim/case-insensitively. Ranks follow names. */
+function testSnapshotHandSortedCandidatesKeepRanksByName() {
+  const { SM } = loadBallotModel();
+  const rows = orderedBallotRows('Sorted', ['results', 'candidates', 'responses']);
+  const a = rowIndexOf(rows, 1, 'Alice');
+  const b = rowIndexOf(rows, 1, 'Bob');
+  const tmp = rows[a]; rows[a] = rows[b]; rows[b] = tmp;
+  rows[rowIndexOf(rows, 1, 'Name')][2] = 'details'; // Candidates header, lower-case
+  const respHeader = rows[rowIndexOf(rows, 0, 'Date')];
+  respHeader[4] = ' alice '; // Responses header, spacing + case
+
+  const snap = SM._parseBallot_(rows);
+  assert.deepEqual(snap.problems, []);
+  assert.deepEqual(SM._snapCandidates_(snap).map((c) => [c.name, c.details, c.rankCol]), [['Bob', 'b note', 6], ['Alice', 'a note', 5]]);
+  assert.deepEqual(SM._snapResponses_(snap).map((r) => r.ranks), [{ Bob: 2, Alice: 1 }, { Bob: 1, Alice: 2 }]);
+  assert.deepEqual(SM._snapOrphanColumns_(snap), []);
+}
+
+/** AC3: a hand-deleted Candidates row: remaining ranks still follow names; the deleted one's column is an orphan. */
+function testSnapshotHandDeletedCandidateLeavesOrphanColumn() {
+  const { SM } = loadBallotModel();
+  const rows = orderedBallotRows('Deleted', ['results', 'candidates', 'responses']);
+  rows.splice(rowIndexOf(rows, 1, 'Alice'), 1);
+
+  const snap = SM._parseBallot_(rows);
+  assert.deepEqual(SM._snapCandidates_(snap).map((c) => [c.name, c.rankCol]), [['Bob', 6]]);
+  assert.deepEqual(SM._snapOrphanColumns_(snap), [{ label: 'Alice', col: 5 }]);
+  const responses = SM._snapResponses_(snap);
+  assert.deepEqual(responses.map((r) => r.ranks), [{ Bob: 2 }, { Bob: 1 }]);
+  assert.deepEqual(responses.map((r) => r.orphanRanks), [{ Alice: 1 }, { Alice: 2 }]);
+}
+
+/** AC3: an extra Responses column matching no candidate is listed as an orphan; a candidate with no column ranks ''. */
+function testSnapshotOrphanRankColumnAndCandidateWithoutColumn() {
+  const { SM } = loadBallotModel();
+  const rows = orderedBallotRows('Orphan', ['candidates', 'responses', 'results']);
+  const h = rowIndexOf(rows, 0, 'Date');
+  rows[h][6] = 'Zed';
+  rows[h + 1][6] = 3;
+  rows.splice(rowIndexOf(rows, 1, 'Bob') + 1, 0, ['', 'Carol']); // in Candidates only
+
+  const snap = SM._parseBallot_(rows);
+  assert.deepEqual(SM._snapOrphanColumns_(snap), [{ label: 'Zed', col: 7 }]);
+  assert.deepEqual(SM._snapCandidates_(snap).map((c) => [c.name, c.rankCol]), [['Alice', 5], ['Bob', 6], ['Carol', null]]);
+  const responses = SM._snapResponses_(snap);
+  assert.deepEqual(responses[0].ranks, { Alice: 1, Bob: 2, Carol: '' });
+  assert.deepEqual(responses.map((r) => r.orphanRanks), [{ Zed: 3 }, { Zed: '' }]);
+}
+
+/** AC3: a missing fixed header label is reported (table.missing, _snapMissingLabels_, problems); reads default. */
+function testSnapshotReportsMissingFixedLabels() {
+  const { SM } = loadBallotModel();
+  const rows = orderedBallotRows('Missing', ['results', 'candidates', 'responses']);
+  rows[rowIndexOf(rows, 1, 'Name')][4] = ''; // Candidates 'Link URL'
+  rows[rowIndexOf(rows, 0, 'Date')][2] = ''; // Responses 'Weight'
+
+  const snap = SM._parseBallot_(rows);
+  assert.deepEqual(SM._snapMissingLabels_(snap), { candidates: ['Link URL'], responses: ['Weight'] });
+  assert.deepEqual(snap.problems, [
+    { code: 'missingLabel', section: 'candidates', labels: ['Link URL'] },
+    { code: 'headerGap', section: 'responses', cols: [3] },
+    { code: 'missingLabel', section: 'responses', labels: ['Weight'] },
+  ]);
+  const bob = SM._snapCandidates_(snap).find((c) => c.name === 'Bob');
+  assert.equal(bob.linkText, 'site');
+  assert.equal(bob.linkUrl, ''); // unlabelled column is not read
+  assert.deepEqual(SM._snapResponses_(snap).map((r) => [r.name, r.weight, r.ranks]), [['V1', 1, { Alice: 1, Bob: 2 }], ['V2', 1, { Alice: 2, Bob: 1 }]]);
+
+  // Missing key column: no rows can be keyed.
+  rows[rowIndexOf(rows, 0, 'Date')][1] = '';
+  const noName = SM._parseBallot_(rows);
+  assert.deepEqual(noName.tables.responses.rows, []);
+  assert.deepEqual(SM._snapMissingLabels_(noName).responses, ['Name', 'Weight']);
+}
+
+/** AC3: blank-key rows mid-section are skipped, the scan continues, and rowsUsed still counts unnamed content. */
+function testSnapshotSkipsBlankKeyRowsMidSection() {
+  const { SM } = loadBallotModel();
+  const rows = orderedBallotRows('Blank', ['candidates', 'responses', 'results'], { blankRows: true });
+  rows.splice(rowIndexOf(rows, 1, 'Bob'), 0, ['', '', 'details with no name']);
+  const v2 = rowIndexOf(rows, 1, 'V2');
+  rows.splice(v2, 0, ['2026-10-05', '', 1, '', 2, 1]); // unnamed Responses row with content
+  rows.push(['', '', 'dangling candidate-less row']); // trailing content in Results, ignored by tables
+
+  const snap = SM._parseBallot_(rows);
+  const c = snap.tables.candidates;
+  assert.deepEqual(c.rows.map((r) => r.key), ['Alice', 'Bob']);
+  assert.equal(c.rowsUsed, c.rows[1].row);
+  const r = snap.tables.responses;
+  assert.deepEqual(r.rows.map((x) => x.key), ['V1', 'V2']);
+  assert.equal(r.rows[1].row, v2 + 2); // 1-based, below the inserted unnamed row
+  assert.equal(r.rowsUsed, r.rows[1].row);
+  // An unnamed row with content as the LAST row of the section still counts toward rowsUsed.
+  rows.splice(v2 + 2, 0, ['', '', '', 'note only']);
+  assert.equal(SM._parseBallot_(rows).tables.responses.rowsUsed, v2 + 3);
+}
+
+/** Legacy config key 'Info' maps to 'Admin-Only-Notes' without writing anything. */
+function testSnapshotMapsLegacyConfigKey() {
+  const { SM } = loadBallotModel();
+  const snap = SM._parseBallot_([['Title', 'T'], ['Info', 'old notes'], [], ['[Results]']]);
+  assert.deepEqual(snap.config.byKey['Admin-Only-Notes'], { row: 2, value: 'old notes', legacyKey: 'Info' });
+  assert.equal(snap.config.byKey.Info, undefined);
+  assert.equal(snap.config.rowsUsed, 2);
+}
+
+/** AC4: _readBallot_ is exactly one getValues call, no writes, no lock. */
+function testReadBallotIsOneGetValuesAndWritesNothing() {
+  const { SM, ss, sandbox } = loadBallotModel();
+  const sheet = buildOrderedBallot(ss, 'OneRead', ['responses', 'results', 'candidates'], { blankRows: true });
+  const before = JSON.stringify(Array.from(sheet._cells.entries()));
+  sheet._getValuesCalls = 0;
+  const snap = SM._readBallot_(sheet);
+  assert.equal(sheet._getValuesCalls, 1);
+  assert.equal(JSON.stringify(Array.from(sheet._cells.entries())), before);
+  assert.equal(sandbox.LockService._state.waitCount, 0);
+  assert.deepEqual(SM._snapCandidates_(snap).map((c) => c.name), ['Alice', 'Bob']);
+}
+
 function run() {
   testCreateNewBallotCreatesSkeleton();
   testListBallotIdsAndFindBallotSheet();
@@ -1461,6 +1723,15 @@ function run() {
   testWriteBallotResultsRefusesOnDamagedLayout();
   testWriteBallotConfigInsertsAboveFirstMarkerInAnyOrder();
   testSectionWritesLeaveOtherSectionsUnchangedInAllOrders();
+  testParseBallotNeedsNoGasGlobals();
+  testSnapshotMatchesOldReadersInAllMarkerOrders();
+  testSnapshotHandSortedCandidatesKeepRanksByName();
+  testSnapshotHandDeletedCandidateLeavesOrphanColumn();
+  testSnapshotOrphanRankColumnAndCandidateWithoutColumn();
+  testSnapshotReportsMissingFixedLabels();
+  testSnapshotSkipsBlankKeyRowsMidSection();
+  testSnapshotMapsLegacyConfigKey();
+  testReadBallotIsOneGetValuesAndWritesNothing();
   console.log('test_ballot_model: all tests passed');
 }
 

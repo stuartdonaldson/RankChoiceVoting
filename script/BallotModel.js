@@ -620,13 +620,32 @@ var _ballotLoggedDuplicates_ = {};
 function _readBallotLayout_(sheet) {
   var lastRow = sheet.getLastRow();
   var colA = lastRow > 0 ? sheet.getRange(1, 1, lastRow, 1).getValues() : [];
+  var layout = _scanBallotLayout_(colA.map(function (r) { return r[0]; }), lastRow);
+  layout.duplicates.forEach(function (d) {
+    var logKey = sheet.getName() + '|' + d.marker + '|' + d.rows.join(',');
+    if (_ballotLoggedDuplicates_[logKey]) return;
+    _ballotLoggedDuplicates_[logKey] = true;
+    _logBallotEvent_('ballot.parse.duplicateMarker', { sheet: sheet.getName(), marker: d.marker, rows: d.rows });
+  });
+  return layout;
+}
+
+/**
+ * Pure half of _readBallotLayout_ (and of _parseBallot_): the section rules applied to
+ * column-A values already in hand. No sheet access, no logging.
+ *
+ * @param {Array<*>} colA column-A cell values, index 0 = row 1.
+ * @param {number} lastRow last row with content anywhere on the sheet.
+ * @return {Object} the layout shape documented on _readBallotLayout_.
+ */
+function _scanBallotLayout_(colA, lastRow) {
   var keyByText = {};
   _BALLOT_SECTION_KEYS_.forEach(function (k) { keyByText[_BALLOT_SECTION_MARKER_TEXT_[k]] = k; });
 
   var occurrences = { results: [], candidates: [], responses: [] };
   var allMarkerRows = []; // ascending
   for (var i = 0; i < colA.length; i++) {
-    var key = keyByText[String(colA[i][0] || '').trim()];
+    var key = keyByText[String(colA[i] || '').trim()];
     if (!key) continue;
     occurrences[key].push(i + 1);
     allMarkerRows.push(i + 1);
@@ -655,13 +674,6 @@ function _readBallotLayout_(sheet) {
       endRow: nextMarkerRow !== -1 ? nextMarkerRow - 1 : Math.max(lastRow, headerRow || markerRow),
       nextMarkerRow: nextMarkerRow
     };
-  });
-
-  duplicates.forEach(function (d) {
-    var logKey = sheet.getName() + '|' + d.marker + '|' + d.rows.join(',');
-    if (_ballotLoggedDuplicates_[logKey]) return;
-    _ballotLoggedDuplicates_[logKey] = true;
-    _logBallotEvent_('ballot.parse.duplicateMarker', { sheet: sheet.getName(), marker: d.marker, rows: d.rows });
   });
 
   var firstMarkerRow = allMarkerRows.length ? allMarkerRows[0] : -1;
@@ -1473,6 +1485,331 @@ function addBallotCandidateForAdmin_(id, name, details, linkText, linkUrl) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Snapshot reader (rcballot-8i5.1). One getDataRange read parsed into a plain Snapshot;
+// columns resolved by header label, ranks keyed by candidate name. Lives alongside the old
+// per-section readers until rcballot-8i5.3 switches callers over. Never writes.
+// ---------------------------------------------------------------------------
+
+/**
+ * Section registry. config is the key/value block above the first marker; results is
+ * free-form output from col B; candidates/responses are header-labelled tables keyed by
+ * their 'Name' column. responses' extra (non-fixed) columns are candidate rank columns.
+ */
+var _BALLOT_SECTIONS_ = {
+  config: { marker: null, kind: 'kv' },
+  results: { marker: _BALLOT_RESULTS_MARKER, kind: 'output', firstCol: 2 },
+  candidates: { marker: _BALLOT_CANDIDATES_MARKER, kind: 'table', firstCol: _BALLOT_CANDIDATES_FIRST_COL, key: 'Name', columns: _BALLOT_CANDIDATES_HEADER },
+  responses: { marker: _BALLOT_RESPONSES_MARKER, kind: 'table', firstCol: 1, key: 'Name', columns: _BALLOT_RESPONSE_FIXED_COLS, extraColumns: 'candidates' }
+};
+
+/** @return {*} grid cell at 1-based (row, col), '' when absent. */
+function _gridCell_(grid, row, col) {
+  var r = grid[row - 1];
+  if (!r) return '';
+  var v = r[col - 1];
+  return v === undefined || v === null ? '' : v;
+}
+
+/** @return {boolean} true when v is a non-blank cell value (0 and false count as content). */
+function _cellHasContent_(v) {
+  return v !== '' && v !== null && v !== undefined && String(v).trim() !== '';
+}
+
+/** @return {boolean} true when any cell in grid row `row` within [fromCol, toCol] has content. */
+function _gridRowHasContent_(grid, row, fromCol, toCol) {
+  for (var c = fromCol; c <= toCol; c++) {
+    if (_cellHasContent_(_gridCell_(grid, row, c))) return true;
+  }
+  return false;
+}
+
+/** Normalised form used for every label/name comparison: trimmed, lower-case. */
+function _labelKey_(v) {
+  return String(v === null || v === undefined ? '' : v).trim().toLowerCase();
+}
+
+/**
+ * Parses a whole ballot sheet's values into a Snapshot. Pure: plain 2D array in, plain
+ * object out; touches no GAS global and logs nothing — findings are returned in `problems`.
+ *
+ * @param {Array<Array<*>>} grid sheet values, grid[0] = row 1 (ragged rows allowed).
+ * @return {{
+ *   layout: Object,   // _scanBallotLayout_ shape; lastRow = last row with content
+ *   config: {byKey: Object<string, {row:number, value:*, legacyKey:(string|undefined)}>, rowsUsed:number},
+ *   tables: {candidates: ?Table, responses: ?Table},
+ *   resultsRows: ?Array<{row:number, values:Array<*>}>,
+ *   problems: Array<{code:string}>
+ * }}
+ *   Table = {headerRow:?number, col:Object<string,number>, labels:Array<string>,
+ *            missing:Array<string>, rows:Array<{row:number, key:string, cells:Object<string,*>}>,
+ *            rowsUsed:number}
+ *   Fixed labels are matched trim/case-insensitively and keyed by their canonical spelling
+ *   (e.g. 'Link URL'); other labels keep their trimmed header spelling. A table or
+ *   resultsRows is null when its marker is missing. Problem codes: duplicateMarker
+ *   {marker, rows}, missingMarker {section}, missingLabel {section, labels},
+ *   duplicateLabel {section, label, col}, headerGap {section, cols}, candidateInColumnA {rows}.
+ */
+function _parseBallot_(grid) {
+  grid = grid || [];
+  var lastCol = 0;
+  var lastRow = 0;
+  for (var r = 0; r < grid.length; r++) {
+    var cells = grid[r] || [];
+    for (var c = cells.length - 1; c >= 0; c--) {
+      if (_cellHasContent_(cells[c])) {
+        lastRow = r + 1;
+        if (c + 1 > lastCol) lastCol = c + 1;
+        break;
+      }
+    }
+  }
+  var colA = [];
+  for (var i = 1; i <= lastRow; i++) colA.push(_gridCell_(grid, i, 1));
+  var layout = _scanBallotLayout_(colA, lastRow);
+
+  var problems = [];
+  layout.duplicates.forEach(function (d) { problems.push({ code: 'duplicateMarker', marker: d.marker, rows: d.rows }); });
+  _BALLOT_SECTION_KEYS_.forEach(function (k) {
+    if (!layout.sections[k]) problems.push({ code: 'missingMarker', section: k });
+  });
+
+  var tables = {};
+  ['candidates', 'responses'].forEach(function (k) {
+    var section = layout.sections[k];
+    tables[k] = section ? _parseBallotTable_(grid, section, k, lastCol, problems) : null;
+  });
+  var candidatesSection = layout.sections.candidates;
+  if (candidatesSection) {
+    var colARows = [];
+    for (var cr = candidatesSection.firstDataRow; cr <= candidatesSection.endRow; cr++) {
+      if (String(_gridCell_(grid, cr, 1) || '').trim()) colARows.push(cr);
+    }
+    if (colARows.length) problems.push({ code: 'candidateInColumnA', rows: colARows });
+  }
+
+  return {
+    layout: layout,
+    config: _parseBallotConfig_(grid, layout),
+    tables: tables,
+    resultsRows: _parseBallotResults_(grid, layout.sections.results, lastCol),
+    problems: problems
+  };
+}
+
+/**
+ * Config rows 1..layout.configEndRow: key col A (trimmed; legacy names mapped to their
+ * current key, recorded as legacyKey), value col B. Blank keys skipped; a repeated key's
+ * last row wins (as readBallotConfig_). rowsUsed = last row with content in cols A-B, or 0.
+ */
+function _parseBallotConfig_(grid, layout) {
+  var legacyToCurrent = {};
+  Object.keys(_BALLOT_LEGACY_CONFIG_KEYS_).forEach(function (current) {
+    _BALLOT_LEGACY_CONFIG_KEYS_[current].forEach(function (legacy) { legacyToCurrent[legacy] = current; });
+  });
+  var config = { byKey: {}, rowsUsed: 0 };
+  for (var row = 1; row <= layout.configEndRow; row++) {
+    if (_gridRowHasContent_(grid, row, 1, 2)) config.rowsUsed = row;
+    var key = String(_gridCell_(grid, row, 1) || '').trim();
+    if (!key) continue;
+    var entry = { row: row, value: _gridCell_(grid, row, 2) };
+    if (legacyToCurrent.hasOwnProperty(key)) {
+      entry.legacyKey = key;
+      key = legacyToCurrent[key];
+    }
+    config.byKey[key] = entry;
+  }
+  return config;
+}
+
+/**
+ * One header-labelled table section. The header row is the row below the marker; a
+ * section with no room for one (next marker directly below) gets headerRow null.
+ * Rows with a blank key cell are skipped and the scan continues; rowsUsed is the last row
+ * of the section with content in any column (blank-key rows included), or the header
+ * row (marker row when there is no header).
+ */
+function _parseBallotTable_(grid, section, sectionKey, lastCol, problems) {
+  var def = _BALLOT_SECTIONS_[sectionKey];
+  var table = { headerRow: null, col: {}, labels: [], missing: [], rows: [], rowsUsed: section.markerRow };
+  var fixedByKey = {};
+  def.columns.forEach(function (label) { fixedByKey[_labelKey_(label)] = label; });
+
+  if (section.headerRow <= section.endRow) {
+    table.headerRow = section.headerRow;
+    table.rowsUsed = section.headerRow;
+    var seen = {};
+    var blankCols = [];
+    var gapCols = [];
+    for (var c = def.firstCol; c <= lastCol; c++) {
+      var raw = _gridCell_(grid, section.headerRow, c);
+      var lk = _labelKey_(raw);
+      if (!lk) { blankCols.push(c); continue; }
+      gapCols = gapCols.concat(blankCols);
+      blankCols = [];
+      var label = fixedByKey.hasOwnProperty(lk) ? fixedByKey[lk] : String(raw).trim();
+      if (seen[lk]) {
+        problems.push({ code: 'duplicateLabel', section: sectionKey, label: label, col: c });
+        continue;
+      }
+      seen[lk] = true;
+      table.col[label] = c;
+      table.labels.push(label);
+    }
+    if (gapCols.length) problems.push({ code: 'headerGap', section: sectionKey, cols: gapCols });
+  }
+
+  def.columns.forEach(function (label) {
+    if (!table.col.hasOwnProperty(label)) table.missing.push(label);
+  });
+  if (table.missing.length) problems.push({ code: 'missingLabel', section: sectionKey, labels: table.missing.slice() });
+  if (table.headerRow === null) return table;
+
+  var keyCol = table.col[def.key];
+  for (var row = table.headerRow + 1; row <= section.endRow; row++) {
+    if (_gridRowHasContent_(grid, row, 1, lastCol)) table.rowsUsed = row;
+    if (!keyCol) continue;
+    var key = String(_gridCell_(grid, row, keyCol) || '').trim();
+    if (!key) continue;
+    var cells = {};
+    table.labels.forEach(function (l) { cells[l] = _gridCell_(grid, row, table.col[l]); });
+    table.rows.push({ row: row, key: key, cells: cells });
+  }
+  return table;
+}
+
+/**
+ * Results output rows with content from col B on (trailing blanks trimmed); null when
+ * there is no [Results] marker.
+ */
+function _parseBallotResults_(grid, section, lastCol) {
+  if (!section) return null;
+  var firstCol = _BALLOT_SECTIONS_.results.firstCol;
+  var out = [];
+  for (var row = section.firstDataRow; row <= section.endRow; row++) {
+    var values = [];
+    for (var c = firstCol; c <= lastCol; c++) values.push(_gridCell_(grid, row, c));
+    while (values.length && !_cellHasContent_(values[values.length - 1])) values.pop();
+    if (values.length) out.push({ row: row, values: values });
+  }
+  return out;
+}
+
+/**
+ * Reads a ballot sheet as a Snapshot: exactly one getDataRange().getValues() call, no
+ * writes, no lock.
+ *
+ * @param {Sheet} sheet
+ * @return {Object} see _parseBallot_.
+ */
+function _readBallot_(sheet) {
+  return _parseBallot_(sheet.getDataRange().getValues());
+}
+
+/**
+ * Responses extra columns (neither a fixed column nor blank), by normalised label.
+ * @return {Object<string, {label:string, col:number}>}
+ */
+function _snapRankColumns_(snap) {
+  var t = snap.tables.responses;
+  var out = {};
+  if (!t) return out;
+  var fixed = {};
+  _BALLOT_SECTIONS_.responses.columns.forEach(function (l) { fixed[l] = true; });
+  t.labels.forEach(function (l) {
+    if (!fixed[l]) out[_labelKey_(l)] = { label: l, col: t.col[l] };
+  });
+  return out;
+}
+
+/**
+ * Candidates-table rows in sheet order, each with its Responses rank column found by
+ * name (trim, case-insensitive) or null. Empty when either the Candidates or the
+ * Responses marker is missing (as readBallotCandidateDetails_: rows below [Candidates]
+ * may then be orphaned votes).
+ *
+ * @param {Object} snap from _parseBallot_
+ * @return {Array<{row:number, name:string, details:string, linkText:string, linkUrl:string,
+ *   rankLabel:?string, rankCol:?number}>}
+ */
+function _snapCandidates_(snap) {
+  var t = snap.tables.candidates;
+  if (!t || !snap.layout.sections.responses) return [];
+  var rankCols = _snapRankColumns_(snap);
+  return t.rows.map(function (r) {
+    var rank = rankCols[_labelKey_(r.key)] || null;
+    return {
+      row: r.row,
+      name: r.key,
+      details: String(r.cells.Details || ''),
+      linkText: String(r.cells['Link Text'] || ''),
+      linkUrl: String(r.cells['Link URL'] || ''),
+      rankLabel: rank ? rank.label : null,
+      rankCol: rank ? rank.col : null
+    };
+  });
+}
+
+/**
+ * Responses header labels that are neither fixed columns nor any candidate's name — rank
+ * data with no candidate (e.g. its Candidates row was deleted or renamed by hand).
+ *
+ * @param {Object} snap
+ * @return {Array<{label:string, col:number}>} in column order.
+ */
+function _snapOrphanColumns_(snap) {
+  var rankCols = _snapRankColumns_(snap);
+  var claimed = {};
+  _snapCandidates_(snap).forEach(function (c) { claimed[_labelKey_(c.name)] = true; });
+  return Object.keys(rankCols)
+    .filter(function (k) { return !claimed[k]; })
+    .map(function (k) { return rankCols[k]; })
+    .sort(function (a, b) { return a.col - b.col; });
+}
+
+/**
+ * @param {Object} snap
+ * @return {{candidates:?Array<string>, responses:?Array<string>}} fixed header labels
+ *   missing from each table (null when the section's marker is missing).
+ */
+function _snapMissingLabels_(snap) {
+  return {
+    candidates: snap.tables.candidates ? snap.tables.candidates.missing.slice() : null,
+    responses: snap.tables.responses ? snap.tables.responses.missing.slice() : null
+  };
+}
+
+/**
+ * Response rows (non-blank Name) in sheet order, ranks keyed by candidate name. A
+ * candidate with no rank column ranks ''. Values under orphan columns are kept apart in
+ * orphanRanks (keyed by header label). Missing fixed columns read as '' (weight 1).
+ *
+ * @param {Object} snap
+ * @return {Array<{row:number, date:*, name:string, weight:number, comment:string,
+ *   ranks:Object<string,*>, orphanRanks:Object<string,*>}>}
+ */
+function _snapResponses_(snap) {
+  var t = snap.tables.responses;
+  if (!t) return [];
+  var candidates = _snapCandidates_(snap);
+  var orphans = _snapOrphanColumns_(snap);
+  return t.rows.map(function (r) {
+    var ranks = {};
+    candidates.forEach(function (c) { ranks[c.name] = c.rankLabel !== null ? r.cells[c.rankLabel] : ''; });
+    var orphanRanks = {};
+    orphans.forEach(function (o) { orphanRanks[o.label] = r.cells[o.label]; });
+    return {
+      row: r.row,
+      date: r.cells.hasOwnProperty('Date') ? r.cells.Date : '',
+      name: r.key,
+      weight: Number(r.cells.Weight) || 1,
+      comment: String(r.cells.Comment || ''),
+      ranks: ranks,
+      orphanRanks: orphanRanks
+    };
+  });
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     getBallotSheetName_: getBallotSheetName_,
@@ -1506,6 +1843,14 @@ if (typeof module !== 'undefined' && module.exports) {
     _ensureCandidatesHeaderColumns_: _ensureCandidatesHeaderColumns_,
     _withBallotLock_: _withBallotLock_,
     _findMarkerRow_: _findMarkerRow_,
-    _readBallotLayout_: _readBallotLayout_
+    _readBallotLayout_: _readBallotLayout_,
+    _scanBallotLayout_: _scanBallotLayout_,
+    _BALLOT_SECTIONS_: _BALLOT_SECTIONS_,
+    _parseBallot_: _parseBallot_,
+    _readBallot_: _readBallot_,
+    _snapCandidates_: _snapCandidates_,
+    _snapResponses_: _snapResponses_,
+    _snapOrphanColumns_: _snapOrphanColumns_,
+    _snapMissingLabels_: _snapMissingLabels_
   };
 }

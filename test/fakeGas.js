@@ -39,6 +39,7 @@ class FakeRange {
   }
 
   getValues() {
+    this.sheet._getValuesCalls += 1;
     const out = [];
     for (let r = 0; r < this.numRows; r++) {
       const rowOut = [];
@@ -81,6 +82,7 @@ class FakeSheet {
     this._lastRow = 0;
     this._lastCol = 0;
     this._frozenRows = 0;
+    this._getValuesCalls = 0; // every FakeRange.getValues() on this sheet, for read-count assertions
   }
 
   _getCell(row, col) {
