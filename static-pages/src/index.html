@@ -160,6 +160,8 @@
     color: var(--text-primary);
   }
   textarea { resize: vertical; }
+  /* A one-line value that wraps instead of scrolling sideways; height follows the text. */
+  textarea.single-line { resize: none; overflow: hidden; }
   button, a.btn {
     font-size: 1rem;
     padding: 10px 16px;
@@ -305,7 +307,7 @@
         <div class="field-panel hidden" id="titlePanel">
           <p class="field-help">Shown as the page title everywhere — landing page and ballot page.</p>
           <label for="titleInput">Title</label>
-          <input type="text" id="titleInput">
+          <textarea id="titleInput" class="single-line" rows="1"></textarea>
           <div class="field-panel-actions">
             <button type="button" id="titleSaveBtn">Save</button>
             <button type="button" class="secondary" id="titleCancelBtn">Cancel</button>
@@ -748,6 +750,20 @@
       el.className = 'field-status' + (isError ? ' error' : '');
     }
 
+    // textarea.single-line: wraps like a paragraph but holds one line of text — Enter is
+    // ignored, pasted line breaks become spaces, and the box grows to fit what's typed.
+    function fitSingleLine(el) {
+      el.style.height = 'auto';
+      el.style.height = el.scrollHeight + 'px';
+    }
+    document.querySelectorAll('textarea.single-line').forEach(function (el) {
+      el.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
+      el.addEventListener('input', function () {
+        if (/[\r\n]/.test(el.value)) el.value = el.value.replace(/\s*[\r\n]+\s*/g, ' ');
+        fitSingleLine(el);
+      });
+    });
+
     function wireSimpleField(key, rpcName) {
       var display = document.getElementById(key + 'Display');
       var editBtn = document.getElementById(key + 'EditBtn');
@@ -761,12 +777,13 @@
         input.value = fieldData[key] || '';
         setStatus(status, '', false);
         panel.classList.remove('hidden');
+        if (input.classList.contains('single-line')) fitSingleLine(input);
       });
 
       cancelBtn.addEventListener('click', function () { panel.classList.add('hidden'); });
 
       saveBtn.addEventListener('click', function () {
-        var value = input.value.trim();
+        var value = input.classList.contains('single-line') ? input.value.replace(/\s*[\r\n]+\s*/g, ' ').trim() : input.value.trim();
         saveBtn.disabled = true;
         setStatus(status, 'Saving…', false);
         callApi_(rpcName, ballotId, value).then(function () {
