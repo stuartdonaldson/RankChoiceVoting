@@ -667,9 +667,13 @@ function _runBallotAnalysisLocked_(sheet) {
     return { error: 'Ballot has no responses yet.' };
   }
 
-  var ballots = responseRows.map(function (r) {
+  // A weight of 0 (or negative, read as 0) excludes the voter from analysis (rcballot-8lq).
+  var ballots = responseRows.filter(function (r) { return r.weight > 0; }).map(function (r) {
     return { voterName: r.name, ranks: r.ranks, weight: r.weight };
   });
+  if (ballots.length === 0) {
+    return { error: 'Ballot has no responses with a weight above 0.' };
+  }
 
   var rcv = runRankedChoiceVoting(candidateNames, ballots, null);
   var rcvFinishOrder = computeRCVFinishOrder(candidateNames, ballots);

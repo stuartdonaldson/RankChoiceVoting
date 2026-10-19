@@ -128,6 +128,43 @@ function testWeightedBallotsCountInFirstChoice() {
   assert.equal(result.winner, 'A');
 }
 
+// rcballot-8lq: weight 0 or negative excludes a voter; fractions count proportionally;
+// missing/blank/non-numeric weight is 1.
+function testBallotWeightRule() {
+  const { RCV, Condorcet } = loadVotingAlgorithms();
+  [[undefined, 1], [null, 1], ['', 1], ['abc', 1], [0, 0], ['0', 0], [-1, 0], ['-2', 0], [0.5, 0.5], ['0.5', 0.5], [3, 3]]
+    .forEach(([w, want]) => assert.strictEqual(RCV._ballotWeight(w), want, 'weight ' + JSON.stringify(w)));
+
+  const names = ['A', 'B'];
+  // Two zero/negative-weight voters for B must not beat one voter for A.
+  const excluded = [
+    { voterName: 'v1', ranks: [1, 2], weight: 1 },
+    { voterName: 'v2', ranks: [2, 1], weight: 0 },
+    { voterName: 'v3', ranks: [2, 1], weight: -1 },
+  ];
+  assert.equal(RCV.runRankedChoiceVoting(names, excluded, null).winner, 'A');
+  assert.equal(Condorcet.findCondorcetWinner(excluded, names).winner, 'A');
+  assert.equal(RCV._sumBallotWeights(excluded), 1);
+
+  // Fractions: 0.5 + 0.5 for B (=1) loses to 1.5 for A; three half-weight B voters (1.5)
+  // against one full A voter (1) win.
+  const halves = [
+    { voterName: 'v1', ranks: [1, 2], weight: 1.5 },
+    { voterName: 'v2', ranks: [2, 1], weight: 0.5 },
+    { voterName: 'v3', ranks: [2, 1], weight: 0.5 },
+  ];
+  assert.equal(RCV.runRankedChoiceVoting(names, halves, null).winner, 'A');
+  assert.equal(Condorcet.findCondorcetWinner(halves, names).winner, 'A');
+  const halvesWin = [
+    { voterName: 'v1', ranks: [1, 2], weight: 1 },
+    { voterName: 'v2', ranks: [2, 1], weight: 0.5 },
+    { voterName: 'v3', ranks: [2, 1], weight: 0.5 },
+    { voterName: 'v4', ranks: [2, 1], weight: 0.5 },
+  ];
+  assert.equal(RCV.runRankedChoiceVoting(names, halvesWin, null).winner, 'B');
+  assert.equal(Condorcet.findCondorcetWinner(halvesWin, names).winner, 'B');
+}
+
 // Repro-style coverage: raw ranks with gaps (1,3,7) must compress to (1,2,3)
 // and drive redistribution identically to already-contiguous ranks.
 function testNonContiguousRanksCompressCorrectly() {
@@ -649,6 +686,7 @@ function run() {
   testEliminationCascadeRedistribution();
   testExhaustedBallotsUseActiveWeightForMajority();
   testWeightedBallotsCountInFirstChoice();
+  testBallotWeightRule();
   testNonContiguousRanksCompressCorrectly();
   testDuplicateRankValuesOnOneBallot();
   testSingleBallotMajority();

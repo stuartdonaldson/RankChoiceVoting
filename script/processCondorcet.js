@@ -15,7 +15,7 @@ function buildPairwiseMatrix(ballots, candidateNames) {
         const jRanked = _isRankedValue(rankJ);
         // I beats J when I is ranked and J isn't (a voter who ranked I but not
         // J implicitly prefers I), or both are ranked and I's rank is better.
-        if (iRanked && (!jRanked || rankI < rankJ)) matrix[i][j] += weight || 1;
+        if (iRanked && (!jRanked || rankI < rankJ)) matrix[i][j] += _ballotWeight(weight);
       }
     }
   });

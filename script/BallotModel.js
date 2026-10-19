@@ -996,7 +996,7 @@ function submitBallotResponse_(id, name, orderedCandidates, comment) {
       var row = _findBallotResponseRowForName_(view.rows, name);
       var weight = 1;
       if (row !== -1) {
-        view.rows.forEach(function (r) { if (r.row === row) weight = Number(r.weight) || 1; });
+        view.rows.forEach(function (r) { if (r.row === row) weight = r.weight; });
       }
       var cells = { Date: new Date(), Name: name, Weight: weight, Comment: String(comment || '').trim() };
       var names = _snapCandidates_(snap).map(function (c) { return c.name; });
@@ -1527,9 +1527,21 @@ function _snapMissingLabels_(snap) {
 }
 
 /**
+ * Weight cell -> number: blank or non-numeric is 1; zero or negative is 0 (voter excluded
+ * from analysis); fractions are kept. Same rule as processRCV.js _ballotWeight (rcballot-8lq).
+ */
+function _parseBallotWeight_(v) {
+  if (v === '' || v === null || v === undefined) return 1;
+  var n = Number(v);
+  if (isNaN(n) || !isFinite(n)) return 1;
+  return n > 0 ? n : 0;
+}
+
+/**
  * Response rows (non-blank Name) in sheet order, ranks keyed by candidate name. A
  * candidate with no rank column ranks ''. Values under orphan columns are kept apart in
- * orphanRanks (keyed by header label). Missing fixed columns read as '' (weight 1).
+ * orphanRanks (keyed by header label). Missing fixed columns read as '' (weight 1); weight
+ * per _parseBallotWeight_.
  *
  * @param {Object} snap
  * @return {Array<{row:number, date:*, name:string, weight:number, comment:string,
@@ -1549,7 +1561,7 @@ function _snapResponses_(snap) {
       row: r.row,
       date: r.cells.hasOwnProperty('Date') ? r.cells.Date : '',
       name: r.key,
-      weight: Number(r.cells.Weight) || 1,
+      weight: _parseBallotWeight_(r.cells.Weight),
       comment: String(r.cells.Comment || ''),
       ranks: ranks,
       orphanRanks: orphanRanks

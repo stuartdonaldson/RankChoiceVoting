@@ -237,6 +237,41 @@ function testAdminMutatingEntryPointsRunUnderLock() {
   assert.equal(state.held, false);
 }
 
+/** rcballot-8lq: hand-entered Weight 0/negative excludes a voter; fractions are kept, including on re-vote. */
+function testHandEnteredWeightsInReadRevoteAndAnalysis() {
+  const { app, ss } = loadApp();
+  const sheet = app.createNewBallot_(ss, 'Weights');
+  app.addBallotCandidateForAdmin_('Weights', 'Alice', '', '', '');
+  app.addBallotCandidateForAdmin_('Weights', 'Bob', '', '', '');
+  app.submitBallotResponse_('Weights', 'V1', ['Alice', 'Bob'], '');
+  app.submitBallotResponse_('Weights', 'V2', ['Bob', 'Alice'], '');
+  app.submitBallotResponse_('Weights', 'V3', ['Bob', 'Alice'], '');
+  app.submitBallotResponse_('Weights', 'V4', ['Bob', 'Alice'], '');
+  const rowOf = (n) => app.readBallotResponseRows_(sheet).filter((r) => r.name === n)[0].row;
+  const weightCol = app._readBallot_(sheet).tables.responses.col.Weight;
+  [['V1', 0.5], ['V2', 0], ['V3', -1], ['V4', '']].forEach(([n, w]) => sheet.getRange(rowOf(n), weightCol).setValue(w));
+
+  const byName = {};
+  app.readBallotResponseRows_(sheet).forEach((r) => { byName[r.name] = r.weight; });
+  assert.deepEqual(byName, { V1: 0.5, V2: 0, V3: 0, V4: 1 });
+
+  // V4 alone (weight 1, Bob) beats V1 (0.5, Alice); V2 and V3 are excluded.
+  const result = app.runBallotAnalysis_(sheet);
+  assert.equal(result.rcv.winner, 'Bob');
+  assert.equal(result.condorcet.condorcet.winner, 'Bob');
+
+  // Re-votes keep the hand-entered weight (0 and fractions included).
+  app.submitBallotResponse_('Weights', 'V2', ['Alice', 'Bob'], 'again');
+  app.submitBallotResponse_('Weights', 'V1', ['Bob', 'Alice'], 'again');
+  app.readBallotResponseRows_(sheet).forEach((r) => { byName[r.name] = r.weight; });
+  assert.equal(byName.V2, 0);
+  assert.equal(byName.V1, 0.5);
+
+  // Everyone excluded -> a clear error, not a result from no ballots.
+  ['V1', 'V4'].forEach((n) => sheet.getRange(rowOf(n), weightCol).setValue(0));
+  assert.deepEqual(app.runBallotAnalysis_(sheet), { error: 'Ballot has no responses with a weight above 0.' });
+}
+
 function logLines(app, tag) {
   return app.Logger._lines.filter(function (l) { return String(l).indexOf(tag) !== -1; });
 }
@@ -355,6 +390,7 @@ function run() {
   testOnEditIgnoresNonBallotSheetsAndMissingEvent();
   testGetAdminListDataIsOneReadPerBallot();
   testAdminMutatingEntryPointsRunUnderLock();
+  testHandEnteredWeightsInReadRevoteAndAnalysis();
   testLegacyResponsesLayoutRefusedThenRepairedOnAdminLoad();
   testOnEditNeverWrites();
   testAdminEditLoadRepairsMissingResponses();

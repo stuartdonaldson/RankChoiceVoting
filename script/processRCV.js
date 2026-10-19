@@ -26,6 +26,20 @@ function _isRankedValue(rank) {
 }
 
 /**
+ * A ballot's voting weight. Missing, blank or non-numeric means 1; zero or negative means
+ * the voter is excluded (0); anything else, fractions included, is used as-is (rcballot-8lq).
+ *
+ * @param {*} weight
+ * @returns {number}
+ */
+function _ballotWeight(weight) {
+  if (weight === "" || weight === null || weight === undefined) return 1;
+  var n = Number(weight);
+  if (isNaN(n) || !isFinite(n)) return 1;
+  return n > 0 ? n : 0;
+}
+
+/**
  * Core RCV algorithm, run against ballot-driven data sourced by webAdmin.js
  * from a Ballot-<name> sheet's own Responses section.
  *
@@ -54,7 +68,7 @@ function runRankedChoiceVoting(candidateNames, allBallots, sheet) {
     ranked.forEach((entry, i) => {
       compressedRanks[entry.idx] = i + 1;
     });
-    return { voterName, ranks: compressedRanks, weight: weight || 1 };
+    return { voterName, ranks: compressedRanks, weight: _ballotWeight(weight) };
   });
 
   // ranks are now compressed, e.g. [1, 2, 3, "", 5] becomes [1, 2, 3, "", 4]
@@ -96,7 +110,7 @@ function runRankedChoiceVoting(candidateNames, allBallots, sheet) {
       for (var j = 0; j < ranked.length; j++) {
         var r = ranked[j].candidate;
         if (r && !r.eliminated) {
-          r.votes += ballot.weight || 1;
+          r.votes += _ballotWeight(ballot.weight);
           break;
         }
       }
@@ -378,7 +392,7 @@ function countTieWinners(candidates, mode, ballots, allCandidates) {
         let idx = rankPosition === -1 ? ranked.length - 1 : rankPosition - 1;
         let chosen = ranked[idx];
         if (chosen && counts.hasOwnProperty(chosen.candidate.name)) {
-          counts[chosen.candidate.name] += ballot.weight || 1;
+          counts[chosen.candidate.name] += _ballotWeight(ballot.weight);
         }
       }
     });
@@ -426,10 +440,10 @@ function logProcess3(a,b,message) {
 
 /**
  * @param {Array<{weight:number}>} ballots
- * @returns {number} sum of weights, treating a missing weight as 1.
+ * @returns {number} sum of weights, per _ballotWeight.
  */
 function _sumBallotWeights(ballots) {
-  return ballots.reduce((sum, b) => sum + (b.weight || 1), 0);
+  return ballots.reduce((sum, b) => sum + _ballotWeight(b.weight), 0);
 }
 
 /**
@@ -507,6 +521,7 @@ if (typeof module !== 'undefined' && module.exports) {
     breakTie: breakTie,
     countTieWinners: countTieWinners,
     _isRankedValue: _isRankedValue,
+    _ballotWeight: _ballotWeight,
     _sumBallotWeights: _sumBallotWeights,
     _removeCandidateAt: _removeCandidateAt,
     computeRCVFinishOrder: computeRCVFinishOrder,
