@@ -115,6 +115,11 @@ side of the verification lives in the package.
 *currently* deployed without deploying anything, and flags any divergence between the live
 version and the local `script/version.js`.
 
+`pnpm run deployments` (`tools/show-deployments.js`) lists every env at once — spreadsheet, admin
+page and webapp URLs, plus the version the backend (`cmd=version`) and the static page
+(`version.json`) each report, flagging a wrong target or backend/page skew. It is read-only and
+never calls clasp; the webapp URL comes from the `*DeploymentId` cache in `local.settings.json`.
+
 ## Configuration lives in two files
 
 GAS-Core `adr/0004`. Know which half a fact belongs in before you add one:

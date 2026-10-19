@@ -6,6 +6,7 @@
  *
  *   pnpm run deploy:sit | deploy:prod | deploy:nuuc
  *   node tools/manage-deployments.js --summary --env sit    # read-only, deploys nothing
+ *   pnpm run deployments                                   # every env's URLs + live versions, no clasp
  *
  * Each env is its own Apps Script project. Their IDs and spreadsheet IDs are committed project
  * truth in gas-project.json (GAS-Core adr/0004); local.settings.json carries only clasp auth,
