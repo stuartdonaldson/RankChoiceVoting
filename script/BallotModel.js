@@ -979,33 +979,44 @@ function _findBallotResponseRowForName_(rows, name) {
 }
 
 /**
- * Appends a new candidate: a row at the end of the Candidates table, and a rank column in
- * the Responses header — reusing an existing column already labelled with this name
- * (e.g. an orphan left by a hand-deleted candidate), else appended after the last used
- * Responses column. Runs the repair path first. Caller must check Accept-New first.
+ * Appends a new candidate: one row at the end of the Candidates table and a rank column in
+ * the Responses header — reusing an existing column already labelled with this name (e.g. an
+ * orphan left by a hand-deleted candidate), else adding one — as ONE op set, so refusals are
+ * checked before any write and a failure leaves no header column without a table row. Runs
+ * the repair path first (_withBallotWrite_). Throws 'A candidate with that name already
+ * exists.' on a duplicate. Caller must check Accept-New first.
  *
  * @param {Sheet} sheet
  * @param {string} phrase
  * @param {string=} details admin-only note for this candidate (respondents never pass this).
  * @param {string=} linkText admin-only link label shown alongside details (respondents never pass this).
  * @param {string=} linkUrl admin-only link target, opened in a new tab (respondents never pass this).
+ * @return {Object} the snapshot after the write.
  */
 function addBallotCandidate_(sheet, phrase, details, linkText, linkUrl) {
   _assertNotMarkerName_(phrase);
-  var snap = _repairBallotSheet_(sheet).snap;
-  if (!snap.tables.responses) throw new Error('Ballot has no Responses section.');
-  var candidateRows = _snapCandidates_(snap).map(function (c) {
-    return { name: c.name, details: c.details, linkText: c.linkText, linkUrl: c.linkUrl };
+  return _withBallotWrite_(sheet, function (snap) {
+    return _addCandidateInSnapshot_(sheet, snap, { name: phrase, details: details, linkText: linkText, linkUrl: linkUrl });
   });
-  candidateRows.push({ name: phrase, details: details || '', linkText: linkText || '', linkUrl: linkUrl || '' });
-  writeBallotCandidateDetails_(sheet, candidateRows);
+}
 
-  // Re-read: the Candidates resize may have shifted the Responses section.
-  var cur = _readBallotGridAndSnap_(sheet);
-  var responses = cur.snap.tables.responses;
-  if (responses.headerRow === null) throw new Error('Ballot sheet is missing its Responses header row.');
-  if (_snapRankColumns_(cur.snap)[_labelKey_(phrase)]) return;
-  sheet.getRange(responses.headerRow, _nextResponsesCol_(cur.grid, cur.snap)).setValue(phrase);
+/**
+ * @param {Object} snap
+ * @param {{name:string, details:(string|undefined), linkText:(string|undefined), linkUrl:(string|undefined)}} c
+ * @return {Array<Object>} ops: a one-row Candidates append plus the Responses rank column.
+ */
+function _planAddCandidateOps_(snap, c) {
+  return [
+    { section: 'candidates', append: [{ Name: c.name, Details: c.details || '', 'Link Text': c.linkText || '', 'Link URL': c.linkUrl || '' }] },
+    { section: 'responses', ensureColumns: [c.name] }
+  ];
+}
+
+/** Validates (uniqueness) and applies _planAddCandidateOps_; returns the post-write snapshot. */
+function _addCandidateInSnapshot_(sheet, snap, c) {
+  if (!snap.tables.responses) throw new Error('Ballot has no Responses section.');
+  _assertUniqueCandidateName_(snap, c.name);
+  return _applyBallotOps_(sheet, snap, _planAddCandidateOps_(snap, c));
 }
 
 /**
@@ -1164,11 +1175,11 @@ function addBallotCandidateForId_(id, phrase, details) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
-    _repairBallotSheet_(sheet);
-    var config = readBallotConfig_(sheet);
-    if (!_ballotAcceptsNew_(config)) throw new Error('This ballot is not accepting new items.');
-    addBallotCandidate_(sheet, phrase, details);
-    refreshBallotCache_(id, sheet); // keep the cache (BallotCache.js) in sync with this write
+    var after = _withBallotWrite_(sheet, function (snap) {
+      if (!_ballotAcceptsNew_(_ballotViewFromSnapshot_(snap).config)) throw new Error('This ballot is not accepting new items.');
+      return _addCandidateInSnapshot_(sheet, snap, { name: phrase, details: details });
+    });
+    refreshBallotCache_(id, sheet, _ballotViewFromSnapshot_(after)); // keep the cache (BallotCache.js) in sync with this write
     return { candidate: phrase };
   });
 }
@@ -1452,10 +1463,9 @@ function addBallotCandidateForAdmin_(id, name, details, linkText, linkUrl) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
-    _repairBallotSheet_(sheet);
-    addBallotCandidate_(sheet, name, details, linkText, linkUrl);
+    var after = addBallotCandidate_(sheet, name, details, linkText, linkUrl);
     _highlightSectionMarkers_(sheet);
-    refreshBallotCache_(id, sheet); // keep the cache (BallotCache.js) in sync with this write
+    refreshBallotCache_(id, sheet, _ballotViewFromSnapshot_(after)); // keep the cache (BallotCache.js) in sync with this write
     return { candidate: name };
   });
 }

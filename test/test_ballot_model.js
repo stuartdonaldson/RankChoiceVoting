@@ -2100,7 +2100,51 @@ function testSubmitBallotResponseCallCounts() {
   assert.deepEqual(t.SM.readBallotResponseRows_(mid).map((r) => r.name), ['V1', 'V2', 'V3']);
 }
 
+/** AC2/AC4/AC7 (add candidate): one-row append + header cell in one op set; duplicates and a damaged header write nothing. */
+function testAddBallotCandidateOneRowAppendDuplicatesAndAtomicity() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = buildOrderedBallot(ss, 'Add1', ['results', 'candidates', 'responses']);
+  const results = sectionSnapshot(sheet, 'results');
+  let c = countCalls(sheet, () => SM.addBallotCandidateForId_('Add1', 'Carol', 'about carol'));
+  assert.deepEqual([c.writes, c.reads], [3, 2], 'insert + candidate row + header cell');
+  assert.deepEqual(c.result, { candidate: 'Carol' });
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice', 'Bob', 'Carol']);
+  assert.equal(SM.readBallotCandidateDetails_(sheet)[2].details, 'about carol');
+  assert.deepEqual(SM.readBallotResponseRows_(sheet).map((r) => r.ranks), [[1, 2, ''], [2, 1, '']]);
+  assert.deepEqual(sectionSnapshot(sheet, 'results'), results);
+
+  // Duplicates (case/space-insensitive) are refused on both add paths, with nothing written.
+  c = countCalls(sheet, () => {
+    assert.throws(() => SM.addBallotCandidateForId_('Add1', ' carol ', ''), /^Error: A candidate with that name already exists\.$/);
+    assert.throws(() => SM.addBallotCandidateForAdmin_('Add1', 'ALICE', '', '', ''), /^Error: A candidate with that name already exists\.$/);
+    assert.throws(() => SM.addBallotCandidateForId_('Add1', 'Weight', ''), /^Error: A candidate with that name already exists\.$/);
+  });
+  assert.equal(c.writes, 0);
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice', 'Bob', 'Carol']);
+
+  // Admin path: appends and highlights.
+  SM.addBallotCandidateForAdmin_('Add1', 'Dan', 'd', 'lt', 'http://x');
+  assert.deepEqual(SM.readBallotCandidateDetails_(sheet)[3], { name: 'Dan', details: 'd', linkText: 'lt', linkUrl: 'http://x' });
+
+  // AC4: a damaged Responses header refuses the whole op set: no table row, no header column.
+  const t = loadBallotModel();
+  const bad = buildOrderedBallot(t.ss, 'Add2', ['results', 'candidates', 'responses']);
+  bad.getRange(18, 3).setValue('');
+  const before = [sectionSnapshot(bad, 'candidates'), sectionSnapshot(bad, 'responses')];
+  c = countCalls(bad, () => assert.throws(() => t.SM.addBallotCandidateForId_('Add2', 'Eve', ''),
+    /^Error: Ballot sheet layout is damaged — the \[Responses\] header is missing: Weight\.$/));
+  assert.equal(c.writes, 0);
+  assert.deepEqual([sectionSnapshot(bad, 'candidates'), sectionSnapshot(bad, 'responses')], before);
+
+  // Accept-New off: refused with its own message.
+  const u = loadBallotModel();
+  const closed = buildOrderedBallot(u.ss, 'Add3', ['results', 'candidates', 'responses']);
+  closed.getRange(6, 2).setValue('FALSE');
+  assert.throws(() => u.SM.addBallotCandidateForId_('Add3', 'Eve', ''), /^Error: This ballot is not accepting new items\.$/);
+}
+
 function run() {
+  testAddBallotCandidateOneRowAppendDuplicatesAndAtomicity();
   testSubmitBallotResponseCallCounts();
   testWriteBallotConfigMarkerOnRowOneAndCallCounts();
   testWriteBallotResultsCallCounts();
