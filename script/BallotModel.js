@@ -1366,27 +1366,74 @@ function _readCandidateDetailsAndLayout_(sheet) {
 }
 
 /**
- * Resizes + rewrites the Candidates table to exactly match `candidateRows` (array of
- * {name, details, linkText, linkUrl}, one per candidate column, in the same order).
- * Leaves every other section untouched — the insert/delete happens strictly between
- * the Candidates header and the next marker below it (or the end of the sheet).
+ * Makes the Candidates table match `candidateRows` (array of {name, details, linkText,
+ * linkUrl}) by row: existing rows are updated in order, extra entries appended, surplus rows
+ * deleted. Only the four labelled cells of a row are written (cells to their right stay put),
+ * and rows with a blank name but other content are kept unless they are surplus. Does not
+ * touch the Responses header (use saveBallotCandidates_ for renames); a new row's rank column
+ * is backfilled by the next write's repair path. Runs the repair path
+ * first (_withBallotWrite_).
  *
  * @param {Sheet} sheet
  * @param {Array<{name:string, details:string, linkText:string, linkUrl:string}>} candidateRows
+ * @return {Object} the snapshot after the write.
  */
 function writeBallotCandidateDetails_(sheet, candidateRows) {
-  var layout = _prepareCandidatesSection_(sheet);
-  var candidates = layout.sections.candidates;
-  if (!candidates || !layout.sections.responses) {
-    throw new Error('Ballot sheet is missing its Candidates/Responses markers.');
-  }
-  if (candidates.headerRow > candidates.endRow) {
-    // The row below [Candidates] is already the next marker: there is no header row to
-    // write beneath, and resizing from it would land inside the next section.
-    throw new Error('Ballot sheet is missing its Candidates header row.');
-  }
-  var rows = candidateRows.map(function (it) { return [it.name || '', it.details || '', it.linkText || '', it.linkUrl || '']; });
-  _resizeSectionRows_(sheet, candidates.headerRow, candidates.endRow + 1, rows, _BALLOT_CANDIDATES_FIRST_COL);
+  return _withBallotWrite_(sheet, function (snap) {
+    if (!snap.tables.candidates || !snap.tables.responses) {
+      throw new Error('Ballot sheet is missing its Candidates/Responses markers.');
+    }
+    var cands = _snapCandidates_(snap);
+    var cellsFor = function (it) {
+      return { Name: it.name || '', Details: it.details || '', 'Link Text': it.linkText || '', 'Link URL': it.linkUrl || '' };
+    };
+    var n = candidateRows.length;
+    var keep = Math.min(n, cands.length);
+    var ops = [];
+    var update = [];
+    for (var i = 0; i < keep; i++) update.push({ row: cands[i].row, cells: cellsFor(candidateRows[i]) });
+    if (update.length) ops.push({ section: 'candidates', update: update });
+    if (n > keep) ops.push({ section: 'candidates', append: candidateRows.slice(keep).map(cellsFor) });
+    if (cands.length > keep) {
+      ops.push({ section: 'candidates', deleteRows: cands.slice(keep).map(function (c) { return c.row; }) });
+    }
+    return _applyBallotOps_(sheet, snap, ops);
+  });
+}
+
+/**
+ * Plans a full-list candidate save: updates every Candidates row and relabels each renamed
+ * candidate's Responses rank column (found by its OLD name) so recorded ranks follow the
+ * candidate. Renames are emitted in two passes through temporary labels so swaps (A->B,
+ * B->A) never collide; the temporary labels only exist in the applier's header buffer.
+ *
+ * @param {Object} snap
+ * @param {Array<string>} names new (trimmed) names, aligned to _snapCandidates_(snap)
+ * @param {Array<{details:string, linkText:string, linkUrl:string}>} candidateRows
+ * @return {Array<Object>} ops
+ */
+function _planSaveCandidatesOps_(snap, names, candidateRows) {
+  var cands = _snapCandidates_(snap);
+  var ops = [{
+    section: 'candidates',
+    update: cands.map(function (c, i) {
+      return { row: c.row, cells: {
+        Name: names[i], Details: String(candidateRows[i].details || ''),
+        'Link Text': String(candidateRows[i].linkText || ''), 'Link URL': String(candidateRows[i].linkUrl || '')
+      } };
+    })
+  }];
+  var renamed = [];
+  cands.forEach(function (c, i) {
+    if (c.rankLabel !== null && c.rankLabel !== names[i]) renamed.push(i);
+  });
+  renamed.forEach(function (i) {
+    ops.push({ section: 'responses', renameColumn: { from: cands[i].rankLabel, to: '\u0001rename' + i } });
+  });
+  renamed.forEach(function (i) {
+    ops.push({ section: 'responses', renameColumn: { from: '\u0001rename' + i, to: names[i] } });
+  });
+  return ops;
 }
 
 /**
@@ -1394,34 +1441,28 @@ function writeBallotCandidateDetails_(sheet, candidateRows) {
  * list in the ballot's current Candidates-table order (as getAdminEditData returns it).
  * A rename relabels that candidate's own Responses rank column (found by its old name), so
  * recorded ranks follow the candidate. Throws if the count doesn't match the ballot's
- * current candidate count (stale form — caller should reload and retry). Runs the repair
- * path first.
+ * current candidate count (stale form — caller should reload and retry) or if names are not
+ * unique (case-insensitive). Runs the repair path first (_withBallotWrite_).
  *
  * @param {Sheet} sheet
  * @param {Array<{name:string, details:string, linkText:string, linkUrl:string}>} candidateRows
+ * @return {Object} the snapshot after the write.
  */
 function saveBallotCandidates_(sheet, candidateRows) {
-  var snap = _repairBallotSheet_(sheet).snap;
-  var candidates = _snapCandidates_(snap);
-  if (candidateRows.length !== candidates.length) {
-    throw new Error('Candidate count changed since the page was loaded — reload and try again.');
-  }
-  var names = candidateRows.map(function (it) {
-    var name = String(it.name || '').trim();
-    if (!name) throw new Error('Candidate name cannot be empty.');
-    _assertNotMarkerName_(name);
-    return name;
-  });
-  var responses = snap.tables.responses;
-  candidates.forEach(function (c, i) {
-    if (c.rankCol !== null && c.rankLabel !== names[i]) {
-      sheet.getRange(responses.headerRow, c.rankCol).setValue(names[i]);
+  return _withBallotWrite_(sheet, function (snap) {
+    var candidates = _snapCandidates_(snap);
+    if (candidateRows.length !== candidates.length) {
+      throw new Error('Candidate count changed since the page was loaded — reload and try again.');
     }
+    var names = candidateRows.map(function (it) {
+      var name = String(it.name || '').trim();
+      if (!name) throw new Error('Candidate name cannot be empty.');
+      _assertNotMarkerName_(name);
+      return name;
+    });
+    _assertUniqueCandidateNames_(names);
+    return _applyBallotOps_(sheet, snap, _planSaveCandidatesOps_(snap, names, candidateRows));
   });
-  writeBallotCandidateDetails_(sheet, candidateRows.map(function (it, i) {
-    return { name: names[i], details: String(it.details || ''), linkText: String(it.linkText || ''), linkUrl: String(it.linkUrl || '') };
-  }));
-  _highlightSectionMarkers_(sheet);
 }
 
 /**
@@ -1437,9 +1478,9 @@ function saveBallotCandidatesForId_(id, candidateRows) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
-    _repairBallotSheet_(sheet);
-    saveBallotCandidates_(sheet, candidateRows);
-    refreshBallotCache_(id, sheet); // keep the cache (BallotCache.js) in sync with this write
+    var after = saveBallotCandidates_(sheet, candidateRows);
+    _highlightSectionMarkers_(sheet);
+    refreshBallotCache_(id, sheet, _ballotViewFromSnapshot_(after)); // keep the cache (BallotCache.js) in sync with this write
   });
 }
 

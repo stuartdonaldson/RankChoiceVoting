@@ -388,10 +388,10 @@ function adminSaveAddSettings(id, acceptNew, addInstructions) {
 
 /**
  * RPC: saves one existing candidate's name/details/link from its pencil-icon editor.
- * saveBallotCandidatesForId_ requires the full candidate list (it throws if the count
- * changed since the page loaded), so this re-reads the current rows and replaces just
- * the edited one, position-aligned by index — matching how the old combined form saved
- * candidate edits.
+ * Updates just that candidate's Candidates row (found by index into the Candidates-table
+ * order getAdminEditData returned) and, on a rename, relabels its Responses rank column
+ * (found by the OLD name) so recorded ranks stay with the candidate. Names are unique
+ * case-insensitively (a case-only rename of the same candidate is allowed).
  *
  * @param {string} id
  * @param {number} index
@@ -402,31 +402,28 @@ function adminSaveAddSettings(id, acceptNew, addInstructions) {
  * @return {{ok:boolean, name:string, details:string, linkText:string, linkUrl:string}}
  */
 function adminSaveCandidate(id, index, name, details, linkText, linkUrl) {
-  // One lock hold across the read-modify-write so no other request's candidate/response
-  // change lands between reading the current rows and saving the edited set.
+  name = String(name || '').trim();
+  details = String(details || '');
+  linkText = String(linkText || '');
+  linkUrl = String(linkUrl || '');
   return _withBallotLock_(function () {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
     if (!sheet) throw new Error('No ballot found for id "' + id + '".');
-    // Index is into the Candidates-table order getAdminEditData returned; read after the
-    // repair so a backfilled candidate is a real row, not padding.
-    var rows = _ballotViewFromSnapshot_(_repairBallotSheet_(sheet).snap).candidates;
-    if (index < 0 || index >= rows.length) throw new Error('Invalid candidate index.');
-
-    rows[index] = {
-      name: String(name || '').trim(),
-      details: String(details || ''),
-      linkText: String(linkText || ''),
-      linkUrl: String(linkUrl || '')
-    };
-    saveBallotCandidatesForId_(id, rows); // nested: _withBallotLock_ is re-entrant
-    return {
-      ok: true,
-      name: rows[index].name,
-      details: rows[index].details,
-      linkText: rows[index].linkText,
-      linkUrl: rows[index].linkUrl
-    };
+    var after = _withBallotWrite_(sheet, function (snap) {
+      var c = _snapCandidates_(snap)[index];
+      if (!c) throw new Error('Invalid candidate index.');
+      if (!name) throw new Error('Candidate name cannot be empty.');
+      _assertNotMarkerName_(name);
+      _assertUniqueCandidateName_(snap, name, c.row);
+      var ops = [{ section: 'candidates', update: [{ row: c.row, cells: { Name: name, Details: details, 'Link Text': linkText, 'Link URL': linkUrl } }] }];
+      if (c.rankLabel !== null && c.rankLabel !== name) {
+        ops.push({ section: 'responses', renameColumn: { from: c.rankLabel, to: name } });
+      }
+      return _applyBallotOps_(sheet, snap, ops);
+    });
+    refreshBallotCache_(id, sheet, _ballotViewFromSnapshot_(after)); // keep the cache (BallotCache.js) in sync with this write
+    return { ok: true, name: name, details: details, linkText: linkText, linkUrl: linkUrl };
   });
 }
 

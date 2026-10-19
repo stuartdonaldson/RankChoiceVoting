@@ -1437,7 +1437,8 @@ function testSectionWritesLeaveOtherSectionsUnchangedInAllOrders() {
     // Each section's grow-then-shrink runs as a sequence on one sheet; other cases get a fresh one.
     const sequences = [
       cases.filter((c) => c.section === 'results'),
-      cases.filter((c) => c.section === 'candidates' && !c.also),
+      // Separate sheets: after a grow, the next write's repair backfills the new rank columns.
+      cases.slice(2, 3), cases.slice(3, 4),
       cases.slice(4, 5), cases.slice(5, 6),
       cases.filter((c) => c.also),
     ];
@@ -2143,7 +2144,78 @@ function testAddBallotCandidateOneRowAppendDuplicatesAndAtomicity() {
   assert.throws(() => u.SM.addBallotCandidateForId_('Add3', 'Eve', ''), /^Error: This ballot is not accepting new items\.$/);
 }
 
+/** Loads webAdmin.js into a loadBallotModel() sandbox; returns the sandbox so its RPC functions are callable. */
+function loadBallotModelWithAdmin() {
+  const m = loadBallotModel();
+  const saved = m.sandbox.module;
+  m.sandbox.module = { exports: {} };
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'script', 'webAdmin.js'), 'utf8'), m.sandbox, { filename: 'webAdmin.js' });
+  m.sandbox.module = saved;
+  return m;
+}
+
+/** AC3: a rename (admin pencil editor or full-list save) relabels the header cell found by the OLD name; votes follow the candidate, also after hand-sorting. */
+function testRenameKeepsVotesWithCandidate() {
+  const { SM, ss, sandbox } = loadBallotModelWithAdmin();
+  const sheet = buildOrderedBallot(ss, 'Ren', ['results', 'candidates', 'responses']);
+  // Hand-sort: Bob above Alice in the Candidates table (columns stay Alice=E, Bob=F).
+  const a = rowOf(sheet, '[Candidates]') + 2;
+  const rowA = sheet.getRange(a, 1, 1, 5).getValues()[0];
+  const rowB = sheet.getRange(a + 1, 1, 1, 5).getValues()[0];
+  sheet.getRange(a, 1, 1, 5).setValues([rowB]);
+  sheet.getRange(a + 1, 1, 1, 5).setValues([rowA]);
+  const bystanders = ['results'].map((k) => sectionSnapshot(sheet, k));
+
+  // index 0 is Bob (table order).
+  let c = countCalls(sheet, () => sandbox.adminSaveCandidate('Ren', 0, ' Robert ', 'dd', 'lt', 'http://u'));
+  assert.deepEqual(c.result, { ok: true, name: 'Robert', details: 'dd', linkText: 'lt', linkUrl: 'http://u' });
+  assert.deepEqual([c.writes, c.reads], [2, 1], 'candidate row + header cell');
+  assert.deepEqual(SM.readBallotCandidateDetails_(sheet)[0], { name: 'Robert', details: 'dd', linkText: 'lt', linkUrl: 'http://u' });
+  const header = SM._readBallotLayout_(sheet).sections.responses.headerRow;
+  assert.deepEqual(sheet.getRange(header, 5, 1, 2).getValues()[0], ['Alice', 'Robert']);
+  // V1 ranked Alice=1, Bob(now Robert)=2: table order is [Robert, Alice].
+  assert.deepEqual(SM.readBallotResponseRows_(sheet).map((r) => r.ranks), [[2, 1], [1, 2]]);
+  const view = SM.getBallotForRespondent_('Ren', 'V1');
+  assert.deepEqual(view.candidates.slice().sort(), ['Alice', 'Robert']);
+  assert.deepEqual(['results'].map((k) => sectionSnapshot(sheet, k)), bystanders);
+
+  // Case-only rename of the same candidate is allowed; a clash with another candidate is not.
+  sandbox.adminSaveCandidate('Ren', 1, 'ALICE', '', '', '');
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Robert', 'ALICE']);
+  c = countCalls(sheet, () => {
+    assert.throws(() => sandbox.adminSaveCandidate('Ren', 1, ' robert', '', '', ''), /^Error: A candidate with that name already exists\.$/);
+    assert.throws(() => sandbox.adminSaveCandidate('Ren', 1, 'Weight', '', '', ''), /^Error: A candidate with that name already exists\.$/);
+    assert.throws(() => sandbox.adminSaveCandidate('Ren', 5, 'Zed', '', '', ''), /^Error: Invalid candidate index\.$/);
+    assert.throws(() => sandbox.adminSaveCandidate('Ren', 0, '  ', '', '', ''), /^Error: Candidate name cannot be empty\.$/);
+  });
+  assert.equal(c.writes, 0);
+  assert.deepEqual(SM.readBallotResponseRows_(sheet).map((r) => r.ranks), [[2, 1], [1, 2]]);
+}
+
+/** Full-list save: a name swap (A->B, B->A) is handled by the two-pass rename; duplicate names are refused with nothing written. */
+function testSaveBallotCandidatesSwapAndDuplicates() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = buildOrderedBallot(ss, 'Swap', ['results', 'candidates', 'responses']); // Alice=E, Bob=F
+  SM.saveBallotCandidatesForId_('Swap', [{ name: 'Bob', details: 'x' }, { name: 'Alice', details: 'y' }]);
+  const header = SM._readBallotLayout_(sheet).sections.responses.headerRow;
+  assert.deepEqual(sheet.getRange(header, 5, 1, 2).getValues()[0], ['Bob', 'Alice']);
+  assert.deepEqual(SM.readBallotCandidateDetails_(sheet).map((c) => c.name + ':' + c.details), ['Bob:x', 'Alice:y']);
+  // Candidate rows were relabelled, header too: V1's ranks (E=1, F=2) now belong to Bob=1, Alice=2 by header.
+  assert.deepEqual(SM.readBallotResponseRows_(sheet)[0].ranks, [1, 2]);
+
+  const c = countCalls(sheet, () => {
+    assert.throws(() => SM.saveBallotCandidates_(sheet, [{ name: 'Same', details: '' }, { name: ' same ', details: '' }]), /^Error: A candidate with that name already exists\.$/);
+    assert.throws(() => SM.saveBallotCandidatesForId_('Swap', [{ name: 'Date', details: '' }, { name: 'Q', details: '' }]), /^Error: A candidate with that name already exists\.$/);
+  });
+  assert.equal(c.writes, 0);
+
+  const w = countCalls(sheet, () => SM.saveBallotCandidates_(sheet, [{ name: 'Bob', details: 'x2' }, { name: 'Alice', details: 'y2' }]));
+  assert.deepEqual([w.writes, w.reads], [1, 1], 'no rename: one setValues for the table block');
+}
+
 function run() {
+  testRenameKeepsVotesWithCandidate();
+  testSaveBallotCandidatesSwapAndDuplicates();
   testAddBallotCandidateOneRowAppendDuplicatesAndAtomicity();
   testSubmitBallotResponseCallCounts();
   testWriteBallotConfigMarkerOnRowOneAndCallCounts();
