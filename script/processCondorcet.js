@@ -234,7 +234,13 @@ function findRankedPairsWinner(ballots, candidateNames) {
 }
 
 /**
- * Minimax (Simpson)
+ * Minimax (Simpson), pairwise-opposition variant: a candidate's score is the largest number
+ * of voters preferring any single opponent over them (max over j of d[j][i]), counted even
+ * when the candidate wins that pairing. Lowest score wins.
+ *
+ * A null winner always means several candidates share the lowest score, never a cycle; they
+ * are listed in tiedForMinScore. It is deliberately not named .tie, which would make
+ * computeCondorcetFinishOrder stop with only those names and drop the rest of the field.
  */
 function findMinimaxWinner(ballots, candidateNames) {
   const n = candidateNames.length;
@@ -265,7 +271,8 @@ function findMinimaxWinner(ballots, candidateNames) {
   let minScore = Math.min(...scores);
   let winnerIdx = scores.indexOf(minScore);
   if (scores.filter(s => s === minScore).length > 1) {
-    return { winner: null, matrix: d, scores: scores, rankedCandidates };
+    const tiedForMinScore = candidateNames.filter((name, i) => scores[i] === minScore);
+    return { winner: null, tiedForMinScore: tiedForMinScore, matrix: d, scores: scores, rankedCandidates };
   }
   return { winner: candidateNames[winnerIdx], matrix: d, scores: scores, rankedCandidates };
 }

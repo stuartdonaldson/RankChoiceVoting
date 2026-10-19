@@ -1201,8 +1201,9 @@
       var html = '<h3>' + escapeHtml_(label) + '</h3>';
       if (result.winner) {
         html += '<p>' + escapeHtml_(label) + ' winner: <strong>' + escapeHtml_(result.winner) + '</strong></p>';
-      } else if (result.tie && result.tie.length) {
-        html += '<p>No ' + escapeHtml_(label) + ' winner (tie between: <strong>' + escapeHtml_(result.tie.join(', ')) + '</strong>).</p>';
+      } else if ((result.tie && result.tie.length) || (result.tiedForMinScore && result.tiedForMinScore.length)) {
+        var tied = (result.tie && result.tie.length) ? result.tie : result.tiedForMinScore;
+        html += '<p>No ' + escapeHtml_(label) + ' winner (tie between: <strong>' + escapeHtml_(tied.join(', ')) + '</strong>).</p>';
       } else {
         html += '<p>No ' + escapeHtml_(label) + ' winner (cycle detected).</p>';
       }

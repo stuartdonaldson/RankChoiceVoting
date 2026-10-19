@@ -186,7 +186,7 @@ function generateCondorcetResultsHtml(results, finishOrders) {
   if (results.minimax.winner) {
     html += '<p>Minimax winner: <strong>' + results.minimax.winner + '</strong></p>';
   } else {
-    html += '<p>No Minimax winner (tie or cycle detected).</p>';
+    html += '<p>No Minimax winner (tie between: <strong>' + (results.minimax.tiedForMinScore || []).join(', ') + '</strong>).</p>';
   }
   if (finishOrders.minimax) {
     html += '<p><strong>Finish order:</strong> ' + _formatFinishOrderHtml_(finishOrders.minimax) + '</p>';

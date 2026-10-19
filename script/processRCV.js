@@ -2,7 +2,7 @@
  * Requirement:
  * Processes ranked choice voting (RCV) results, redistributing votes each round,
  * eliminating the candidate with the fewest first-place votes, and logging each stage.
- * Handles tie-breaking using second-choice and least last-place votes, and logs all actions to the processing sheet.
+ * Handles tie-breaking using fewest second-choice votes, then most last-place votes, and logs all actions to the processing sheet.
  *
  * @returns {Array<Object>} An array of the top vote-getting candidate(s) after all calculated tie-breakers.
  * If there is more than one value, a tie could not be broken using second-choice and least-favorite votes.
@@ -133,7 +133,7 @@ function runRankedChoiceVoting(candidateNames, allBallots, sheet) {
         "Elimination Reason",
       ],
     ];
-    // Sort: active first by votes desc, then eliminated by round asc
+    // Sort: active first by votes desc, then eliminated by round desc (last eliminated first)
     const sorted = allCandidates.slice().sort((a, b) => {
       if (a.eliminated && b.eliminated) {
         return b.eliminated.round - a.eliminated.round;
@@ -142,11 +142,13 @@ function runRankedChoiceVoting(candidateNames, allBallots, sheet) {
       if (b.eliminated) return -1;
       return b.votes - a.votes;
     });
+    // Same majority threshold as the main loop: weight of non-exhausted ballots only.
+    const majority = _sumBallotWeights(getActiveBallots()) / 2;
     sorted.forEach((c) => {
       let status;
       if (c.eliminated) {
         status = "Eliminated";
-      } else if (c.votes > (_sumBallotWeights(allBallots) / 2)) {
+      } else if (c.votes > majority) {
         status = "Winner";
       } else if (c.votes === 0) {
         status = "No Votes";
@@ -162,6 +164,13 @@ function runRankedChoiceVoting(candidateNames, allBallots, sheet) {
       ]);
     });
     return table;
+  }
+
+  // Ballots with at least one ranked candidate not yet eliminated (non-exhausted).
+  function getActiveBallots() {
+    return allBallots.filter((ballot) =>
+      ballot.ranks.some((rank, i) => _isRankedValue(rank) && !allCandidates[i].eliminated)
+    );
   }
 
   function getEffectiveBallots() {
@@ -229,13 +238,7 @@ function runRankedChoiceVoting(candidateNames, allBallots, sheet) {
     });
 
     // Count only non-exhausted ballots
-    var activeBallots = allBallots.filter((ballot) => {
-      // At least one ranked candidate is not eliminated
-      return ballot.ranks.some(
-        (rank, i) => _isRankedValue(rank) && !allCandidates[i].eliminated
-      );
-    });
-    var totalVotes = _sumBallotWeights(activeBallots);
+    var totalVotes = _sumBallotWeights(getActiveBallots());
     var winner = allCandidates.find(
       (r) => !r.eliminated && r.votes > totalVotes / 2
     );
@@ -296,7 +299,7 @@ function runRankedChoiceVoting(candidateNames, allBallots, sheet) {
       reason: reason,
       votes: minVotes,
     };
-    logProgress(roundNumber, eliminate, getEffectiveBallots());
+    logProgress(roundNumber, eliminate);
     roundNumber++;
   }
 }
@@ -304,7 +307,7 @@ function runRankedChoiceVoting(candidateNames, allBallots, sheet) {
 /**
  * Attempts to break a tie among candidates with the fewest votes using a series of tie-breaking strategies:
  * 1. Second choice: Eliminates the candidate with the fewest second-choice votes among tied candidates.
- * 2. Least last-place: If still tied, eliminates the candidate with the fewest last-place votes among tied candidates.
+ * 2. Most last-place: If still tied, eliminates the candidate with the most last-place votes among tied candidates.
  * 3. If still unresolved, reports the tie for manual resolution.
  * 
  * Logs the tie-breaking process and results to the processing sheet if provided.

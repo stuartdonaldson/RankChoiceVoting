@@ -114,6 +114,10 @@ function testExhaustedBallotsUseActiveWeightForMajority() {
     (row) => row[0] === 2 && row[1] === 'C' && String(row[2]).indexOf('Wins') === 0
   );
   assert.ok(winsInRound2, 'expected C to be declared winner in round 2 using active-ballot majority');
+
+  // The summary must use the same active-ballot threshold (rcballot-slw): C=4 of 7 active.
+  const cRow = result.summary.find((row) => row[0] === 'C');
+  assert.equal(cRow[1], 'Winner');
 }
 
 function testWeightedBallotsCountInFirstChoice() {
@@ -532,6 +536,14 @@ function testPairwiseExactTieAcrossMethods() {
   const rp = Condorcet.findRankedPairsWinner(ballots, candidateNames);
   assert.equal(rp.winner, null);
   assert.deepEqual(rp.tie.slice().sort(), ['A', 'B']);
+
+  // Minimax names who tied on the lowest score (rcballot-slw), without a .tie that would
+  // stop the winner-removal finish order early.
+  const mm = Condorcet.findMinimaxWinner(ballots, candidateNames);
+  assert.deepEqual(mm.tiedForMinScore.slice().sort(), ['A', 'B']);
+  assert.equal(mm.tie, undefined);
+  const mmOrder = Condorcet.computeCondorcetFinishOrder(Condorcet.findMinimaxWinner, ballots, candidateNames);
+  assert.deepEqual(mmOrder[0].names.slice().sort(), ['A', 'B', 'C']);
 }
 
 // ---------------------------------------------------------------------------

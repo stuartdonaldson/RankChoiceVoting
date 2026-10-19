@@ -741,7 +741,8 @@ function _buildResultsRows_(rcv, condorcet, rcvFinishOrder, finishOrders) {
     (condorcet.rankedPairs.tie && condorcet.rankedPairs.tie.length
       ? 'Tie: ' + condorcet.rankedPairs.tie.join(', ')
       : 'None (cycle)')]);
-  rows.push(['Minimax', condorcet.minimax.winner || 'None (tie/cycle)']);
+  rows.push(['Minimax', condorcet.minimax.winner ||
+    'Tie: ' + (condorcet.minimax.tiedForMinScore || []).join(', ')]);
 
   if (finishOrders) {
     rows.push(['']);
