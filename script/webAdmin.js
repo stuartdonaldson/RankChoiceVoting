@@ -328,7 +328,8 @@ function getAdminEditData(id) {
     addInstructions: config['Add-Instructions'] || '',
     adminOnlyNotes: config['Admin-Only-Notes'] || '',
     candidates: candidateRows,
-    orphanColumns: view.orphans.map(function (o) { return { label: o.label, col: o.col }; }),
+    orphanColumns: view.orphans.filter(function (o) { return _orphanHasRanks_(rep.snap, o.label); })
+      .map(function (o) { return { label: o.label, col: o.col }; }),
     ballotUrl: baseUrl + '?cmd=ballot&id=' + encodeURIComponent(id),
     adminListUrl: baseUrl + '?cmd=admin',
     appVersion: (typeof APP_VERSION !== 'undefined' && APP_VERSION) || '',
@@ -424,6 +425,141 @@ function adminSaveCandidate(id, index, name, details, linkText, linkUrl) {
     });
     refreshBallotCache_(id, sheet, _ballotViewFromSnapshot_(after)); // keep the cache (BallotCache.js) in sync with this write
     return { ok: true, name: name, details: details, linkText: linkText, linkUrl: linkUrl };
+  });
+}
+
+/**
+ * RPC: deletes one candidate (rcballot-8i5.6). Removes its Candidates row only; the
+ * Responses rank column is kept and becomes an orphan (listed by getAdminEditData, never
+ * counted by analysis), so the votes can be re-linked later (adminLinkOrphanColumn).
+ *
+ * @param {string} id
+ * @param {string} name candidate to delete (trim/case-insensitive).
+ * @return {{ok:boolean, name:string}}
+ */
+function adminDeleteCandidate(id, name) {
+  name = String(name || '').trim();
+  return _withBallotLock_(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = findBallotSheet_(ss, id);
+    if (!sheet) throw new Error('No ballot found for id "' + id + '".');
+    var after = _withBallotWrite_(sheet, function (snap) {
+      var key = name.toLowerCase();
+      var found = null;
+      _snapCandidates_(snap).forEach(function (c) { if (!found && c.name.toLowerCase() === key) found = c; });
+      if (!found) throw new Error('Candidate not found.');
+      return _applyBallotOps_(sheet, snap, [{ section: 'candidates', deleteRows: [found.row] }]);
+    });
+    refreshBallotCache_(id, sheet, _ballotViewFromSnapshot_(after));
+    return { ok: true, name: name };
+  });
+}
+
+/**
+ * RPC: reorders the candidates (rcballot-8i5.6). Rewrites the Candidates rows' content in
+ * the given order; the Responses columns are not touched (ranks are keyed by name).
+ *
+ * @param {string} id
+ * @param {Array<string>} order every current candidate name exactly once, in the new order.
+ * @return {{ok:boolean, order:Array<string>}} the candidate names in their new order.
+ */
+function adminReorderCandidates(id, order) {
+  return _withBallotLock_(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = findBallotSheet_(ss, id);
+    if (!sheet) throw new Error('No ballot found for id "' + id + '".');
+    var result = [];
+    var after = _withBallotWrite_(sheet, function (snap) {
+      var cands = _snapCandidates_(snap);
+      if (!Array.isArray(order) || order.length !== cands.length) {
+        throw new Error('Reorder must list every candidate exactly once.');
+      }
+      var byKey = {};
+      cands.forEach(function (c) { byKey[c.name.toLowerCase()] = c; });
+      var used = {};
+      var updates = [];
+      order.forEach(function (n, i) {
+        var key = String(n || '').trim().toLowerCase();
+        var c = byKey[key];
+        if (!c || used[key]) throw new Error('Reorder must list every candidate exactly once.');
+        used[key] = true;
+        result.push(c.name);
+        if (c.row !== cands[i].row) {
+          updates.push({ row: cands[i].row, cells: { Name: c.name, Details: c.details, 'Link Text': c.linkText, 'Link URL': c.linkUrl } });
+        }
+      });
+      if (!updates.length) return snap;
+      return _applyBallotOps_(sheet, snap, [{ section: 'candidates', update: updates }]);
+    });
+    refreshBallotCache_(id, sheet, _ballotViewFromSnapshot_(after));
+    return { ok: true, order: result };
+  });
+}
+
+/** @return {boolean} true when any response has a non-blank rank under the candidate's column. */
+function _columnHasRanks_(snap, candidateName) {
+  return _snapResponses_(snap).some(function (r) {
+    var v = r.ranks[candidateName];
+    return v !== '' && v !== null && v !== undefined;
+  });
+}
+
+/** @return {boolean} true when any response has a non-blank value under the orphan column label. */
+function _orphanHasRanks_(snap, label) {
+  return _snapResponses_(snap).some(function (r) {
+    var v = r.orphanRanks[label];
+    return v !== '' && v !== null && v !== undefined;
+  });
+}
+
+/**
+ * RPC: links an orphan Responses rank column to an existing candidate (rcballot-8i5.6) by
+ * renaming the column header to the candidate's name, so the column's votes count for that
+ * candidate. Refused when the candidate's own rank column already holds votes (columns are
+ * never merged) or the label is not currently an orphan. A blank own column (the repair
+ * backfills one for every candidate) is swapped out: it takes the orphan's old label, so one
+ * empty orphan column is left behind (not listed: getAdminEditData hides vote-less orphans).
+ *
+ * @param {string} id
+ * @param {string} label orphan column header, as listed in getAdminEditData's orphanColumns.
+ * @param {string} candidateName
+ * @return {{ok:boolean, label:string, candidate:string}}
+ */
+function adminLinkOrphanColumn(id, label, candidateName) {
+  label = String(label || '').trim();
+  candidateName = String(candidateName || '').trim();
+  return _withBallotLock_(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = findBallotSheet_(ss, id);
+    if (!sheet) throw new Error('No ballot found for id "' + id + '".');
+    var linked = '';
+    var after = _withBallotWrite_(sheet, function (snap) {
+      var orphan = null;
+      _snapOrphanColumns_(snap).forEach(function (o) { if (!orphan && o.label.toLowerCase() === label.toLowerCase()) orphan = o; });
+      if (!orphan) throw new Error('Orphan column not found.');
+      var cand = null;
+      _snapCandidates_(snap).forEach(function (c) { if (!cand && c.name.toLowerCase() === candidateName.toLowerCase()) cand = c; });
+      if (!cand) throw new Error('Candidate not found.');
+      var ops = [];
+      if (cand.rankLabel !== null) {
+        // The repair that precedes every write backfills an empty column for a candidate with
+        // none, so "no column of its own" means "no votes in it". Columns are never merged.
+        if (_columnHasRanks_(snap, cand.name)) {
+          throw new Error('"' + cand.name + '" already has votes in its own rank column; columns are not merged.');
+        }
+        // Park the empty column under a temp label so the orphan's column can take the name,
+        // then give the empty column the orphan's old label (temp labels never reach the sheet).
+        ops.push({ section: 'responses', renameColumn: { from: cand.rankLabel, to: '\u0001link' } });
+        ops.push({ section: 'responses', renameColumn: { from: orphan.label, to: cand.name } });
+        ops.push({ section: 'responses', renameColumn: { from: '\u0001link', to: orphan.label } });
+      } else {
+        ops.push({ section: 'responses', renameColumn: { from: orphan.label, to: cand.name } });
+      }
+      linked = cand.name;
+      return _applyBallotOps_(sheet, snap, ops);
+    });
+    refreshBallotCache_(id, sheet, _ballotViewFromSnapshot_(after));
+    return { ok: true, label: label, candidate: linked };
   });
 }
 

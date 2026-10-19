@@ -2213,6 +2213,98 @@ function testSaveBallotCandidatesSwapAndDuplicates() {
   assert.deepEqual([w.writes, w.reads], [1, 1], 'no rename: one setValues for the table block');
 }
 
+// ---------------------------------------------------------------------------
+// Admin delete / reorder / link-orphan (rcballot-8i5.6).
+// ---------------------------------------------------------------------------
+
+function ranksByName(SM, sheet) {
+  const names = SM.readBallotCandidates_(sheet);
+  return SM.readBallotResponseRows_(sheet).map((r) => {
+    const o = {};
+    names.forEach((n, i) => { o[n] = r.ranks[i]; });
+    return o;
+  });
+}
+
+/** AC1: delete removes the Candidates row; the rank column stays as an orphan and is excluded from the readers. */
+function testAdminDeleteCandidateKeepsOrphanColumn() {
+  const { SM, ss, sandbox } = loadBallotModelWithAdmin();
+  const sheet = buildOrderedBallot(ss, 'Del', ['results', 'candidates', 'responses']);
+  const c = countCalls(sheet, () => sandbox.adminDeleteCandidate('Del', ' alice '));
+  assert.deepEqual(c.result, { ok: true, name: 'alice' });
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Bob']);
+  assert.deepEqual(ranksByName(SM, sheet), [{ Bob: 2 }, { Bob: 1 }]);
+  const snap = SM._readBallot_(sheet);
+  assert.deepEqual(SM._snapOrphanColumns_(snap).map((o) => o.label), ['Alice']);
+  sandbox._getWebAppUrl_ = () => 'http://x/exec';
+  assert.deepEqual(sandbox.getAdminEditData('Del').orphanColumns.map((o) => o.label), ['Alice']);
+  // The orphan's votes are still on the sheet.
+  const header = SM._readBallotLayout_(sheet).sections.responses.headerRow;
+  assert.deepEqual(sheet.getRange(header, 5, 3, 1).getValues().map((r) => r[0]), ['Alice', 1, 2]);
+
+  // Refusal: unknown name writes nothing.
+  const r = countCalls(sheet, () => assert.throws(() => sandbox.adminDeleteCandidate('Del', 'Nobody'), /^Error: Candidate not found\.$/));
+  assert.equal(r.writes, 0);
+}
+
+/** AC2: reorder rewrites Candidates rows only; ranks stay with each name; Responses untouched. */
+function testAdminReorderCandidatesKeepsRanks() {
+  const { SM, ss, sandbox } = loadBallotModelWithAdmin();
+  const sheet = buildOrderedBallot(ss, 'Reo', ['results', 'candidates', 'responses']);
+  SM.addBallotCandidate_(sheet, 'Carol', '');
+  const before = ranksByName(SM, sheet);
+  const resp = sectionSnapshot(sheet, 'responses');
+
+  const c = countCalls(sheet, () => sandbox.adminReorderCandidates('Reo', ['Carol', 'alice', 'Bob']));
+  assert.deepEqual(c.result, { ok: true, order: ['Carol', 'Alice', 'Bob'] });
+  assert.equal(c.writes, 1, 'one block of candidate rows');
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Carol', 'Alice', 'Bob']);
+  assert.deepEqual(ranksByName(SM, sheet), before);
+  assert.deepEqual(sectionSnapshot(sheet, 'responses'), resp);
+
+  // Details travel with the row; refusals write nothing.
+  SM.saveBallotCandidatesForId_('Reo', [{ name: 'Carol', details: 'c' }, { name: 'Alice', details: 'a' }, { name: 'Bob', details: 'b' }]);
+  sandbox.adminReorderCandidates('Reo', ['Bob', 'Carol', 'Alice']);
+  assert.deepEqual(SM.readBallotCandidateDetails_(sheet).map((d) => [d.name, d.details]), [['Bob', 'b'], ['Carol', 'c'], ['Alice', 'a']]);
+  assert.deepEqual(ranksByName(SM, sheet), before);
+  const r = countCalls(sheet, () => {
+    assert.throws(() => sandbox.adminReorderCandidates('Reo', ['Bob', 'Carol']), /^Error: Reorder must list every candidate exactly once\.$/);
+    assert.throws(() => sandbox.adminReorderCandidates('Reo', ['Bob', 'Bob', 'Alice']), /^Error: Reorder must list every candidate exactly once\.$/);
+    assert.throws(() => sandbox.adminReorderCandidates('Reo', ['Bob', 'Carol', 'Zed']), /^Error: Reorder must list every candidate exactly once\.$/);
+  });
+  assert.equal(r.writes, 0);
+}
+
+/** AC3: linking an orphan renames its column to a column-less candidate, so its votes count for that candidate; merging is refused. */
+function testAdminLinkOrphanColumn() {
+  const { SM, ss, sandbox } = loadBallotModelWithAdmin();
+  const sheet = buildOrderedBallot(ss, 'Link', ['results', 'candidates', 'responses']);
+  // Hand-rename Alice's Candidates row: her column E becomes an orphan and 'Alicia' has no column.
+  const cand = rowOf(sheet, '[Candidates]') + 2;
+  sheet.getRange(cand, 2).setValue('Alicia');
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alicia', 'Bob']);
+  assert.deepEqual(SM._snapOrphanColumns_(SM._readBallot_(sheet)).map((o) => o.label), ['Alice']);
+  assert.deepEqual(ranksByName(SM, sheet), [{ Alicia: '', Bob: 2 }, { Alicia: '', Bob: 1 }]);
+  sandbox._getWebAppUrl_ = () => 'http://x/exec';
+  // Page load repairs: Alicia gets an empty column; the orphan keeps its votes and is listed.
+  assert.deepEqual(sandbox.getAdminEditData('Link').orphanColumns.map((o) => o.label), ['Alice']);
+
+  // Refusals write nothing: Bob's column holds votes; unknown names.
+  let r = countCalls(sheet, () => {
+    assert.throws(() => sandbox.adminLinkOrphanColumn('Link', 'Alice', 'Bob'), /already has votes in its own rank column/);
+    assert.throws(() => sandbox.adminLinkOrphanColumn('Link', 'Alice', 'Nobody'), /^Error: Candidate not found\.$/);
+    assert.throws(() => sandbox.adminLinkOrphanColumn('Link', 'Bob', 'Alicia'), /^Error: Orphan column not found\.$/);
+  });
+  assert.equal(r.writes, 0);
+
+  r = countCalls(sheet, () => sandbox.adminLinkOrphanColumn('Link', 'alice', 'alicia'));
+  assert.deepEqual(r.result, { ok: true, label: 'alice', candidate: 'Alicia' });
+  assert.equal(r.writes, 1, 'header row only');
+  assert.deepEqual(ranksByName(SM, sheet), [{ Alicia: 1, Bob: 2 }, { Alicia: 2, Bob: 1 }]);
+  // Only an empty orphan column is left; the page does not list it.
+  assert.deepEqual(sandbox.getAdminEditData('Link').orphanColumns, []);
+}
+
 function run() {
   testRenameKeepsVotesWithCandidate();
   testSaveBallotCandidatesSwapAndDuplicates();
@@ -2291,6 +2383,9 @@ function run() {
   testHeaderlessCandidatesRepairedOnRepairPath();
   testHandSortedCandidatesKeepRanksByNameThroughReadsAndWrites();
   testHandDeletedCandidateOrphanNeverAdopted();
+  testAdminDeleteCandidateKeepsOrphanColumn();
+  testAdminReorderCandidatesKeepsRanks();
+  testAdminLinkOrphanColumn();
   console.log('test_ballot_model: all tests passed');
 }
 
