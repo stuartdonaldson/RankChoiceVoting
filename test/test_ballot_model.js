@@ -1905,7 +1905,142 @@ function testHandDeletedCandidateOrphanNeverAdopted() {
   assert.deepEqual(SM._snapOrphanColumns_(SM._readBallot_(sheet)), []);
 }
 
+// ---------------------------------------------------------------------------
+// Write applier (rcballot-8i5.4): _applyBallotOps_ and the uniqueness helpers.
+// ---------------------------------------------------------------------------
+
+/** Runs fn and returns the GAS write / getValues calls it made on sheet. */
+function countCalls(sheet, fn) {
+  sheet._writeCalls = 0;
+  sheet._getValuesCalls = 0;
+  const result = fn();
+  return { writes: sheet._writeCalls, reads: sheet._getValuesCalls, result: result };
+}
+
+/** update merges untouched cells (in-between candidate/orphan columns) from the snapshot; append inserts before the next marker. */
+function testApplyBallotOpsUpdateMergesAndAppendMakesRoom() {
+  const { SM, ss } = loadBallotModel();
+  // Results 10-12, Responses 13 (header 14, V1 15, V2 16), Candidates 17 (header 18, Alice 19, Bob 20).
+  const sheet = buildOrderedBallot(ss, 'Ops', ['results', 'responses', 'candidates']);
+  sheet.getRange(14, 7).setValue('Carol'); // orphan rank column
+  sheet.getRange(15, 7).setValue(4);
+  sheet.getRange(15, 8).setValue('note'); // unlabelled cell
+  const candidatesBefore = sectionSnapshot(sheet, 'candidates');
+
+  let snap = SM._readBallot_(sheet);
+  let c = countCalls(sheet, () => SM._applyBallotOps_(sheet, snap, [{ section: 'responses', update: [{ row: 15, cells: { alice: 3, Carol: 9 } }] }]));
+  assert.deepEqual([c.writes, c.reads], [1, 0], 'update: one setValues, no read');
+  assert.deepEqual(sheet.getRange(15, 5, 1, 4).getValues()[0], [3, 2, 9, 'note']); // Bob (col 6) kept
+  assert.deepEqual(SM._snapResponses_(c.result).map((r) => r.ranks), [{ Alice: 3, Bob: 2 }, { Alice: 2, Bob: 1 }]);
+
+  snap = c.result;
+  c = countCalls(sheet, () => SM._applyBallotOps_(sheet, snap, [{ section: 'responses', append: [{ Date: 'd3', Name: 'V3', Weight: 1, Comment: '', Alice: 1, Bob: 2 }] }]));
+  assert.deepEqual([c.writes, c.reads], [2, 1], 'append into a full section: insert + setValues, one re-read');
+  assert.deepEqual(sheet.getRange(17, 1, 1, 6).getValues()[0], ['d3', 'V3', 1, '', 1, 2]);
+  assert.equal(sheet.getRange(18, 1).getValue(), '[Candidates]');
+  assert.deepEqual(sectionSnapshot(sheet, 'candidates'), candidatesBefore);
+  assert.deepEqual(SM._snapResponses_(c.result).map((r) => r.name), ['V1', 'V2', 'V3']);
+  assert.deepEqual(SM._readBallot_(sheet).tables, c.result.tables, 'returned snapshot matches the sheet');
+}
+
+/** ensureColumns in the same set as a Candidates append: header cell placed after the row insert; existing labels (any case) untouched. */
+function testApplyBallotOpsEnsureColumnsWithAppend() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = buildOrderedBallot(ss, 'Ens', ['results', 'candidates', 'responses']);
+  const snap = SM._readBallot_(sheet);
+  const c = countCalls(sheet, () => SM._applyBallotOps_(sheet, snap, [
+    { section: 'candidates', append: [{ Name: 'Dan', Details: 'd' }] },
+    { section: 'responses', ensureColumns: ['alice', 'Dan'] },
+  ]));
+  assert.equal(c.writes, 3, 'insert + candidate row + header cell');
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice', 'Bob', 'Dan']);
+  const header = SM._readBallotLayout_(sheet).sections.responses.headerRow;
+  assert.deepEqual(sheet.getRange(header, 5, 1, 4).getValues()[0], ['Alice', 'Bob', 'Dan', '']);
+  assert.deepEqual(SM._snapOrphanColumns_(c.result), []);
+}
+
+/** renameColumn finds the header cell by OLD label; ranks stay with the candidate. Fixed / duplicate targets refuse. */
+function testApplyBallotOpsRenameColumn() {
+  const { SM, ss, sandbox } = loadBallotModel();
+  const sheet = buildOrderedBallot(ss, 'Ren', ['results', 'candidates', 'responses']); // Alice row 15, Responses header 18
+  const snap = SM._readBallot_(sheet);
+  SM._applyBallotOps_(sheet, snap, [
+    { section: 'candidates', update: [{ row: 15, cells: { Name: 'Alicia' } }] },
+    { section: 'responses', renameColumn: { from: 'ALICE', to: 'Alicia' } },
+  ]);
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alicia', 'Bob']);
+  assert.deepEqual(SM.readBallotResponseRows_(sheet).map((r) => r.ranks), [[1, 2], [2, 1]]);
+
+  [[{ from: 'Alicia', to: 'bob' }, 'duplicateColumn'], [{ from: 'Weight', to: 'W' }, 'fixedLabel']].forEach(([rename, reason]) => {
+    const cur = SM._readBallot_(sheet);
+    const c = countCalls(sheet, () => assert.throws(() => SM._applyBallotOps_(sheet, cur, [
+      { section: 'candidates', update: [{ row: 15, cells: { Details: 'changed' } }] },
+      { section: 'responses', renameColumn: rename },
+    ]), /^Error: Ballot sheet layout is damaged — /));
+    assert.equal(c.writes, 0, reason + ': nothing written');
+    assert.equal(logLinesWith(sandbox, '"reason":"' + reason + '"').length, 1, reason);
+  });
+}
+
+/** deleteRows, then an update addressed in the ORIGINAL snapshot's rows: mapped across the delete. */
+function testApplyBallotOpsDeleteRowsMapsLaterRows() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = buildOrderedBallot(ss, 'Del', ['results', 'candidates', 'responses']); // Alice 15, Bob 16; V2 row 20
+  const snap = SM._readBallot_(sheet);
+  const c = countCalls(sheet, () => SM._applyBallotOps_(sheet, snap, [
+    { section: 'candidates', deleteRows: [15] },
+    { section: 'responses', update: [{ row: 20, cells: { Comment: 'moved' } }] },
+  ]));
+  assert.deepEqual([c.writes, c.reads], [2, 1]);
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Bob']);
+  assert.deepEqual(SM.readBallotResponseRows_(sheet).map((r) => r.name + ':' + r.comment), ['V1:', 'V2:moved']);
+  assert.deepEqual(SM._snapOrphanColumns_(c.result).map((o) => o.label), ['Alice']);
+  assert.throws(() => SM._applyBallotOps_(sheet, c.result, [{ section: 'candidates', deleteRows: [13] }]), /outside ballot section candidates/);
+}
+
+/** A table op on a header missing a fixed label refuses the whole set; unknown labels are a plain throw. */
+function testApplyBallotOpsRefusals() {
+  const { SM, ss, sandbox } = loadBallotModel();
+  const sheet = buildOrderedBallot(ss, 'Bad', ['results', 'candidates', 'responses']);
+  sheet.getRange(18, 3).setValue(''); // Responses header loses 'Weight'
+  const snap = SM._readBallot_(sheet);
+  let c = countCalls(sheet, () => assert.throws(() => SM._applyBallotOps_(sheet, snap, [
+    { section: 'candidates', append: [{ Name: 'Dan' }] },
+    { section: 'responses', ensureColumns: ['Dan'] },
+  ]), /^Error: Ballot sheet layout is damaged — the \[Responses\] header is missing: Weight\.$/));
+  assert.equal(c.writes, 0);
+  const lines = logLinesWith(sandbox, 'ballot.write.refused');
+  assert.equal(lines.length, 1);
+  assert.ok(lines[0].indexOf('"section":"responses","reason":"missingLabel","labels":["Weight"]') !== -1, lines[0]);
+
+  c = countCalls(sheet, () => assert.throws(() => SM._applyBallotOps_(sheet, snap, [
+    { section: 'candidates', append: [{ Name: 'Dan', Colour: 'red' }] },
+  ]), /^Error: Unknown column "Colour" in ballot section candidates\.$/));
+  assert.equal(c.writes, 0);
+  assert.throws(() => SM._applyBallotOps_(sheet, snap, [{ section: 'results', append: [] }]), /Unsupported ballot op/);
+}
+
+/** AC2 helpers: trim/case-insensitive; fixed Responses labels and marker words are taken; the renamed row is exempt. */
+function testUniqueCandidateNameHelpers() {
+  const { SM, ss } = loadBallotModel();
+  const snap = SM._readBallot_(buildOrderedBallot(ss, 'Uniq', ['results', 'candidates', 'responses'])); // Alice row 15
+  const msg = /^Error: A candidate with that name already exists\.$/;
+  [' alice ', 'BOB', 'weight', 'Name', 'date', 'Comment', '[Results]', 'items'].forEach((n) => assert.throws(() => SM._assertUniqueCandidateName_(snap, n), msg, n));
+  SM._assertUniqueCandidateName_(snap, 'Carol');
+  SM._assertUniqueCandidateName_(snap, 'ALICE', 15); // renaming Alice's own row
+  assert.throws(() => SM._assertUniqueCandidateName_(snap, 'Bob', 15), msg);
+  assert.throws(() => SM._assertUniqueCandidateNames_(['A', ' a']), msg);
+  assert.throws(() => SM._assertUniqueCandidateNames_(['A', 'Weight']), msg);
+  SM._assertUniqueCandidateNames_(['A', 'B']);
+}
+
 function run() {
+  testApplyBallotOpsUpdateMergesAndAppendMakesRoom();
+  testApplyBallotOpsEnsureColumnsWithAppend();
+  testApplyBallotOpsRenameColumn();
+  testApplyBallotOpsDeleteRowsMapsLaterRows();
+  testApplyBallotOpsRefusals();
+  testUniqueCandidateNameHelpers();
   testCreateNewBallotCreatesSkeleton();
   testListBallotIdsAndFindBallotSheet();
   testWriteThenReadConfigRoundTrips();

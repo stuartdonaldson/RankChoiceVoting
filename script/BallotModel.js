@@ -1031,9 +1031,23 @@ function addBallotCandidate_(sheet, phrase, details, linkText, linkUrl) {
  *   adopting existing (unlabelled) data.
  */
 function _nextResponsesCol_(grid, snap) {
-  var section = snap.layout.sections.responses;
-  var t = snap.tables.responses;
-  var last = _BALLOT_RESPONSE_FIXED_COLS.length;
+  return _nextTableCol_(grid, snap, 'responses');
+}
+
+/**
+ * _nextResponsesCol_ for any table section: the first column right of every labelled header
+ * cell, of the fixed columns' home positions, and of any content in the section's rows.
+ *
+ * @param {Array<Array<*>>} grid
+ * @param {Object} snap
+ * @param {string} sectionKey 'candidates' | 'responses'
+ * @return {number}
+ */
+function _nextTableCol_(grid, snap, sectionKey) {
+  var def = _BALLOT_SECTIONS_[sectionKey];
+  var section = snap.layout.sections[sectionKey];
+  var t = snap.tables[sectionKey];
+  var last = def.firstCol - 1 + def.columns.length;
   Object.keys(t.col).forEach(function (l) { if (t.col[l] > last) last = t.col[l]; });
   for (var row = section.headerRow; row <= section.endRow; row++) {
     var cells = grid[row - 1] || [];
@@ -1619,13 +1633,17 @@ function _parseBallot_(grid) {
     if (colARows.length) problems.push({ code: 'candidateInColumnA', rows: colARows });
   }
 
-  return {
+  var snap = {
     layout: layout,
     config: _parseBallotConfig_(grid, layout),
     tables: tables,
     resultsRows: _parseBallotResults_(grid, layout.sections.results, lastCol),
     problems: problems
   };
+  // The grid the snapshot was parsed from, for writers that merge untouched cells
+  // (_applyBallotOps_). Non-enumerable: not part of the snapshot's compared shape.
+  Object.defineProperty(snap, 'grid', { value: grid, enumerable: false });
+  return snap;
 }
 
 /**
@@ -2137,6 +2155,390 @@ function _responsesMissingName_(snap) {
   return !!t && t.missing.indexOf(_BALLOT_SECTIONS_.responses.key) !== -1;
 }
 
+// ---------------------------------------------------------------------------
+// Write path (rcballot-8i5.4): lock -> snapshot -> plan -> apply. Every writer runs inside
+// _withBallotWrite_ and expresses its change as label-keyed ops for _applyBallotOps_ — the
+// single place that turns ops into sheet calls. Row numbers only ever come from a snapshot.
+// ---------------------------------------------------------------------------
+
+/**
+ * Write entry wrapper: takes the ballot lock (re-entrant), runs the repair path once, and
+ * calls fn with the repaired snapshot. Writers plan ops from that snapshot and return
+ * _applyBallotOps_'s result, so callers get the post-write snapshot without another read.
+ * Entry points must not also call _repairBallotSheet_ themselves.
+ *
+ * @param {Sheet} sheet
+ * @param {function(Object): *} fn receives the current snapshot (snap.grid attached).
+ * @return {*} fn's return value.
+ */
+function _withBallotWrite_(sheet, fn) {
+  return _withBallotLock_(function () {
+    return fn(_repairBallotSheet_(sheet).snap);
+  });
+}
+
+/**
+ * Applies label-keyed write ops to a ballot sheet. Caller holds the ballot lock and passes
+ * the current snapshot (from _withBallotWrite_). Op vocabulary — one verb per op:
+ *
+ *   {section:'config',     update:[{row, cells:{Value:v, Key:k?}}]}  rewrite existing config rows
+ *   {section:'config',     append:[{Key:k, Value:v}]}                new config rows
+ *   {section:'results',    replaceAll:[[v, ...], ...]}               output rows, from col B
+ *   {section:'candidates'|'responses', append:[{<label>:v}]}         new table rows
+ *   {section:'candidates'|'responses', update:[{row, cells:{<label>:v}}]}
+ *   {section:'candidates'|'responses', ensureColumns:[label]}        header cells for absent labels
+ *   {section:'candidates'|'responses', renameColumn:{from, to}}      header cell found by OLD label
+ *   {section:'candidates'|'responses', deleteRows:[row]}             remove data rows
+ *
+ * Rules:
+ *   - Every `row` refers to the snapshot passed in; the applier maps it across its own row
+ *     inserts/deletes, so ops never need re-planning mid-set.
+ *   - Labels match header cells trim/case-insensitively. A label is known if the header has
+ *     it or an earlier ensureColumns/renameColumn in the same set adds it.
+ *   - append writes directly below the section's last row with content (blank-key rows with
+ *     content included — never overwritten), using blank rows before the next marker and
+ *     inserting rows in front of that marker when short. Config: the next marker is the first
+ *     marker, also when it sits on row 1. A bottom section simply grows past the last row.
+ *   - replaceAll (results) resizes the region (delete surplus rows / insert before the next
+ *     marker) and writes every row full-width: col A blank, output from col B, the rest
+ *     cleared — so no stale output survives in any column.
+ *   - ensureColumns appends header cells right of every labelled column and any content in
+ *     the section (_nextTableCol_); a label already present (any case) is left alone.
+ *   - renameColumn of a label not in the header is a no-op.
+ *   - Cell writes are buffered and flushed as ONE setValues per contiguous row block over the
+ *     block's min..max dirty column; untouched cells inside the block are rewritten with the
+ *     snapshot's values, so orphan/extra cells are preserved (as values — a formula there
+ *     would be flattened). The buffer is flushed before each insert/delete, and the sheet is
+ *     re-read (one getDataRange) after it.
+ *   - Refusals are checked for the whole set before anything is written. A table op on a
+ *     section whose marker or header row is missing, or whose header lacks a fixed label,
+ *     logs ballot.write.refused {sheet, section, reason: markerMissing|noHeader|missingLabel,
+ *     labels?} and throws 'Ballot sheet layout is damaged — ...'. Results with no marker:
+ *     reason markerMissing. renameColumn of a fixed label (reason fixedLabel) or onto a label
+ *     another column already has (reason duplicateColumn) refuses the same way. Unknown
+ *     labels, unknown verbs/sections and rows outside the section are programming errors:
+ *     plain throw, nothing written.
+ *
+ * @param {Sheet} sheet
+ * @param {Object} snap current snapshot (its non-enumerable grid is used for merges; read if absent)
+ * @param {Array<Object>} ops
+ * @return {Object} snapshot of the sheet after the ops (cells as written, parsed in memory).
+ */
+function _applyBallotOps_(sheet, snap, ops) {
+  var source = snap.grid || sheet.getDataRange().getValues();
+  var st = { sheet: sheet, grid: source.map(function (r) { return r.slice(); }), snap: null, dirty: {}, edits: [] };
+  st.snap = _parseBallot_(st.grid);
+  _validateBallotOps_(st, ops);
+  ops.forEach(function (op) {
+    _applyBallotOp_(st, op);
+    st.snap = _parseBallot_(st.grid);
+  });
+  _flushBallotWrites_(st);
+  return st.snap;
+}
+
+var _BALLOT_OP_VERBS_ = {
+  kv: ['update', 'append'],
+  output: ['replaceAll'],
+  table: ['update', 'append', 'ensureColumns', 'renameColumn', 'deleteRows']
+};
+
+/** @return {string} the op's single verb key. */
+function _ballotOpVerb_(op) {
+  var def = _BALLOT_SECTIONS_[op.section];
+  if (!def) throw new Error('Unknown ballot section "' + op.section + '".');
+  var verbs = Object.keys(op).filter(function (k) { return k !== 'section'; });
+  if (verbs.length !== 1 || _BALLOT_OP_VERBS_[def.kind].indexOf(verbs[0]) === -1) {
+    throw new Error('Unsupported ballot op on ' + op.section + ': ' + verbs.join(','));
+  }
+  return verbs[0];
+}
+
+/**
+ * Where a section's rows and columns are in a snapshot, or null when its marker is missing.
+ * Config is a pseudo-table with columns Key (A) and Value (B) and no header.
+ */
+function _ballotSectionFrame_(snap, sectionKey) {
+  var layout = snap.layout;
+  if (sectionKey === 'config') {
+    return { headerRow: 0, firstDataRow: 1, endRow: layout.configEndRow, nextMarkerRow: layout.firstMarkerRow,
+      rowsUsed: snap.config.rowsUsed, col: { Key: 1, Value: 2 }, missing: [] };
+  }
+  var s = layout.sections[sectionKey];
+  if (!s) return null;
+  if (sectionKey === 'results') {
+    return { headerRow: s.markerRow, firstDataRow: s.firstDataRow, endRow: s.endRow, nextMarkerRow: s.nextMarkerRow };
+  }
+  var t = snap.tables[sectionKey];
+  return { headerRow: t.headerRow, firstDataRow: s.firstDataRow, endRow: s.endRow, nextMarkerRow: s.nextMarkerRow,
+    rowsUsed: t.rowsUsed, col: t.col, missing: t.missing };
+}
+
+/** @return {Object<string, number>} column by normalised label. */
+function _ballotColsByKey_(frame) {
+  var out = {};
+  Object.keys(frame.col).forEach(function (l) { out[_labelKey_(l)] = frame.col[l]; });
+  return out;
+}
+
+/** Logs ballot.write.refused and throws. */
+function _refuseBallotWrite_(sheet, section, reason, detail, message) {
+  var data = { sheet: sheet.getName(), section: section, reason: reason };
+  Object.keys(detail || {}).forEach(function (k) { data[k] = detail[k]; });
+  _logBallotEvent_('ballot.write.refused', data);
+  throw new Error('Ballot sheet layout is damaged — ' + message);
+}
+
+/** Whole-set checks against the starting snapshot, before any write. */
+function _validateBallotOps_(st, ops) {
+  var known = {};
+  ops.forEach(function (op) {
+    var verb = _ballotOpVerb_(op);
+    var section = op.section;
+    var def = _BALLOT_SECTIONS_[section];
+    var frame = _ballotSectionFrame_(st.snap, section);
+    if (!frame) _refuseBallotWrite_(st.sheet, section, 'markerMissing', null, 'the ' + def.marker + ' section is missing.');
+    if (def.kind === 'output') return;
+    if (frame.headerRow === null) _refuseBallotWrite_(st.sheet, section, 'noHeader', null, 'the ' + def.marker + ' section has no header row.');
+    if (frame.missing.length) {
+      _refuseBallotWrite_(st.sheet, section, 'missingLabel', { labels: frame.missing.slice() },
+        'the ' + def.marker + ' header is missing: ' + frame.missing.join(', ') + '.');
+    }
+    if (!known[section]) known[section] = _ballotColsByKey_(frame);
+    var k = known[section];
+    var fixed = {};
+    (def.columns || []).forEach(function (l) { fixed[_labelKey_(l)] = true; });
+    function checkCells(cells) {
+      Object.keys(cells).forEach(function (l) {
+        if (!k.hasOwnProperty(_labelKey_(l))) throw new Error('Unknown column "' + l + '" in ballot section ' + section + '.');
+      });
+    }
+    function checkRow(row) {
+      if (!(row > frame.headerRow && row <= frame.endRow)) throw new Error('Row ' + row + ' is outside ballot section ' + section + '.');
+    }
+    if (verb === 'append') op.append.forEach(checkCells);
+    else if (verb === 'update') op.update.forEach(function (u) { checkRow(u.row); checkCells(u.cells); });
+    else if (verb === 'deleteRows') op.deleteRows.forEach(checkRow);
+    else if (verb === 'ensureColumns') op.ensureColumns.forEach(function (l) { k[_labelKey_(l)] = true; });
+    else if (verb === 'renameColumn') {
+      var from = _labelKey_(op.renameColumn.from);
+      var to = _labelKey_(op.renameColumn.to);
+      if (!to) throw new Error('renameColumn needs a new label.');
+      if (fixed[from] || fixed[to]) {
+        _refuseBallotWrite_(st.sheet, section, 'fixedLabel', { from: op.renameColumn.from, to: op.renameColumn.to }, 'a fixed ' + def.marker + ' column cannot be renamed.');
+      }
+      if (!k.hasOwnProperty(from)) return;
+      if (to !== from && k.hasOwnProperty(to)) {
+        _refuseBallotWrite_(st.sheet, section, 'duplicateColumn', { from: op.renameColumn.from, to: op.renameColumn.to }, 'another ' + def.marker + ' column is already labelled "' + op.renameColumn.to + '".');
+      }
+      k[to] = k[from];
+      if (to !== from) delete k[from];
+    }
+  });
+}
+
+/** Maps a row of the starting snapshot across the inserts/deletes applied so far. */
+function _mapBallotRow_(st, row) {
+  st.edits.forEach(function (e) {
+    if (e.insertBefore) {
+      if (row >= e.insertBefore) row += e.count;
+    } else if (row >= e.deleteAt + e.count) {
+      row -= e.count;
+    } else if (row >= e.deleteAt) {
+      throw new Error('Ballot op refers to row deleted earlier in the same op set.');
+    }
+  });
+  return row;
+}
+
+/** Writes a value into the in-memory grid and marks the cell dirty. */
+function _putBallotCell_(st, row, col, value) {
+  while (st.grid.length < row) st.grid.push([]);
+  var r = st.grid[row - 1];
+  while (r.length < col) r.push('');
+  r[col - 1] = value;
+  if (!st.dirty[row]) st.dirty[row] = {};
+  st.dirty[row][col] = true;
+}
+
+function _putBallotCells_(st, frame, row, cells) {
+  var cols = _ballotColsByKey_(frame);
+  Object.keys(cells).forEach(function (l) { _putBallotCell_(st, row, cols[_labelKey_(l)], cells[l]); });
+}
+
+/** One setValues per contiguous block of dirty rows; untouched cells come from the grid. */
+function _flushBallotWrites_(st) {
+  var rows = Object.keys(st.dirty).map(Number).sort(function (a, b) { return a - b; });
+  var i = 0;
+  while (i < rows.length) {
+    var j = i;
+    while (j + 1 < rows.length && rows[j + 1] === rows[j] + 1) j++;
+    var minCol = Infinity;
+    var maxCol = 0;
+    for (var k = i; k <= j; k++) {
+      Object.keys(st.dirty[rows[k]]).forEach(function (c) {
+        c = Number(c);
+        if (c < minCol) minCol = c;
+        if (c > maxCol) maxCol = c;
+      });
+    }
+    var values = [];
+    for (var r = rows[i]; r <= rows[j]; r++) {
+      var line = [];
+      for (var c = minCol; c <= maxCol; c++) line.push(_gridCell_(st.grid, r, c));
+      values.push(line);
+    }
+    st.sheet.getRange(rows[i], minCol, values.length, maxCol - minCol + 1).setValues(values);
+    i = j + 1;
+  }
+  st.dirty = {};
+}
+
+/** Flushes, then re-reads the sheet: one getDataRange call. */
+function _rereadBallot_(st) {
+  st.grid = st.sheet.getDataRange().getValues();
+  st.snap = _parseBallot_(st.grid);
+}
+
+function _insertBallotRows_(st, beforeRow, count) {
+  _flushBallotWrites_(st);
+  st.sheet.insertRowsBefore(beforeRow, count);
+  st.edits.push({ insertBefore: beforeRow, count: count });
+  _rereadBallot_(st);
+}
+
+/** rows: current-coordinate row numbers; deleted bottom-up, one call per contiguous run. */
+function _deleteBallotRows_(st, rows) {
+  if (!rows.length) return;
+  _flushBallotWrites_(st);
+  var sorted = rows.slice().sort(function (a, b) { return b - a; });
+  var i = 0;
+  while (i < sorted.length) {
+    var j = i;
+    while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] - 1) j++;
+    var start = sorted[j];
+    var count = j - i + 1;
+    st.sheet.deleteRows(start, count);
+    st.edits.push({ deleteAt: start, count: count });
+    i = j + 1;
+  }
+  _rereadBallot_(st);
+}
+
+/** Makes `count` rows from `start` available inside the section (inserting before its next marker). */
+function _ensureBallotRows_(st, sectionKey, start, count) {
+  var frame = _ballotSectionFrame_(st.snap, sectionKey);
+  var last = start + count - 1;
+  if (count > 0 && last > frame.endRow && frame.nextMarkerRow !== -1) {
+    _insertBallotRows_(st, frame.nextMarkerRow, last - frame.endRow);
+    frame = _ballotSectionFrame_(st.snap, sectionKey);
+  }
+  return frame;
+}
+
+function _applyBallotOp_(st, op) {
+  var verb = _ballotOpVerb_(op);
+  var section = op.section;
+  var frame = _ballotSectionFrame_(st.snap, section);
+  if (verb === 'update') {
+    op.update.forEach(function (u) { _putBallotCells_(st, frame, _mapBallotRow_(st, u.row), u.cells); });
+  } else if (verb === 'append') {
+    var start = frame.rowsUsed + 1;
+    frame = _ensureBallotRows_(st, section, start, op.append.length);
+    op.append.forEach(function (cells, i) { _putBallotCells_(st, frame, start + i, cells); });
+  } else if (verb === 'deleteRows') {
+    _deleteBallotRows_(st, op.deleteRows.map(function (r) { return _mapBallotRow_(st, r); }));
+  } else if (verb === 'ensureColumns') {
+    var have = _ballotColsByKey_(frame);
+    var col = _nextTableCol_(st.grid, st.snap, section);
+    op.ensureColumns.forEach(function (label) {
+      var lk = _labelKey_(label);
+      if (!lk || have.hasOwnProperty(lk)) return;
+      have[lk] = col;
+      _putBallotCell_(st, frame.headerRow, col++, String(label).trim());
+    });
+  } else if (verb === 'renameColumn') {
+    var c = _ballotColsByKey_(frame)[_labelKey_(op.renameColumn.from)];
+    if (c) _putBallotCell_(st, frame.headerRow, c, String(op.renameColumn.to).trim());
+  } else if (verb === 'replaceAll') {
+    _replaceBallotResults_(st, op.replaceAll);
+  }
+}
+
+/** results replaceAll: resize the region to rows.length, then write each row full-width. */
+function _replaceBallotResults_(st, rows) {
+  var frame = _ballotSectionFrame_(st.snap, 'results');
+  var available = frame.endRow - frame.firstDataRow + 1;
+  if (rows.length < available) {
+    var surplus = [];
+    for (var r = frame.firstDataRow + rows.length; r <= frame.endRow; r++) surplus.push(r);
+    _deleteBallotRows_(st, surplus);
+  } else {
+    _ensureBallotRows_(st, 'results', frame.firstDataRow, rows.length);
+  }
+  frame = _ballotSectionFrame_(st.snap, 'results');
+  var firstCol = _BALLOT_SECTIONS_.results.firstCol;
+  var width = st.grid.reduce(function (m, line) { return Math.max(m, line.length); }, 1);
+  rows.forEach(function (line) { width = Math.max(width, firstCol - 1 + line.length); });
+  rows.forEach(function (line, i) {
+    for (var c = 1; c <= width; c++) {
+      var v = c < firstCol ? '' : line[c - firstCol];
+      _putBallotCell_(st, frame.firstDataRow + i, c, v === undefined || v === null ? '' : v);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Candidate-name uniqueness (rcballot-8i5.4 AC2).
+// ---------------------------------------------------------------------------
+
+var _BALLOT_DUPLICATE_NAME_ERROR_ = 'A candidate with that name already exists.';
+
+/**
+ * @return {boolean} true when name (trim, case-insensitive) is a fixed Responses label or a
+ *   reserved marker word (with or without brackets) — names no candidate may take.
+ */
+function _isReservedCandidateName_(name) {
+  var key = _labelKey_(name);
+  var bare = key.charAt(0) === '[' && key.charAt(key.length - 1) === ']' ? key.slice(1, -1).trim() : key;
+  if (_BALLOT_RESERVED_NAMES_.indexOf(bare) !== -1) return true;
+  return _BALLOT_RESPONSE_FIXED_COLS.some(function (l) { return _labelKey_(l) === key; });
+}
+
+/**
+ * Throws 'A candidate with that name already exists.' when name matches (trim,
+ * case-insensitive) an existing candidate other than the one on exceptRow, a fixed
+ * Responses label, or a reserved marker word. Orphan rank-column labels are NOT taken: a new
+ * candidate with an orphan's name adopts that column. Call _assertNotMarkerName_ first where
+ * the marker-specific message is wanted.
+ *
+ * @param {Object} snap
+ * @param {string} name
+ * @param {number=} exceptRow Candidates-table row of the candidate being renamed.
+ */
+function _assertUniqueCandidateName_(snap, name, exceptRow) {
+  var key = _labelKey_(name);
+  var clash = _isReservedCandidateName_(name) || _snapCandidates_(snap).some(function (c) {
+    return c.row !== exceptRow && _labelKey_(c.name) === key;
+  });
+  if (clash) throw new Error(_BALLOT_DUPLICATE_NAME_ERROR_);
+}
+
+/**
+ * Whole-list form for writers that replace every candidate (saveBallotCandidates_): throws
+ * the same message when two names collide or any is reserved.
+ *
+ * @param {Array<string>} names
+ */
+function _assertUniqueCandidateNames_(names) {
+  var seen = {};
+  names.forEach(function (n) {
+    var key = _labelKey_(n);
+    if (seen[key] || _isReservedCandidateName_(n)) throw new Error(_BALLOT_DUPLICATE_NAME_ERROR_);
+    seen[key] = true;
+  });
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     getBallotSheetName_: getBallotSheetName_,
@@ -2181,6 +2583,10 @@ if (typeof module !== 'undefined' && module.exports) {
     _snapMissingLabels_: _snapMissingLabels_,
     _planHeaderOnMarkerRow_: _planHeaderOnMarkerRow_,
     _repairBallotSheet_: _repairBallotSheet_,
-    _responsesMissingName_: _responsesMissingName_
+    _responsesMissingName_: _responsesMissingName_,
+    _withBallotWrite_: _withBallotWrite_,
+    _applyBallotOps_: _applyBallotOps_,
+    _assertUniqueCandidateName_: _assertUniqueCandidateName_,
+    _assertUniqueCandidateNames_: _assertUniqueCandidateNames_
   };
 }
