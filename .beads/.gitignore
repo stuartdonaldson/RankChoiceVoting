@@ -69,7 +69,6 @@ bd.db
 # Config files (metadata.json, config.yaml) are tracked by git by default
 # since no pattern above ignores them.
 
-# --- added by bd-config-audit ---
 proxieddb/
 last_pull
 .auto-import-issues.jsonl

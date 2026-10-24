@@ -22,3 +22,4 @@ build/
 # deployed when — useful locally, pure merge churn if committed.
 .deploy-metadata.json
 deployment-ledger/
+desktop.ini

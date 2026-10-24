@@ -20,7 +20,7 @@ bd close <id>         # Complete work
 
 - Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
 - Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+- Use `bd remember` for project knowledge; MEMORY.md holds user-scoped preferences only. Canonical table: `bd` skill §Memory Ownership (`$DEVSTANDARD/dot-claude/skills/bd/SKILL.md`)
 
 **Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
 
@@ -180,3 +180,8 @@ _Add a brief overview of your project architecture_
 ## Conventions & Patterns
 
 _Add your project-specific conventions here_
+
+## Instruction Precedence
+
+- Memory ownership (`bd remember` vs MEMORY.md) is the `bd` skill §Memory Ownership
+  (`$DEVSTANDARD/dot-claude/skills/bd/SKILL.md`); it wins over any bd-generated memory line.
