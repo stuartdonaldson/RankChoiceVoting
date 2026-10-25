@@ -78,6 +78,22 @@ pnpm run deploy:prod   # bump patch + stamp PROD + push to envs.prod.scriptId
 pnpm run deploy:nuuc   # bump patch + stamp NUUC + push to envs.nuuc.scriptId
 ```
 
+### Release version reuse (PROD, NUUC)
+
+PROD and NUUC are two deployments of one release, so back-to-back deploys of the same code report
+the same version. Before `runCli`, `tools/manage-deployments.js` (`releaseArgv_`) checks the
+annotated tag `v<package.json version>`:
+
+- **Reuse** (adds gas-deploy's `--skip-bump`) when the tag exists, nothing changed since it outside
+  `script/version.js`, `package.json` and `.beads/`, and `package.json` differs only in
+  `version`/`build`.
+- **Bump patch** otherwise, as before; the last post-deploy hook then tags `v<version>` locally.
+  Push it with `git push --follow-tags`.
+- A release deploy **refuses to run** with uncommitted changes outside those stamped files.
+- `deploy:sit` and the interactive menu (no `--deploy-*` flag) are unchanged.
+
+This is a prototype of a `counter: 'release'` mode for gas-deploy; move it there once it settles.
+
 ### Deploy verification (`cmd=version`)
 
 `clasp deploy` exiting 0 only proves a version was *created*, not that the `/exec` URL is

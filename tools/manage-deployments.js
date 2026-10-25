@@ -16,7 +16,7 @@
 'use strict';
 
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const { runCli, constStamper, buildInfoStamper } = require('gas-deploy');
 const ROOT = path.join(__dirname, '..');
 
@@ -112,15 +112,106 @@ const config = {
     // deploy as the backend it calls, and the last step is the one that can tell a published page
     // from a merely propagated one.
     ...staticPipeline.deployHooks(),
+
+    // Last, so only a deploy that verified end to end gets a release tag. That tag is what the
+    // next release deploy diffs against to decide whether it may reuse this version.
+    { name: 'Tag release (release targets only, no-op if tagged)',
+      run: ({ target, version }) => {
+        if (target.counter !== 'version') return;
+        const git = gitRunner_();
+        if (tagExists_(git, `v${version}`)) return console.log(`   v${version} already tagged`);
+        git(['tag', '-a', `v${version}`, '-m', `Release v${version}`]);
+        console.log(`   tagged v${version} (local; pushed with the next git push --follow-tags)`);
+      },
+      retryCommand: 'git tag -a v<version> -m "Release v<version>"' },
   ],
 };
 
+/**
+ * Release-version reuse (rcballot-j56). PROD and NUUC are two deployments of one release, so a
+ * back-to-back deploy to both must report one version — gas-deploy's `counter: 'version'` bumps
+ * the patch on every deploy, which made identical code read 0.1.7 on PROD and 0.1.8 on NUUC.
+ *
+ * Prototyped here ahead of a `counter: 'release'` mode in gas-deploy itself: the decision is made
+ * before runCli and expressed through its existing `--skip-bump` flag, so no package change is
+ * needed yet. Only the explicit `--deploy-<key>` path is covered; the interactive menu still bumps.
+ *
+ * The files the deploy itself writes are excluded from both the clean-tree check and the diff,
+ * as is .beads/ (bd's export churns on every issue edit and never ships).
+ */
+const STAMPED_EXCLUDES = [':!script/version.js', ':!package.json', ':!.beads'];
+
+const gitRunner_ = () => (args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+
+function tagExists_(git, tag) {
+  try { git(['rev-parse', '-q', '--verify', `refs/tags/${tag}`]); return true; } catch { return false; }
+}
+
+/** package.json minus the two fields the deploy stamps, so a dependency pin change still counts. */
+function pkgSansCounters_(pkg) {
+  const { version, build, ...rest } = pkg;
+  return JSON.stringify(rest);
+}
+
+/** Throws if anything but the stamped files is uncommitted: a reused version must name a commit. */
+function assertCleanTree_(git) {
+  const dirty = git(['status', '--porcelain', '--', '.', ...STAMPED_EXCLUDES]).trim();
+  if (dirty) {
+    throw new Error(`release deploy refused: uncommitted changes outside the stamped files:\n${dirty}\nCommit or stash them first.`);
+  }
+}
+
+/** { skipBump, reason } for a release target at package.json `version`. */
+function decideBump_({ version, currentPkg, git }) {
+  const tag = `v${version}`;
+  if (!tagExists_(git, tag)) return { skipBump: false, reason: `no tag ${tag}` };
+
+  const changed = git(['diff', '--name-only', tag, '--', '.', ...STAMPED_EXCLUDES]).split('\n').filter(Boolean);
+  if (changed.length) {
+    const shown = changed.slice(0, 5).join(', ') + (changed.length > 5 ? ', …' : '');
+    return { skipBump: false, reason: `${changed.length} file(s) changed since ${tag}: ${shown}` };
+  }
+
+  const tagged = JSON.parse(git(['show', `${tag}:package.json`]));
+  if (pkgSansCounters_(tagged) !== pkgSansCounters_(currentPkg)) {
+    return { skipBump: false, reason: `package.json changed since ${tag} (beyond version/build)` };
+  }
+  return { skipBump: true, reason: `no code change since ${tag}` };
+}
+
+/** argv for runCli: a release target gains --skip-bump when decideBump_ says the version holds. */
+function releaseArgv_(argv, { targets, currentPkg, git, log }) {
+  const targetKey = Object.keys(targets).find(k => argv.includes(`--deploy-${k}`));
+  if (!targetKey || targets[targetKey].counter !== 'version') return argv;
+
+  assertCleanTree_(git);
+  if (argv.includes('--skip-bump')) {
+    log(`🔢 --skip-bump given: deploying v${currentPkg.version} as is`);
+    return argv;
+  }
+  const { skipBump, reason } = decideBump_({ version: currentPkg.version, currentPkg, git });
+  log(skipBump ? `🔢 reusing v${currentPkg.version} — ${reason}` : `🔢 bumping patch — ${reason}`);
+  return skipBump ? [...argv, '--skip-bump'] : argv;
+}
+
 if (require.main === module) {
-  runCli(config).catch(err => {
+  let argv;
+  try {
+    argv = releaseArgv_(process.argv, {
+      targets: config.targets,
+      currentPkg: JSON.parse(require('fs').readFileSync(path.join(ROOT, 'package.json'), 'utf8')),
+      git: gitRunner_(),
+      log: console.log,
+    });
+  } catch (err) {
+    console.error('❌ Error:', err.message);
+    process.exit(1);
+  }
+  runCli(config, argv).catch(err => {
     if (err && (err.name === 'ExitPromptError' || (err.message || '').includes('force closed'))) return console.log('\n❌ Cancelled.');
     console.error('❌ Error:', err.message);
     process.exit(1);
   });
 }
 
-module.exports = { config, stampAll_ };
+module.exports = { config, stampAll_, decideBump_, assertCleanTree_, releaseArgv_, STAMPED_EXCLUDES };
