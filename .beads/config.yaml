@@ -55,4 +55,4 @@
 # - github.token    → use GITHUB_TOKEN env var instead
 export.auto: true
 sync:
-    remote: "https://github.com/stuartdonaldson/RankChoiceVoting"
+    remote: "https://github.com/stuartdonaldson/RankChoiceVoting.git"
