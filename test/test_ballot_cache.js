@@ -149,6 +149,22 @@ function testOnEditRefreshesCacheAfterManualSheetEdit() {
   assert.equal(parsed.config.Title, 'Hand-Edited Title');
 }
 
+function testAdminEditLoadRefreshesStaleCache() {
+  // rcballot-91f: a sheet copied in from another spreadsheet and renamed over a ballot fires
+  // neither an RPC refresh nor onEdit, so a nameless (cache-served) load kept the old entry.
+  const { app, ss } = loadApp();
+  app.createNewBallot_(ss, 'CopiedIn');
+  const sheet = app.findBallotSheet_(ss, 'CopiedIn');
+  app.getCachedBallotData_('CopiedIn', sheet); // warm the cache with the placeholder content
+
+  // Change the sheet with no onEdit call — the copy-and-rename path.
+  sheet.getRange(1, 2).setValue('Copied-In Title');
+  assert.notEqual(app.getBallotConfig('CopiedIn').title, 'Copied-In Title'); // stale before
+
+  app.getAdminEditData('CopiedIn');
+  assert.equal(app.getBallotConfig('CopiedIn').title, 'Copied-In Title');
+}
+
 function testOnEditIgnoresNonBallotSheetsAndMissingEvent() {
   const { app, ss } = loadApp();
   const other = ss.insertSheet('NotABallot');
@@ -387,6 +403,7 @@ function run() {
   testAdminAddCandidateRefreshesCache();
   testAddBallotTopicRefreshesCache();
   testOnEditRefreshesCacheAfterManualSheetEdit();
+  testAdminEditLoadRefreshesStaleCache();
   testOnEditIgnoresNonBallotSheetsAndMissingEvent();
   testGetAdminListDataIsOneReadPerBallot();
   testAdminMutatingEntryPointsRunUnderLock();

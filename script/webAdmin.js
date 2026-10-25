@@ -306,12 +306,18 @@ function getAdminEditData(id) {
   // same snapshot serves the page (a repair also rebuilds the cache). Orphan rank columns
   // — Responses columns matching no candidate, e.g. after a hand-deleted Candidates row —
   // are returned for display; they are never counted by analysis.
+  //
+  // The cache is rebuilt from that snapshot on every load, not just after a repair
+  // (rcballot-91f): a sheet copied in from another spreadsheet and renamed over a ballot
+  // fires neither onEdit nor an RPC refresh, and nameless ballot loads never read the sheet,
+  // so opening the ballot here is the admin's way to resync it. One Properties write; no
+  // extra sheet read.
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = findBallotSheet_(ss, id);
   if (!sheet) return { error: 'no_ballot' };
   var rep = _repairBallotSheet_(sheet);
   var view = _ballotViewFromSnapshot_(rep.snap);
-  if (rep.repaired) refreshBallotCache_(id, sheet, view);
+  refreshBallotCache_(id, sheet, view);
 
   var config = view.config;
   var candidateRows = view.candidates;

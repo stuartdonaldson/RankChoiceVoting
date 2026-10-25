@@ -11,7 +11,7 @@
  * Response rows (who voted, their ranking) are deliberately NOT cached here — they
  * change on every submission, so they're still read straight from the sheet.
  *
- * Kept fresh three ways:
+ * Kept fresh four ways:
  *   1. Every write path that touches a ballot's config or candidates rebuilds that
  *      ballot's cache entry immediately after writing — see refreshBallotCache_'s
  *      callers in BallotModel.js/webAdmin.js/webBallot.js.
@@ -21,6 +21,10 @@
  *      a repair racing a hand edit could clobber it (rcballot-8i5.3).
  *   3. A cache miss (key never written, or Properties lost it) transparently falls
  *      back to reading the sheet and populating the cache — see getCachedBallotData_.
+ *   4. Every admin edit-page load (webAdmin.js getAdminEditData) rebuilds the entry from
+ *      the snapshot it already read. This catches what 1–3 miss: a sheet copied in from
+ *      another spreadsheet and renamed over a ballot fires no onEdit, and a stale entry is
+ *      not a miss (rcballot-91f). Opening a ballot in the admin page resyncs it.
  *
  * Script Properties has a 9KB-per-value / 500KB-total quota (see
  * https://developers.google.com/apps-script/guides/properties#quotas) — comfortably
