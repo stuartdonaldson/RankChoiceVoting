@@ -1,14 +1,15 @@
 /**
  * BallotModel.js
  *
- * Sheet-layout model for "Ballot-<name>" sheets. Each ballot lives in one sheet, below a
- * config block, as up to three marker-delimited sections (written in this order by
- * createBallotSheet_, but nothing depends on the order):
+ * Sheet-layout model for "Ballot-<name>" sheets. Each ballot lives in one sheet as up to four
+ * marker-delimited sections (written in this order by createBallotSheet_, but nothing
+ * depends on the order):
  *
- *   Config       key (col A) | value (col B): Title, Description, Instructions, Footer,
+ *   [Config]     key (col B) | value (col C): Title, Description, Instructions, Footer,
  *                Contact, Accept-New, Add-Instructions, Admin-Only-Notes (formerly "Info").
- *                Everything above the first marker. Admin-Only-Notes is never exposed to
- *                respondents.
+ *                Admin-Only-Notes is never exposed to respondents. LEGACY sheets have no
+ *                [Config] marker: their key (col A) | value (col B) block above the first
+ *                marker is read the same way until the repair path migrates it.
  *   [Results]    Analysis output, from col B; replaced wholesale by writeBallotResults_.
  *   [Candidates] Header Name | Details | Link Text | Link URL (from col B), one row per
  *                candidate. The PRIMARY source of who is a candidate, in table order.
@@ -38,7 +39,8 @@
  * 'Ballot sheet layout is damaged — ...' (logged ballot.write.refused). Cell writes are
  * batched, one setValues per contiguous row block. See _applyBallotOps_ for the rules.
  *
- * REPAIR: _BALLOT_REPAIR_STEPS_ (pure plan + locked apply per step: sections, legacyConfigKey,
+ * REPAIR: _BALLOT_REPAIR_STEPS_ (pure plan + locked apply per step: sections, configSection,
+ * legacyConfigKey,
  * candidatesOldColumns, candidatesHeader, headerOnMarkerRow, candidatesFromResponses,
  * rankColumns) fix known damage and log ballot.repair.*. A healthy sheet costs one read, no
  * lock. _repairBallotSheet_ runs only on admin edit-page load (getAdminEditData) and at the
@@ -56,6 +58,9 @@
  */
 
 var BALLOT_SHEET_PREFIX = 'Ballot-';
+var _BALLOT_CONFIG_MARKER = '[Config]';
+// Key col B, value col C inside a [Config] section; legacy sheets keep key A / value B above the first marker.
+var _BALLOT_CONFIG_KEY_COL = 2;
 var _BALLOT_RESULTS_MARKER = '[Results]';
 var _BALLOT_CANDIDATES_MARKER = '[Candidates]';
 var _BALLOT_CANDIDATES_HEADER = ['Name', 'Details', 'Link Text', 'Link URL'];
@@ -120,7 +125,8 @@ function findBallotSheet_(ss, id) {
  */
 function createBallotSheet_(ss, id) {
   var sheet = ss.insertSheet(getBallotSheetName_(id));
-  sheet.getRange(1, 1, 8, 2).setValues([
+  sheet.getRange(1, 1).setValue(_BALLOT_CONFIG_MARKER);
+  sheet.getRange(2, _BALLOT_CONFIG_KEY_COL, 8, 2).setValues([
     // Each placeholder is "[TODO: what to enter — delete this bracket] <example>": the
     // bracketed lead-in says what the field is for, and the text after it is a working
     // example, so the admin deletes the bracket and edits the example rather than writing
@@ -166,6 +172,7 @@ function _highlightSectionMarkers_(sheet) {
   var candidatesRow = layout.markers.candidates;
   var responsesRow = layout.markers.responses;
 
+  highlightRow(layout.markers.config, 1);
   highlightRow(resultsRow, 1);
   highlightRow(candidatesRow, 1);
   // Highlight col A through the end of the Name/Details header as one continuous band,
@@ -528,7 +535,10 @@ function _planBallotConfigOps_(snap, updates) {
  * Section keys in canonical order, and the column-A marker text for each.
  */
 var _BALLOT_SECTION_KEYS_ = ['results', 'candidates', 'responses'];
+// Every marker the scan recognises: the three required sections plus [Config].
+var _BALLOT_SCAN_KEYS_ = ['config'].concat(_BALLOT_SECTION_KEYS_);
 var _BALLOT_SECTION_MARKER_TEXT_ = {
+  config: _BALLOT_CONFIG_MARKER,
   results: _BALLOT_RESULTS_MARKER,
   candidates: _BALLOT_CANDIDATES_MARKER,
   responses: _BALLOT_RESPONSES_MARKER
@@ -577,9 +587,10 @@ function _readBallotLayout_(sheet) {
  */
 function _scanBallotLayout_(colA, lastRow) {
   var keyByText = {};
-  _BALLOT_SECTION_KEYS_.forEach(function (k) { keyByText[_BALLOT_SECTION_MARKER_TEXT_[k]] = k; });
+  _BALLOT_SCAN_KEYS_.forEach(function (k) { keyByText[_BALLOT_SECTION_MARKER_TEXT_[k]] = k; });
 
-  var occurrences = { results: [], candidates: [], responses: [] };
+  var occurrences = {};
+  _BALLOT_SCAN_KEYS_.forEach(function (k) { occurrences[k] = []; });
   var allMarkerRows = []; // ascending
   for (var i = 0; i < colA.length; i++) {
     var key = keyByText[String(colA[i] || '').trim()];
@@ -591,7 +602,7 @@ function _scanBallotLayout_(colA, lastRow) {
   var markers = {};
   var duplicates = [];
   var sections = {};
-  _BALLOT_SECTION_KEYS_.forEach(function (k) {
+  _BALLOT_SCAN_KEYS_.forEach(function (k) {
     var rows = occurrences[k];
     markers[k] = rows.length ? rows[0] : -1;
     if (rows.length > 1) duplicates.push({ marker: _BALLOT_SECTION_MARKER_TEXT_[k], rows: rows });
@@ -601,7 +612,7 @@ function _scanBallotLayout_(colA, lastRow) {
     for (var j = 0; j < allMarkerRows.length; j++) {
       if (allMarkerRows[j] > markerRow) { nextMarkerRow = allMarkerRows[j]; break; }
     }
-    var headerRow = k === 'results' ? null : markerRow + 1;
+    var headerRow = _BALLOT_SECTIONS_[k].kind === 'table' ? markerRow + 1 : null;
     sections[k] = {
       markerRow: markerRow,
       headerRow: headerRow,
@@ -613,14 +624,28 @@ function _scanBallotLayout_(colA, lastRow) {
     };
   });
 
-  var firstMarkerRow = allMarkerRows.length ? allMarkerRows[0] : -1;
+  // Config sits in col B/C under [Config]; a legacy sheet has no marker and its key/value
+  // block (col A/B) is whatever lies above the first section marker.
+  var firstMarkerRow = -1;
+  for (var m = 0; m < allMarkerRows.length; m++) {
+    if (allMarkerRows[m] !== markers.config) { firstMarkerRow = allMarkerRows[m]; break; }
+  }
+  if (sections.config) {
+    sections.config.keyCol = _BALLOT_CONFIG_KEY_COL;
+  } else {
+    sections.config = {
+      markerRow: 0, headerRow: null, firstDataRow: 1, legacy: true, keyCol: 1,
+      endRow: firstMarkerRow !== -1 ? firstMarkerRow - 1 : _BALLOT_CONFIG_ROWS.length,
+      nextMarkerRow: firstMarkerRow
+    };
+  }
+
   return {
     lastRow: lastRow,
     markers: markers,
     duplicates: duplicates,
     sections: sections,
-    firstMarkerRow: firstMarkerRow,
-    configEndRow: firstMarkerRow !== -1 ? firstMarkerRow - 1 : _BALLOT_CONFIG_ROWS.length
+    firstMarkerRow: firstMarkerRow
   };
 }
 
@@ -1247,7 +1272,7 @@ function addBallotCandidateForAdmin_(id, name, details, linkText, linkUrl) {
  * their 'Name' column. responses' extra (non-fixed) columns are candidate rank columns.
  */
 var _BALLOT_SECTIONS_ = {
-  config: { marker: null, kind: 'kv' },
+  config: { marker: _BALLOT_CONFIG_MARKER, kind: 'kv' },
   results: { marker: _BALLOT_RESULTS_MARKER, kind: 'output', firstCol: 2 },
   candidates: { marker: _BALLOT_CANDIDATES_MARKER, kind: 'table', firstCol: _BALLOT_CANDIDATES_FIRST_COL, key: 'Name', columns: _BALLOT_CANDIDATES_HEADER },
   responses: { marker: _BALLOT_RESPONSES_MARKER, kind: 'table', firstCol: 1, key: 'Name', columns: _BALLOT_RESPONSE_FIXED_COLS, extraColumns: 'candidates' }
@@ -1361,12 +1386,14 @@ function _parseBallotConfig_(grid, layout) {
   Object.keys(_BALLOT_LEGACY_CONFIG_KEYS_).forEach(function (current) {
     _BALLOT_LEGACY_CONFIG_KEYS_[current].forEach(function (legacy) { legacyToCurrent[legacy] = current; });
   });
-  var config = { byKey: {}, rowsUsed: 0 };
-  for (var row = 1; row <= layout.configEndRow; row++) {
-    if (_gridRowHasContent_(grid, row, 1, 2)) config.rowsUsed = row;
-    var key = String(_gridCell_(grid, row, 1) || '').trim();
+  var sec = layout.sections.config;
+  var keyCol = sec.keyCol;
+  var config = { byKey: {}, rowsUsed: sec.markerRow };
+  for (var row = sec.firstDataRow; row <= sec.endRow; row++) {
+    if (_gridRowHasContent_(grid, row, keyCol, keyCol + 1)) config.rowsUsed = row;
+    var key = String(_gridCell_(grid, row, keyCol) || '').trim();
     if (!key) continue;
-    var entry = { row: row, value: _gridCell_(grid, row, 2) };
+    var entry = { row: row, value: _gridCell_(grid, row, keyCol + 1) };
     if (legacyToCurrent.hasOwnProperty(key)) {
       entry.legacyKey = key;
       key = legacyToCurrent[key];
@@ -1728,18 +1755,45 @@ function _applyResponsesHeader_(sheet, plan) {
   _logBallotEvent_('ballot.repair.responsesHeader', { sheet: sheet.getName(), kind: plan.kind, row: plan.headerRow });
 }
 
+/**
+ * Config still in the legacy key/value block (cols A/B above the first marker): planned to move
+ * into a [Config] section at the top, standard keys first (blank when absent), then any other
+ * keys in sheet order. Pure.
+ *
+ * @return {?{entries:Array<Array<*>>, oldRows:number}} null when already migrated or the sheet has no markers.
+ */
+function _planConfigSection_(grid, snap) {
+  var cfg = snap.layout.sections.config;
+  if (!cfg.legacy || snap.layout.firstMarkerRow === -1) return null;
+  var byKey = snap.config.byKey;
+  var entries = _BALLOT_CONFIG_ROWS.map(function (k) { return [k, byKey[k] ? byKey[k].value : '']; });
+  Object.keys(byKey).forEach(function (k) {
+    if (_BALLOT_CONFIG_ROWS.indexOf(k) === -1) entries.push([k, byKey[k].value]);
+  });
+  return { entries: entries, oldRows: cfg.endRow };
+}
+
+function _applyConfigSection_(sheet, plan) {
+  var n = plan.entries.length + 1;
+  sheet.insertRowsBefore(1, n);
+  sheet.getRange(1, 1).setValue(_BALLOT_CONFIG_MARKER);
+  sheet.getRange(2, _BALLOT_CONFIG_KEY_COL, plan.entries.length, 2).setValues(plan.entries);
+  if (plan.oldRows > 0) sheet.deleteRows(n + 1, plan.oldRows);
+  _logBallotEvent_('ballot.repair.configSection', { sheet: sheet.getName(), keys: plan.entries.length, movedRows: plan.oldRows });
+}
+
 /** Legacy config keys (e.g. 'Info') to rename to their current key. Pure. */
 function _planLegacyConfigKeys_(grid, snap) {
   var out = [];
   Object.keys(snap.config.byKey).forEach(function (key) {
     var e = snap.config.byKey[key];
-    if (e.legacyKey) out.push({ row: e.row, from: e.legacyKey, to: key });
+    if (e.legacyKey) out.push({ row: e.row, col: snap.layout.sections.config.keyCol, from: e.legacyKey, to: key });
   });
   return out.length ? out : null;
 }
 
 function _applyLegacyConfigKeys_(sheet, plan) {
-  plan.forEach(function (p) { sheet.getRange(p.row, 1).setValue(p.to); });
+  plan.forEach(function (p) { sheet.getRange(p.row, p.col).setValue(p.to); });
   _logBallotEvent_('ballot.repair.legacyConfigKey', { sheet: sheet.getName(), keys: plan });
 }
 
@@ -1845,6 +1899,7 @@ var _BALLOT_REPAIR_STEPS_ = [
     plan: function (grid, snap) { return _ballotMarkersComplete_(snap.layout) ? null : true; },
     apply: function (sheet) { _ensureBallotSections_(sheet); }
   },
+  { name: 'configSection', plan: _planConfigSection_, apply: _applyConfigSection_ },
   { name: 'legacyConfigKey', plan: _planLegacyConfigKeys_, apply: _applyLegacyConfigKeys_ },
   { name: 'candidatesOldColumns', plan: _planCandidatesOldColumns_, apply: _applyCandidatesOldColumns_ },
   { name: 'candidatesHeader', plan: _planCandidatesHeader_, apply: _applyCandidatesHeader_ },
@@ -1998,16 +2053,17 @@ function _ballotOpVerb_(op) {
 
 /**
  * Where a section's rows and columns are in a snapshot, or null when its marker is missing.
- * Config is a pseudo-table with columns Key (A) and Value (B) and no header.
+ * Config and Results have no header row: their frame's headerRow is the marker row (0 for the
+ * legacy config block); Config's Key/Value columns are B/C under [Config], A/B in the legacy block.
  */
 function _ballotSectionFrame_(snap, sectionKey) {
   var layout = snap.layout;
-  if (sectionKey === 'config') {
-    return { headerRow: 0, firstDataRow: 1, endRow: layout.configEndRow, nextMarkerRow: layout.firstMarkerRow,
-      rowsUsed: snap.config.rowsUsed, col: { Key: 1, Value: 2 }, missing: [] };
-  }
   var s = layout.sections[sectionKey];
   if (!s) return null;
+  if (sectionKey === 'config') {
+    return { headerRow: s.markerRow, firstDataRow: s.firstDataRow, endRow: s.endRow, nextMarkerRow: s.nextMarkerRow,
+      rowsUsed: snap.config.rowsUsed, col: { Key: s.keyCol, Value: s.keyCol + 1 }, missing: [] };
+  }
   if (sectionKey === 'results') {
     return { headerRow: s.markerRow, firstDataRow: s.firstDataRow, endRow: s.endRow, nextMarkerRow: s.nextMarkerRow };
   }
