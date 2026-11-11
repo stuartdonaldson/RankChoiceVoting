@@ -241,6 +241,11 @@
   #candidateList .topic-info-content { margin-top: 0; padding-left: 26px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
   #candidateList .topic-info-content.expanded { display: block; }
   #candidateList .topic-info-link { margin-top: 0; padding-left: 26px; }
+  /* Respondent ranking rows: 36px controls (drag handle stays a usable touch target) instead of 44px + padding. */
+  ul#topicList li { padding: 2px 8px; margin-bottom: 4px; }
+  #topicList .topic-row { gap: 6px; }
+  #topicList .handle, #topicList .info-toggle { min-height: 36px; padding-top: 4px; padding-bottom: 4px; }
+  #topicList .topic-info-content { margin-top: 0; padding-bottom: 4px; }
   ul#topicList li { display: flex; flex-direction: column; user-select: none; }
   ul#topicList li.dragging { position: relative; z-index: 10; background: var(--info-bg); box-shadow: 0 4px 10px var(--dragging-shadow); }
   .topic-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
