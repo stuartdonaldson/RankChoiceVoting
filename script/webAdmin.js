@@ -322,7 +322,7 @@ function getAdminEditData(id) {
   var layoutError = '';
   if (_responsesMissingName_(rep.snap)) {
     layoutError = 'The Responses header row on this ballot sheet has no "Name" column, so votes cannot be saved. ' +
-      'Open the sheet and put Date | Name | Weight | Comment in the row under [Responses].';
+      'Open the sheet, insert a new row directly under [Responses] (do not overwrite any vote) and put Date | Name | Weight | Comment in it, followed by the candidate names that head the rank columns.';
     _logBallotEvent_('ballot.layout.unrepaired', { sheet: sheet.getName(), reason: 'responsesMissingName' });
   }
 

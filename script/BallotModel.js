@@ -1016,7 +1016,7 @@ function submitBallotResponse_(id, name, orderedCandidates, comment) {
       if (t.headerRow === null || _responsesMissingName_(snap)) {
         _logBallotEvent_('ballot.write.refused', { sheet: sheet.getName(), reason: 'responsesMissingName',
           markerRow: snap.layout.sections.responses && snap.layout.sections.responses.markerRow,
-          headerRow: t.headerRow, headerLabels: t.labels, lastRow: snap.layout.lastRow });
+          headerRow: t.headerRow, headerLabels: _safeHeaderLabelsForLog_(t.labels), lastRow: snap.layout.lastRow });
         throw new Error('Ballot sheet layout is damaged — the Responses header has no Name column.');
       }
       var view = _ballotViewFromSnapshot_(snap);
@@ -1762,6 +1762,17 @@ function _applyResponsesHeader_(sheet, plan) {
 }
 
 /**
+ * Header labels safe to log: the fixed Responses labels as-is, anything else (a deleted header
+ * makes the first vote the "header", so it may hold a voter's name or comment) as a placeholder.
+ */
+function _safeHeaderLabelsForLog_(labels) {
+  return (labels || []).map(function (l) {
+    var text = String(l || '').trim();
+    return !text || _BALLOT_RESPONSE_FIXED_COLS.indexOf(text) !== -1 ? text : '[other]';
+  });
+}
+
+/**
  * Config still in the legacy key/value block (cols A/B above the first marker): planned to move
  * into a [Config] section at the top, standard keys first (blank when absent), then any other
  * keys in sheet order. Pure.
@@ -1772,6 +1783,16 @@ function _planConfigSection_(grid, snap) {
   var cfg = snap.layout.sections.config;
   if (!cfg.legacy || snap.layout.firstMarkerRow === -1) return null;
   var byKey = snap.config.byKey;
+  if (!Object.keys(byKey).length) {
+    // No recognised key in col A. If col B above the first marker holds content, this is probably
+    // a [Config] section whose marker was cleared: migrating would blank and delete it. Leave it.
+    for (var r = 1; r <= cfg.endRow; r++) {
+      if (String((grid[r - 1] || [])[1] || '').trim()) {
+        _logBallotEvent_('ballot.parse.configMarkerMissing', { rows: cfg.endRow });
+        return null;
+      }
+    }
+  }
   var entries = _BALLOT_CONFIG_ROWS.map(function (k) { return [k, byKey[k] ? byKey[k].value : '']; });
   Object.keys(byKey).forEach(function (k) {
     if (_BALLOT_CONFIG_ROWS.indexOf(k) === -1) entries.push([k, byKey[k].value]);
@@ -2387,6 +2408,7 @@ if (typeof module !== 'undefined' && module.exports) {
     _planHeaderOnMarkerRow_: _planHeaderOnMarkerRow_,
     _repairBallotSheet_: _repairBallotSheet_,
     _planResponsesHeader_: _planResponsesHeader_,
+    _planConfigSection_: _planConfigSection_,
     _responsesMissingName_: _responsesMissingName_,
     _withBallotWrite_: _withBallotWrite_,
     _applyBallotOps_: _applyBallotOps_,

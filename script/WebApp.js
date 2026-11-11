@@ -79,7 +79,7 @@ function redactAdminPayloadForLog_(body) {
   if (Array.isArray(out.rows)) { out.rowCount = out.rows.length; delete out.rows; }
   if (out.name === 'adminSaveContact' && Array.isArray(out.args)) {
     out.args = out.args.slice();
-    if (typeof out.args[1] === 'string') out.args[1] = maskPiiForLog_(out.args[1]);
+    if (out.args[1] !== undefined) out.args[1] = '[redacted]'; // free text: may hold several addresses
   }
   return out;
 }

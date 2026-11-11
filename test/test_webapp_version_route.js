@@ -113,8 +113,8 @@ function readJson_(output) {
   const q = buildWebAppRequestLog_({ parameter: {}, queryString: 'name=Little%20John&cmd=ballot&name=Friar+Tuck' }).queryString;
   assert.equal(/Little|Friar|Tuck|John/.test(q), false, q);
   // Admin PII: contact masked, setSheet rows reduced to a count.
-  const contact = JSON.stringify(buildWebAppRequestLog_({ parameter: { cmd: 'api' }, postData: { type: 't', length: 1, contents: JSON.stringify({ name: 'adminSaveContact', args: ['B', 'robin.hood@example.com'] }) } }));
-  assert.equal(contact.includes('robin.hood@example.com'), false, contact);
+  const contact = JSON.stringify(buildWebAppRequestLog_({ parameter: { cmd: 'api' }, postData: { type: 't', length: 1, contents: JSON.stringify({ name: 'adminSaveContact', args: ['B', 'Ask robin.hood@example.com or bob@example.com'] }) } }));
+  assert.equal(/robin|bob@|example\.com/.test(contact), false, contact);
   const sheet = JSON.stringify(buildWebAppRequestLog_({ parameter: { cmd: 'admin' }, postData: { type: 't', length: 1, contents: JSON.stringify({ action: 'setSheet', sheetName: 'X', rows: [['Little John']] }) } }));
   assert.equal(sheet.includes('Little John'), false, sheet);
   assert.equal(sheet.includes('"rowCount":1'), true, sheet);

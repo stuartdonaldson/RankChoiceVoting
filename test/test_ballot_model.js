@@ -1847,6 +1847,16 @@ function testResponsesBlankHeaderWithDataIsLeftAlone() {
   assert.equal(SM._planResponsesHeader_(rectGrid(rows), SM._readBallot_(sheet)), null);
 }
 
+/** A cleared [Config] marker over intact B/C rows is not migrated (that would blank and delete them). */
+function testConfigMarkerClearedIsNotMigrated() {
+  const { SM, ss } = loadBallotModel();
+  const rows = [[''], ['', 'Title', 'Keep Me'], ['', 'Contact', 'a@b.c'], ['[Results]'], ['[Candidates]'], ['', 'Name'], ['', 'Alice'], ['[Responses]'], ['Date', 'Name', 'Weight', 'Comment']];
+  const sheet = writeGrid(ss.insertSheet('Ballot-NoCfgMarker'), rows);
+  assert.equal(SM._planConfigSection_(rectGrid(rows), SM._readBallot_(sheet)), null);
+  SM._repairBallotSheet_(sheet);
+  assert.equal(sheet.getRange(2, 3).getValue(), 'Keep Me');
+}
+
 /** [Responses] recreation still works when [Config] is the last section. */
 function testResponsesRecreatedWhenConfigIsLast() {
   const { SM, ss } = loadBallotModel();
@@ -1865,7 +1875,7 @@ function testResponsesHeaderWithContentButNoNameIsLeftAlone() {
   const headerRow = rowOf(sheet, '[Responses]') + 1; // the write's repair first moved the legacy config into [Config]
   assert.deepEqual(sheet.getRange(headerRow, 1, 1, 4).getValues()[0], ['Date', 'Who', 'Weight', 'Comment']);
   const line = logLinesWith(sandbox, 'ballot.write.refused')[0];
-  assert.equal(line.indexOf('"headerRow":' + headerRow) !== -1 && line.indexOf('"Who"') !== -1, true, line);
+  assert.equal(line.indexOf('"headerRow":' + headerRow) !== -1 && line.indexOf('"Date"') !== -1 && line.indexOf('"Who"') === -1, true, line);
 }
 
 /** getAdminEditData reports layoutError when the damage could not be repaired, and '' when healthy. */
@@ -2499,6 +2509,7 @@ function run() {
   testResponsesHeaderMissingIsRepaired();
   testResponsesBlankHeaderWithDataIsLeftAlone();
   testResponsesRecreatedWhenConfigIsLast();
+  testConfigMarkerClearedIsNotMigrated();
   testResponsesHeaderWithContentButNoNameIsLeftAlone();
   testAdminEditDataReportsUnrepairedLayout();
   testReadEntryPointsNeverWrite();
