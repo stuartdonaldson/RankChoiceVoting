@@ -7,14 +7,14 @@
  *   APP_DEPLOY_TARGET  — 'SIT', 'PROD', or 'NUUC'
  * Do not hand-edit; commit whatever the tool last stamped.
  */
-const APP_VERSION       = '0.1.13';
-const APP_VERSION_DATE  = '2026-11-11T03:52:10.090Z';
+const APP_VERSION       = '0.1.14';
+const APP_VERSION_DATE  = '2026-11-11T15:48:20.608Z';
 const APP_DEPLOY_TARGET = 'NUUC';
 const APP_AUTHOR        = 'Stuart Donaldson';
 const APP_CONTACT       = 'stuart.donaldson@gmail.com';
 const BUILD_INFO = {
-  "version": "0.1.13",
-  "buildDate": "2026-11-11T03:52:10.090Z",
+  "version": "0.1.14",
+  "buildDate": "2026-11-11T15:48:20.608Z",
   "env": "NUUC",
   "webappUrl": "https://script.google.com/macros/s/AKfycbyCC3jrN0_wVTivKkjC2COfeyqaopvaPlpKUEUdu18D9UsYa7llEXnemGRIzwAGXhw4fA/exec",
   "staticUrl": "https://nuuc-it.github.io/Static/pub/ballot/"
