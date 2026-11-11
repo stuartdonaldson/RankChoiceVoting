@@ -137,9 +137,9 @@ function testOnEditRefreshesCacheAfterManualSheetEdit() {
   const sheet = app.findBallotSheet_(ss, 'ManualEdit');
   app.getCachedBallotData_('ManualEdit', sheet); // warm the cache
 
-  // Simulate a human typing directly into the Title cell (row 1, col 2) in Sheets —
+  // Simulate a human typing directly into the Title cell (row 2, col 3) in Sheets —
   // bypasses every RPC, so only onEdit(e) can pick this up.
-  const range = sheet.getRange(1, 2);
+  const range = sheet.getRange(2, 3);
   range.setValue('Hand-Edited Title');
 
   app.onEdit({ range: range });
@@ -158,7 +158,7 @@ function testAdminEditLoadRefreshesStaleCache() {
   app.getCachedBallotData_('CopiedIn', sheet); // warm the cache with the placeholder content
 
   // Change the sheet with no onEdit call — the copy-and-rename path.
-  sheet.getRange(1, 2).setValue('Copied-In Title');
+  sheet.getRange(2, 3).setValue('Copied-In Title');
   assert.notEqual(app.getBallotConfig('CopiedIn').title, 'Copied-In Title'); // stale before
 
   app.getAdminEditData('CopiedIn');
@@ -328,7 +328,7 @@ function testOnEditNeverWrites() {
     const { app, ss } = loadApp();
     const sheet = writeGrid(ss.insertSheet('Ballot-Edit' + i), rows());
     sheet._writeCalls = 0;
-    app.onEdit({ range: sheet.getRange(1, 2) });
+    app.onEdit({ range: sheet.getRange(2, 3) });
     assert.equal(sheet._writeCalls, 0, 'onEdit wrote');
     assert.equal(app.LockService._state.waitCount, 0);
     assert.ok(app._readBallotCacheRaw_('Edit' + i)); // but did refresh the cache

@@ -318,6 +318,13 @@ function getAdminEditData(id) {
   var rep = _repairBallotSheet_(sheet);
   var view = _ballotViewFromSnapshot_(rep.snap);
   refreshBallotCache_(id, sheet, view);
+  // Repair could not fix it: tell the operator rather than let the first vote fail.
+  var layoutError = '';
+  if (_responsesMissingName_(rep.snap)) {
+    layoutError = 'The Responses header row on this ballot sheet has no "Name" column, so votes cannot be saved. ' +
+      'Open the sheet, insert a new row directly under [Responses] (do not overwrite any vote) and put Date | Name | Weight | Comment in it, followed by the candidate names that head the rank columns.';
+    _logBallotEvent_('ballot.layout.unrepaired', { sheet: sheet.getName(), reason: 'responsesMissingName' });
+  }
 
   var config = view.config;
   var candidateRows = view.candidates;
@@ -334,6 +341,7 @@ function getAdminEditData(id) {
     addInstructions: config['Add-Instructions'] || '',
     adminOnlyNotes: config['Admin-Only-Notes'] || '',
     candidates: candidateRows,
+    layoutError: layoutError,
     orphanColumns: view.orphans.filter(function (o) { return _orphanHasRanks_(rep.snap, o.label); })
       .map(function (o) { return { label: o.label, col: o.col }; }),
     ballotUrl: baseUrl + '?cmd=ballot&id=' + encodeURIComponent(id),

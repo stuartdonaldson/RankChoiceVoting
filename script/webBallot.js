@@ -66,6 +66,7 @@ function _handleBallot(e) {
         return _ballotJsonResponse({ error: 'Unknown ballot action: ' + action });
     }
   } catch (err) {
+    GasLogger.logError('webapp.ballot.error', err, { action: action, id: id });
     return _ballotJsonResponse({ error: String(err && err.message ? err.message : err) });
   }
 }

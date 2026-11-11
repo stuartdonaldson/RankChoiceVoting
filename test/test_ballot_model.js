@@ -96,81 +96,79 @@ function testWriteThenReadConfigRoundTrips() {
   assertSnapshotMatchesOldReaders(SM, sheet, 'testWriteThenReadConfigRoundTrips');
 }
 
+/** Rows 2-9 of a migrated sheet: the eight standard keys (key col B, value col C), in registry order. */
+function assertMigratedConfigBlock(sheet, expected) {
+  assert.equal(sheet.getRange(1, 1).getValue(), '[Config]');
+  const keys = ['Title', 'Description', 'Instructions', 'Footer', 'Contact', 'Accept-New', 'Add-Instructions', 'Admin-Only-Notes'];
+  assert.deepEqual(sheet.getRange(2, 2, 8, 2).getValues(), keys.map((k) => [k, expected[k] === undefined ? '' : expected[k]]));
+  assert.equal(sheet.getRange(10, 1).getValue(), '[Results]'); // legacy rows are gone; Results follows the block
+}
+
 /**
- * Simulates a sheet created by a PRE-"Admin-Only-Notes" version of createBallotSheet_
- * (5 config rows, a blank spacer at row 6, Results at row 7, Responses at row 9) to
- * confirm writeBallotConfig_ reuses that blank spacer row for "Admin-Only-Notes" on
- * first save rather than silently dropping the value (or needlessly inserting a new
- * row and shifting Results/Responses).
+ * A legacy sheet from before "Admin-Only-Notes" (5 config rows, spacer row 6, Results row 7) is
+ * migrated into a [Config] section by the first write: every standard key present, missing
+ * ones blank, nothing else shifted out of order.
  */
 function testWriteBallotConfigSelfHealsMissingAdminOnlyNotesRowOnOldSheet() {
-  const { SM, ss } = loadBallotModel();
+  const { SM, ss, sandbox } = loadBallotModel();
   const sheet = ss.insertSheet('Ballot-OldFormat');
   sheet.getRange(1, 1, 5, 2).setValues([
-    ['Title', 'Old Title'],
-    ['Description', 'Old Description'],
-    ['Footer', 'Old Footer'],
-    ['Contact', 'old@example.com'],
-    ['Accept-New', 'TRUE'],
+    ['Title', 'Old Title'], ['Description', 'Old Description'], ['Footer', 'Old Footer'],
+    ['Contact', 'old@example.com'], ['Accept-New', 'TRUE'],
   ]);
   sheet.getRange(7, 1).setValue('[Results]');
   sheet.getRange(9, 1).setValue('[Responses]');
   sheet.getRange(10, 1, 1, 4).setValues([['Date', 'Name', 'Weight', 'Comment']]);
 
-  SM.writeBallotConfig_(sheet, {
-    Title: 'Old Title',
-    Description: 'Old Description',
-    Footer: 'Old Footer',
-    Contact: 'old@example.com',
-    'Accept-New': 'TRUE',
-    'Admin-Only-Notes': 'newly added notes',
+  SM.writeBallotConfig_(sheet, { 'Admin-Only-Notes': 'newly added notes' });
+
+  assertMigratedConfigBlock(sheet, {
+    Title: 'Old Title', Description: 'Old Description', Footer: 'Old Footer', Contact: 'old@example.com',
+    'Accept-New': 'TRUE', 'Admin-Only-Notes': 'newly added notes',
   });
-
-  const config = SM.readBallotConfig_(sheet);
-  assert.equal(config['Admin-Only-Notes'], 'newly added notes');
-  assert.equal(config.Title, 'Old Title'); // pre-existing keys untouched
-
-  // Admin-Only-Notes reused the existing blank spacer row (6) — Results stays put. The
-  // write runs the repair path first (rcballot-8i5.4), which gives this pre-Candidates
-  // ballot an empty [Candidates] section directly above [Responses] (rows 9-10).
-  assert.equal(sheet.getRange(6, 1).getValue(), 'Admin-Only-Notes');
-  assert.equal(sheet.getRange(7, 1).getValue(), '[Results]');
-  assert.equal(sheet.getRange(9, 1).getValue(), '[Candidates]');
-  assert.equal(sheet.getRange(11, 1).getValue(), '[Responses]');
-  assert.deepEqual(sheet.getRange(12, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
+  assert.equal(logLinesWith(sandbox, 'ballot.repair.configSection').length, 1);
+  assert.equal(sheet.getRange(12, 1).getValue(), '[Candidates]'); // the repair path's empty Candidates section above [Responses]
+  assert.equal(sheet.getRange(14, 1).getValue(), '[Responses]');
   assertSnapshotMatchesOldReaders(SM, sheet, 'testWriteBallotConfigSelfHealsMissingAdminOnlyNotesRowOnOldSheet');
 }
 
-/**
- * Same self-heal scenario, but with NO spare blank row above Results (config rows
- * butt directly against the marker) — exercises the insert-a-new-row fallback path.
- */
+/** Same migration when the config rows butt directly against the first marker (no spacer row). */
 function testWriteBallotConfigInsertsRowWhenNoBlankSpacerExists() {
   const { SM, ss } = loadBallotModel();
   const sheet = ss.insertSheet('Ballot-NoSpacer');
-  sheet.getRange(1, 1, 4, 2).setValues([
-    ['Title', 'T'],
-    ['Description', 'D'],
-    ['Footer', 'F'],
-    ['Contact', 'C'],
-  ]);
-  sheet.getRange(5, 1).setValue('[Results]'); // no blank row between config and marker
+  sheet.getRange(1, 1, 4, 2).setValues([['Title', 'T'], ['Description', 'D'], ['Footer', 'F'], ['Contact', 'C']]);
+  sheet.getRange(5, 1).setValue('[Results]');
   sheet.getRange(7, 1).setValue('[Responses]');
   sheet.getRange(8, 1, 1, 4).setValues([['Date', 'Name', 'Weight', 'Comment']]);
 
   SM.writeBallotConfig_(sheet, { Title: 'T', 'Admin-Only-Notes': 'notes' });
 
-  const config = SM.readBallotConfig_(sheet);
-  assert.equal(config['Admin-Only-Notes'], 'notes');
-
-  // A new row was inserted at row 5 (just above Results), shifting everything below down
-  // one row; the repair path had first put an empty [Candidates] section above [Responses].
-  assert.equal(sheet.getRange(5, 1).getValue(), 'Admin-Only-Notes');
-  assert.equal(sheet.getRange(6, 1).getValue(), '[Results]');
-  assert.equal(sheet.getRange(8, 1).getValue(), '[Candidates]');
-  assert.equal(sheet.getRange(10, 1).getValue(), '[Responses]');
-  assert.deepEqual(sheet.getRange(11, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
+  assertMigratedConfigBlock(sheet, { Title: 'T', Description: 'D', Footer: 'F', Contact: 'C', 'Admin-Only-Notes': 'notes' });
   assertSnapshotMatchesOldReaders(SM, sheet, 'testWriteBallotConfigInsertsRowWhenNoBlankSpacerExists');
+}
+
+/** A key outside the standard set survives the migration, after the standard ones. */
+function testConfigMigrationKeepsUnknownKeys() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = ss.insertSheet('Ballot-Extra');
+  sheet.getRange(1, 1, 2, 2).setValues([['Title', 'T'], ['Custom-Key', 'keep me']]);
+  sheet.getRange(4, 1).setValue('[Results]');
+  SM._repairBallotSheet_(sheet);
+  assert.equal(sheet.getRange(10, 2).getValue(), 'Custom-Key');
+  assert.equal(sheet.getRange(10, 3).getValue(), 'keep me');
+  assert.equal(SM.readBallotConfig_(sheet)['Custom-Key'], 'keep me');
+  assert.equal(SM.readBallotConfig_(sheet).Title, 'T');
+  assert.equal(SM._repairBallotSheet_(sheet).repaired, false); // already migrated: idempotent
+}
+
+/** A sheet whose config is still the legacy block reads fine, and a read never migrates it. */
+function testLegacyConfigBlockStillReadable() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = ss.insertSheet('Ballot-Legacy');
+  sheet.getRange(1, 1, 2, 2).setValues([['Title', 'Legacy T'], ['Accept-New', 'TRUE']]);
+  sheet.getRange(4, 1).setValue('[Results]');
+  assert.deepEqual(SM.readBallotConfig_(sheet), { Title: 'Legacy T', 'Accept-New': 'TRUE' });
+  assert.equal(sheet.getRange(1, 1).getValue(), 'Title');
 }
 
 /**
@@ -193,9 +191,18 @@ function testLegacyInfoKeyMigratesToAdminOnlyNotes() {
   assert.equal(sheet.getRange(6, 1).getValue(), 'Info'); // the read wrote nothing
 
   SM._repairBallotSheet_(sheet);
-  assert.equal(sheet.getRange(6, 1).getValue(), 'Admin-Only-Notes'); // migrated in place by the repair path
-  assert.equal(logLinesWith(sandbox, 'ballot.repair.legacyConfigKey').length, 1);
+  assert.equal(sheet.getRange(9, 2).getValue(), 'Admin-Only-Notes'); // carried into [Config] under its current name
+  assert.equal(sheet.getRange(9, 3).getValue(), 'old notes');
+  assert.equal(logLinesWith(sandbox, 'ballot.repair.configSection').length, 1);
   assertSnapshotMatchesOldReaders(SM, sheet, 'testLegacyInfoKeyMigratesToAdminOnlyNotes');
+
+  // Already in [Config] with an 'Info' key: renamed in place by the legacyConfigKey step.
+  const t = loadBallotModel();
+  const modern = buildOrderedBallot(t.ss, 'InfoModern', ['results', 'candidates', 'responses']);
+  modern.getRange(9, 2).setValue('Info');
+  t.SM._repairBallotSheet_(modern);
+  assert.equal(modern.getRange(9, 2).getValue(), 'Admin-Only-Notes');
+  assert.equal(logLinesWith(t.sandbox, 'ballot.repair.legacyConfigKey').length, 1);
 }
 
 function testCandidatesAndSubmitResponseRoundTrip() {
@@ -397,6 +404,15 @@ function testAddBallotCandidateForIdAcceptsRespondentDetails() {
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet), [{ name: 'Elm Street', details: 'suggested by a voter', linkText: '', linkUrl: '' }]);
 }
 
+/** [Config] + six keys on rows 1-7 (the rows a legacy 6-key block + spacer occupied), so fixtures keep their row numbers. */
+function putConfig6(sheet) {
+  sheet.getRange(1, 1).setValue('[Config]');
+  sheet.getRange(2, 2, 6, 2).setValues([
+    ['Title', 'T'], ['Description', 'D'], ['Footer', 'F'],
+    ['Contact', 'C'], ['Accept-New', 'TRUE'], ['Admin-Only-Notes', ''],
+  ]);
+}
+
 /**
  * Simulates a sheet created before the Candidates section existed (Results/Responses
  * markers only, candidates already typed directly into the Responses header). Reading it
@@ -407,10 +423,7 @@ function testAddBallotCandidateForIdAcceptsRespondentDetails() {
 function testEnsureCandidatesSectionSelfHealsOldSheetAndBackfillsOnAdd() {
   const { SM, ss } = loadBallotModel();
   const sheet = ss.insertSheet('Ballot-PreCandidates');
-  sheet.getRange(1, 1, 6, 2).setValues([
-    ['Title', 'T'], ['Description', 'D'], ['Footer', 'F'],
-    ['Contact', 'C'], ['Accept-New', 'TRUE'], ['Info', ''],
-  ]);
+  putConfig6(sheet);
   sheet.getRange(8, 1).setValue('[Results]');
   sheet.getRange(10, 1).setValue('[Responses]');
   sheet.getRange(11, 1, 1, 6).setValues([['Date', 'Name', 'Weight', 'Comment', 'Alice', 'Bob']]);
@@ -450,10 +463,7 @@ function testEnsureCandidatesSectionSelfHealsOldSheetAndBackfillsOnAdd() {
 function testMigratesExistingOldColumnCandidatesSectionOnRepair() {
   const { SM, ss } = loadBallotModel();
   const sheet = ss.insertSheet('Ballot-OldCandidatesCols');
-  sheet.getRange(1, 1, 6, 2).setValues([
-    ['Title', 'T'], ['Description', 'D'], ['Footer', 'F'],
-    ['Contact', 'C'], ['Accept-New', 'TRUE'], ['Info', ''],
-  ]);
+  putConfig6(sheet);
   sheet.getRange(8, 1).setValue('[Results]');
   sheet.getRange(9, 1).setValue('[Candidates]');
   // Old layout: Name/Details in columns A/B (not B/C).
@@ -925,10 +935,19 @@ function testSelfRepairWritesRunUnderLock() {
   // Legacy 'Info' config key rename.
   t = loadBallotModel();
   sheet = t.SM.createNewBallot_(t.ss, 'RepairE');
-  sheet.getRange(8, 1).setValue('Info');
+  sheet.getRange(9, 2).setValue('Info');
   log = spyWrites(sheet, t.sandbox.LockService._state);
   t.SM._repairBallotSheet_(sheet);
   assertAllWritesLocked(log, '_repairBallotSheet_ legacy key');
+
+  // Legacy config block moved into [Config].
+  t = loadBallotModel();
+  sheet = t.ss.insertSheet('Ballot-RepairL');
+  sheet.getRange(1, 1, 2, 2).setValues([['Title', 'T'], ['Contact', 'C']]);
+  sheet.getRange(4, 1).setValue('[Results]');
+  log = spyWrites(sheet, t.sandbox.LockService._state);
+  t.SM._repairBallotSheet_(sheet);
+  assertAllWritesLocked(log, '_repairBallotSheet_ config section');
 
   // Candidate typed into the Candidates table only: Responses header reconcile.
   t = loadBallotModel();
@@ -1039,10 +1058,12 @@ function buildOrderedBallot(ss, id, order, opts) {
 
 /** The plain 2D grid buildOrderedBallot writes (rows may be ragged/empty). */
 function orderedBallotRows(id, order, opts) {
-  const rows = [
+  const config = [
     ['Title', 'T-' + id], ['Description', 'D'], ['Instructions', 'I'], ['Footer', 'F'],
-    ['Contact', 'C'], ['Accept-New', 'TRUE'], ['Add-Instructions', 'AI'], ['Admin-Only-Notes', 'N'], [],
+    ['Contact', 'C'], ['Accept-New', 'TRUE'], ['Add-Instructions', 'AI'], ['Admin-Only-Notes', 'N'],
   ];
+  // [Config] + 8 keys fills rows 1-9, the same rows the legacy block + spacer used, so section rows match either way.
+  const rows = opts && opts.legacyConfig ? config.concat([[]]) : [['[Config]']].concat(config.map((r) => [''].concat(r)));
   order.forEach((key) => { sectionRows(key, opts && opts.blankRows).forEach((r) => rows.push(r)); });
   return rows;
 }
@@ -1079,14 +1100,21 @@ function sectionSnapshot(sheet, key) {
   const markers = scanMarkers(sheet);
   const start = markers[key][0];
   assert.ok(start, 'marker ' + key + ' not found');
-  const all = [].concat(markers.results, markers.candidates, markers.responses).sort((a, b) => a - b);
+  const all = [].concat(markers.results, markers.candidates, markers.responses, scanConfigMarker(sheet)).sort((a, b) => a - b);
   const next = all.find((r) => r > start);
   const end = next ? next - 1 : sheet.getLastRow();
   return trimRows(sheet.getRange(start, 1, end - start + 1, SNAPSHOT_COLS).getValues());
 }
 
 function configSnapshot(sheet) {
-  return trimRows(sheet.getRange(1, 1, 9, 2).getValues());
+  return trimRows(sheet.getRange(1, 1, 9, 3).getValues());
+}
+
+/** Rows whose column A is the [Config] marker (it bounds the section above it, like any marker). */
+function scanConfigMarker(sheet) {
+  const last = sheet.getLastRow();
+  const col = last ? sheet.getRange(1, 1, last, 1).getValues() : [];
+  return col.map((r, i) => (String(r[0]).trim() === '[Config]' ? i + 1 : 0)).filter(Boolean);
 }
 
 function assertMarkersExactlyOnce(sheet, label) {
@@ -1158,7 +1186,7 @@ function testResponsesSectionEndsAtNextMarker() {
   const layout = SM._readBallotLayout_(sheet);
   assert.equal(layout.sections.responses.endRow, layout.markers.results - 1);
   assert.equal(layout.sections.results.endRow, sheet.getLastRow());
-  assert.equal(layout.configEndRow, 9);
+  assert.equal(layout.sections.config.endRow, 9);
   assert.deepEqual(SM.readBallotResponseRows_(sheet).map((r) => r.name), ['V1', 'V2']);
 }
 
@@ -1241,7 +1269,7 @@ function testNewVoteNeverOverwritesUnnamedRowWithContent() {
 function testAddBallotCandidateAfterRepairWritesResponsesHeader() {
   const { SM, ss } = loadBallotModel();
   const sheet = ss.insertSheet('Ballot-OldAdd');
-  sheet.getRange(1, 1, 2, 2).setValues([['Title', 'T'], ['Accept-New', 'TRUE']]);
+  putConfig6(sheet);
   sheet.getRange(8, 1).setValue('[Results]');
   sheet.getRange(10, 1).setValue('[Responses]');
   sheet.getRange(11, 1, 1, 5).setValues([['Date', 'Name', 'Weight', 'Comment', 'Alice']]);
@@ -1473,15 +1501,14 @@ function testSectionWritesLeaveOtherSectionsUnchangedInAllOrders() {
   });
 }
 
-/** writeBallotConfig_ inserts a missing key above the first marker, whichever section it is. */
+/** writeBallotConfig_ inserts a missing key at the end of the [Config] section (above the next marker), whichever section follows. */
 function testWriteBallotConfigInsertsAboveFirstMarkerInAnyOrder() {
   SECTION_ORDERS.forEach((order) => {
     const { SM, ss } = loadBallotModel();
-    const sheet = buildOrderedBallot(ss, 'Cfg', order);
-    sheet.getRange(9, 1, 1, 2).setValues([['Spare', 'x']]); // no blank spacer row left to reuse
+    const sheet = buildOrderedBallot(ss, 'Cfg', order); // [Config] fills rows 1-9: no blank row to reuse
     const others = Object.keys(SECTION_MARKERS).map((k) => sectionSnapshot(sheet, k));
     SM.writeBallotConfig_(sheet, { Title: 'New', 'Extra-Key': 'v' });
-    assert.equal(sheet.getRange(10, 1).getValue(), 'Extra-Key', order.join('/'));
+    assert.equal(sheet.getRange(10, 2).getValue(), 'Extra-Key', order.join('/'));
     assert.equal(sheet.getRange(11, 1).getValue(), SECTION_MARKERS[order[0]], order.join('/'));
     assert.deepEqual(Object.keys(SECTION_MARKERS).map((k) => sectionSnapshot(sheet, k)), others, order.join('/'));
     const config = SM.readBallotConfig_(sheet);
@@ -1568,8 +1595,15 @@ function testParseBallotNeedsNoGasGlobals() {
   const snap = SM._parseBallot_(orderedBallotRows('Pure', ['results', 'candidates', 'responses']));
   assert.deepEqual(snap.problems, []);
   assert.equal(snap.config.byKey.Title.value, 'T-Pure');
-  assert.equal(snap.config.byKey.Title.row, 1);
-  assert.equal(snap.config.rowsUsed, 8);
+  assert.equal(snap.config.byKey.Title.row, 2);
+  assert.equal(snap.config.rowsUsed, 9);
+  // The same sheet with the legacy config block (key col A, no marker) parses to the same values.
+  const legacy = SM._parseBallot_(orderedBallotRows('Pure', ['results', 'candidates', 'responses'], { legacyConfig: true }));
+  assert.equal(legacy.layout.sections.config.legacy, true);
+  assert.equal(legacy.config.byKey.Title.value, 'T-Pure');
+  assert.equal(legacy.config.byKey.Title.row, 1);
+  assert.equal(legacy.config.rowsUsed, 8);
+  assert.deepEqual(legacy.problems, []);
   assert.deepEqual(snap.resultsRows, [{ row: 11, values: ['Analysis run: earlier'] }, { row: 12, values: ['Winner: Alice', 3] }]);
   const c = snap.tables.candidates;
   assert.equal(c.headerRow, 14);
@@ -1786,13 +1820,85 @@ function testWriteEntryRepairsHeaderOnMarkerRow() {
 // Reads never write; ranks by name (rcballot-8i5.3).
 // ---------------------------------------------------------------------------
 
+/** [Responses] marker with no header row (marker last, or next marker directly below): repair writes the fixed header; a vote then saves. */
+function testResponsesHeaderMissingIsRepaired() {
+  [false, true].forEach((markerLast) => {
+    const { SM, ss, sandbox } = loadBallotModel();
+    const cands = [['[Candidates]'], ['', 'Name', 'Details', 'Link Text', 'Link URL'], ['', 'Alice'], ['', 'Bob']];
+    const rows = [['Title', 'T']].concat(markerLast ? [['[Results]']] : [], cands, [['[Responses]']], markerLast ? [] : [['[Results]']]);
+    const sheet = writeGrid(ss.insertSheet('Ballot-NoHdr'), rows);
+    const before = SM._readBallot_(sheet);
+    assert.equal(SM._responsesMissingName_(before), true);
+    assert.notEqual(SM._planResponsesHeader_(rectGrid(rows), before), null);
+
+    assert.equal(SM._repairBallotSheet_(sheet).repaired, true);
+    assert.deepEqual(sheet.getRange(rowOf(sheet, '[Responses]') + 1, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
+    assert.equal(logLinesWith(sandbox, 'ballot.repair.responsesHeader').length, 1);
+    assert.equal(SM._responsesMissingName_(SM._readBallot_(sheet)), false);
+    assert.equal(SM._repairBallotSheet_(sheet).repaired, false);
+  });
+}
+
+/** A blank header over response data is not auto-repaired (rank labels unknown); an empty section is. */
+function testResponsesBlankHeaderWithDataIsLeftAlone() {
+  const { SM, ss } = loadBallotModel();
+  const rows = [['[Results]'], ['[Candidates]'], ['', 'Name'], ['', 'Alice'], ['[Responses]'], [], ['2026-01-01', 'Ann', 1, '', 1]];
+  const sheet = writeGrid(ss.insertSheet('Ballot-Pop'), rows);
+  assert.equal(SM._planResponsesHeader_(rectGrid(rows), SM._readBallot_(sheet)), null);
+}
+
+/** A cleared [Config] marker over intact B/C rows is not migrated (that would blank and delete them). */
+function testConfigMarkerClearedIsNotMigrated() {
+  const { SM, ss } = loadBallotModel();
+  const rows = [[''], ['', 'Title', 'Keep Me'], ['', 'Contact', 'a@b.c'], ['[Results]'], ['[Candidates]'], ['', 'Name'], ['', 'Alice'], ['[Responses]'], ['Date', 'Name', 'Weight', 'Comment']];
+  const sheet = writeGrid(ss.insertSheet('Ballot-NoCfgMarker'), rows);
+  assert.equal(SM._planConfigSection_(rectGrid(rows), SM._readBallot_(sheet)), null);
+  SM._repairBallotSheet_(sheet);
+  assert.equal(sheet.getRange(2, 3).getValue(), 'Keep Me');
+}
+
+/** [Responses] recreation still works when [Config] is the last section. */
+function testResponsesRecreatedWhenConfigIsLast() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = writeGrid(ss.insertSheet('Ballot-CfgLast'), [['[Results]'], ['[Candidates]'], ['', 'Name'], ['', 'Alice'], ['[Config]'], ['', 'Title', 'T']]);
+  SM._ensureBallotSections_(sheet);
+  assert.notEqual(rowOf(sheet, '[Responses]'), -1);
+}
+
+/** A Name-less header that has content is never overwritten, and a write is still refused with evidence logged. */
+function testResponsesHeaderWithContentButNoNameIsLeftAlone() {
+  const { SM, ss, sandbox } = loadBallotModel();
+  const rows = [['[Results]'], ['[Candidates]'], ['', 'Name'], ['', 'Alice'], ['[Responses]'], ['Date', 'Who', 'Weight', 'Comment']];
+  const sheet = writeGrid(ss.insertSheet('Ballot-Odd'), rows);
+  assert.equal(SM._planResponsesHeader_(rectGrid(rows), SM._readBallot_(sheet)), null);
+  assert.throws(() => SM.submitBallotResponse_('Odd', 'Ann', ['Alice'], ''), /Responses header has no Name column/);
+  const headerRow = rowOf(sheet, '[Responses]') + 1; // the write's repair first moved the legacy config into [Config]
+  assert.deepEqual(sheet.getRange(headerRow, 1, 1, 4).getValues()[0], ['Date', 'Who', 'Weight', 'Comment']);
+  const line = logLinesWith(sandbox, 'ballot.write.refused')[0];
+  assert.equal(line.indexOf('"headerRow":' + headerRow) !== -1 && line.indexOf('"Date"') !== -1 && line.indexOf('"Who"') === -1, true, line);
+}
+
+/** getAdminEditData reports layoutError when the damage could not be repaired, and '' when healthy. */
+function testAdminEditDataReportsUnrepairedLayout() {
+  const { SM, ss, sandbox } = loadBallotModelWithAdmin();
+  sandbox._getWebAppUrl_ = () => 'https://example.test/exec';
+  writeGrid(ss.insertSheet('Ballot-Odd'), [['[Results]'], ['[Candidates]'], ['', 'Name'], ['', 'Alice'], ['[Responses]'], ['Date', 'Who', 'Weight', 'Comment']]);
+  assert.match(sandbox.getAdminEditData('Odd').layoutError, /no "Name" column/);
+  writeGrid(ss.insertSheet('Ballot-Ok'), [['[Results]'], ['[Candidates]'], ['', 'Name'], ['', 'Alice'], ['[Responses]']]);
+  assert.equal(sandbox.getAdminEditData('Ok').layoutError, '');
+}
+
+// ---------------------------------------------------------------------------
+// Reads never write; ranks by name (rcballot-8i5.3).
+// ---------------------------------------------------------------------------
+
 /** Damaged-sheet builders: each returns a sheet some repair step would change. */
 const DAMAGED_SHEETS = {
   missingResults: (ss) => { const sh = buildOrderedBallot(ss, 'D1', ['results', 'candidates', 'responses']); sh.getRange(rowOf(sh, '[Results]'), 1).setValue(''); return sh; },
   missingCandidates: (ss) => { const sh = buildOrderedBallot(ss, 'D2', ['results', 'candidates', 'responses']); sh.getRange(rowOf(sh, '[Candidates]'), 1).setValue(''); return sh; },
   missingResponses: (ss) => { const sh = buildOrderedBallot(ss, 'D3', ['responses', 'results', 'candidates']); sh.getRange(rowOf(sh, '[Responses]'), 1).setValue(''); return sh; },
   duplicateMarker: (ss) => { const sh = buildOrderedBallot(ss, 'D4', ['results', 'candidates', 'responses']); sh.getRange(sh.getLastRow() + 1, 1).setValue('[Candidates]'); return sh; },
-  legacyInfoKey: (ss) => { const sh = buildOrderedBallot(ss, 'D5', ['results', 'candidates', 'responses']); sh.getRange(8, 1).setValue('Info'); return sh; },
+  legacyInfoKey: (ss) => { const sh = buildOrderedBallot(ss, 'D5', ['results', 'candidates', 'responses']); sh.getRange(9, 2).setValue('Info'); return sh; },
   oldColumnACandidates: (ss) => {
     const sh = ss.insertSheet('Ballot-D6');
     writeGrid(sh, [['Title', 'T'], [], ['[Results]'], ['[Candidates]'], ['Name', 'Details'], ['book 1', 'd1'], ['[Responses]'], ['Date', 'Name', 'Weight', 'Comment', 'book 1'], ['x', 'V', 1, '', 1]]);
@@ -2070,26 +2176,34 @@ function testWriteBallotResultsCallCounts() {
   assert.deepEqual(sectionSnapshot(bottom, 'results'), [['[Results]'], ['', '1'], ['', '2'], ['', '3']]);
 }
 
-/** AC5: a new config key is written when a marker sits on row 1; AC7: existing keys cost one setValues per contiguous block. */
+/** AC5: config keys are written when a marker sits on row 1 (legacy sheet migrated) or [Config] has no room (rows inserted); AC7: existing keys cost one setValues per contiguous block. */
 function testWriteBallotConfigMarkerOnRowOneAndCallCounts() {
   const { SM, ss } = loadBallotModel();
   const sheet = writeGrid(ss.insertSheet('Ballot-Row1'), [
     ['[Results]'], ['[Candidates]'], ['', 'Name', 'Details', 'Link Text', 'Link URL'], ['', 'Alice'],
     ['[Responses]'], ['Date', 'Name', 'Weight', 'Comment', 'Alice'], ['d', 'V1', 1, '', 1],
   ]);
-  let c = countCalls(sheet, () => SM.writeBallotConfig_(sheet, { Title: 'T', 'Accept-New': 'TRUE' }));
-  assert.deepEqual([c.writes, c.reads], [2, 2], 'insert + one setValues; repair read + re-read');
-  assert.deepEqual(sheet.getRange(1, 1, 3, 2).getValues(), [['Title', 'T'], ['Accept-New', 'TRUE'], ['[Results]', '']]);
-  assert.deepEqual(SM.readBallotConfig_(sheet), { Title: 'T', 'Accept-New': 'TRUE' });
+  SM.writeBallotConfig_(sheet, { Title: 'T', 'Accept-New': 'TRUE' });
+  assertMigratedConfigBlock(sheet, { Title: 'T', 'Accept-New': 'TRUE' });
+  const cfg = SM.readBallotConfig_(sheet);
+  assert.equal(cfg.Title, 'T');
+  assert.equal(cfg['Accept-New'], 'TRUE');
   assert.deepEqual(SM.readBallotResponseRows_(sheet).map((r) => r.name + ':' + r.ranks.join(',')), ['V1:1']);
+
+  // An empty [Config] directly above [Results]: the new key's row is inserted before the marker.
+  const e = loadBallotModel();
+  const tight = writeGrid(e.ss.insertSheet('Ballot-Tight'), [['[Config]'], ['[Results]'], ['[Candidates]'], ['', 'Name'], ['[Responses]'], ['Date', 'Name', 'Weight', 'Comment']]);
+  e.SM.writeBallotConfig_(tight, { 'Custom-Key': 'v' });
+  assert.equal(e.SM.readBallotConfig_(tight)['Custom-Key'], 'v');
+  assert.equal(tight.getRange(rowOf(tight, '[Results]') - 1, 2).getValue() !== '', true);
 
   const t = loadBallotModel();
   const healthy = buildOrderedBallot(t.ss, 'CfgCount', ['results', 'candidates', 'responses']);
-  c = countCalls(healthy, () => t.SM.writeBallotConfig_(healthy, { Title: 'x', Description: 'y' }));
+  let c = countCalls(healthy, () => t.SM.writeBallotConfig_(healthy, { Title: 'x', Description: 'y' }));
   assert.deepEqual([c.writes, c.reads], [1, 1], 'adjacent keys: one setValues');
   c = countCalls(healthy, () => t.SM.writeBallotConfig_(healthy, { Title: 'x2', Footer: 'f2' }));
-  assert.deepEqual([c.writes, c.reads], [2, 1], 'rows 1 and 4: two blocks');
-  assert.deepEqual(healthy.getRange(1, 1, 4, 2).getValues(), [['Title', 'x2'], ['Description', 'y'], ['Instructions', 'I'], ['Footer', 'f2']]);
+  assert.deepEqual([c.writes, c.reads], [2, 1], 'rows 2 and 5: two blocks');
+  assert.deepEqual(healthy.getRange(2, 2, 4, 2).getValues(), [['Title', 'x2'], ['Description', 'y'], ['Instructions', 'I'], ['Footer', 'f2']]);
 }
 
 /** AC7 (submit): a new vote is 1 setValues at the bottom, 2 (insert + setValues) when a row must be made; a re-vote is 1. */
@@ -2151,7 +2265,7 @@ function testAddBallotCandidateOneRowAppendDuplicatesAndAtomicity() {
   // Accept-New off: refused with its own message.
   const u = loadBallotModel();
   const closed = buildOrderedBallot(u.ss, 'Add3', ['results', 'candidates', 'responses']);
-  closed.getRange(6, 2).setValue('FALSE');
+  closed.getRange(7, 3).setValue('FALSE');
   assert.throws(() => u.SM.addBallotCandidateForId_('Add3', 'Eve', ''), /^Error: This ballot is not accepting new items\.$/);
 }
 
@@ -2334,6 +2448,8 @@ function run() {
   testWriteThenReadConfigRoundTrips();
   testWriteBallotConfigSelfHealsMissingAdminOnlyNotesRowOnOldSheet();
   testWriteBallotConfigInsertsRowWhenNoBlankSpacerExists();
+  testConfigMigrationKeepsUnknownKeys();
+  testLegacyConfigBlockStillReadable();
   testLegacyInfoKeyMigratesToAdminOnlyNotes();
   testCandidatesAndSubmitResponseRoundTrip();
   testCountUniqueBallotRespondents();
@@ -2390,6 +2506,12 @@ function run() {
   testReadBallotIsOneGetValuesAndWritesNothing();
   testHeaderOnMarkerRowRepairRestoresLegacyVotes();
   testWriteEntryRepairsHeaderOnMarkerRow();
+  testResponsesHeaderMissingIsRepaired();
+  testResponsesBlankHeaderWithDataIsLeftAlone();
+  testResponsesRecreatedWhenConfigIsLast();
+  testConfigMarkerClearedIsNotMigrated();
+  testResponsesHeaderWithContentButNoNameIsLeftAlone();
+  testAdminEditDataReportsUnrepairedLayout();
   testReadEntryPointsNeverWrite();
   testHeaderlessCandidatesRepairedOnRepairPath();
   testHandSortedCandidatesKeepRanksByNameThroughReadsAndWrites();

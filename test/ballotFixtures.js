@@ -7,14 +7,14 @@
 
 /**
  * PROD Ballot-ABC-2026-7 (rcballot-8i5.7): legacy Responses layout. Rows 59-72 are the live
- * sheet's, verbatim; the config and Results rows above them are stand-ins. The [Responses]
+ * sheet's, verbatim; the [Config] and Results rows above them are stand-ins. The [Responses]
  * marker row (66) carries Name|Weight|Comment in cols B-D; the header row below (67) holds
  * Date + candidate names with B-D blank.
  */
 function prodAbc2026_7Rows() {
   const rows = [
-    ['Title', 'ABC July'], ['Description', 'D'], ['Instructions', 'I'], ['Footer', 'F'],
-    ['Contact', 'C'], ['Accept-New', 'FALSE'], ['Add-Instructions', ''], ['Admin-Only-Notes', ''], [],
+    ['[Config]'], ['', 'Title', 'ABC July'], ['', 'Description', 'D'], ['', 'Instructions', 'I'], ['', 'Footer', 'F'],
+    ['', 'Contact', 'C'], ['', 'Accept-New', 'FALSE'], ['', 'Add-Instructions', ''], ['', 'Admin-Only-Notes', ''],
     ['[Results]'], ['', 'Analysis run: earlier'],
   ];
   while (rows.length < 58) rows.push([]);
@@ -37,13 +37,13 @@ function prodAbc2026_7Rows() {
  * SIT Ballot-ABC-2026-08 (rcballot-8i5.3): the Candidates section has NO header row — the
  * row right below [Candidates] (78) is the first candidate — so the snapshot finds no
  * 'Name' label and every Responses rank column is an orphan. Rows 77-92 follow the live
- * sheet (details shortened); config/Results above are stand-ins. "The Boys in the Boat"
+ * sheet (details shortened); [Config]/Results above are stand-ins. "The Boys in the Boat"
  * (row 78) has no Responses column: the old positional reader took its row for a header.
  */
 function sitAbc2026_08Rows() {
   const rows = [
-    ['Title', 'ABC August'], ['Description', 'D'], ['Instructions', 'I'], ['Footer', 'F'],
-    ['Contact', 'C'], ['Accept-New', 'false'], ['Add-Instructions', ''], ['Admin-Only-Notes', ''], [],
+    ['[Config]'], ['', 'Title', 'ABC August'], ['', 'Description', 'D'], ['', 'Instructions', 'I'], ['', 'Footer', 'F'],
+    ['', 'Contact', 'C'], ['', 'Accept-New', 'false'], ['', 'Add-Instructions', ''], ['', 'Admin-Only-Notes', ''],
     ['[Results]'], ['', 'Analysis run: earlier'],
   ];
   while (rows.length < 76) rows.push([]);

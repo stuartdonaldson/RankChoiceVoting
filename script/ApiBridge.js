@@ -75,7 +75,8 @@ function handleApiPost_(e) {
     var result = fn.apply(null, payload.args || []);
     return jsonOutput_({ result: result });
   } catch (err) {
-    GasLogger.logError('handleApiPost_.error', err, { name: payload.name });
+    var firstArg = (payload.args || [])[0];
+    GasLogger.logError('handleApiPost_.error', err, { name: payload.name, id: typeof firstArg === 'string' ? firstArg : undefined });
     return jsonOutput_({ error: String(err && err.message ? err.message : err) });
   }
 }

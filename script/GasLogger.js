@@ -63,9 +63,33 @@ function buildAxiomRows_(entries, fallbackVersion) {
       target: e.target || 'unknown'
     }, e.data || {});
     if (e.execId) row.execId = e.execId;
+    if (e.actor) row.actor = e.actor;
     if (e.runId) row.runId = e.runId;
     return row;
   });
+}
+
+/**
+ * Makes a request payload safe to log: secret-like keys redacted, `properties` reduced to its
+ * key names, long strings/arrays truncated, nesting capped. Pure.
+ * @param {*} value
+ * @param {number=} depth
+ * @returns {*}
+ */
+function scrubForLog_(value, depth) {
+  depth = depth || 0;
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'string') return value.length > 200 ? value.slice(0, 200) + '...(+' + (value.length - 200) + ')' : value;
+  if (typeof value !== 'object') return value;
+  if (depth > 3) return Array.isArray(value) ? '[array]' : '[object]';
+  if (Array.isArray(value)) return value.slice(0, 30).map(function(v) { return scrubForLog_(v, depth + 1); });
+  var out = {};
+  Object.keys(value).forEach(function(k) {
+    if (/secret|token|password/i.test(k)) out[k] = '[redacted]';
+    else if (k === 'properties' && value[k] && typeof value[k] === 'object') out[k] = Object.keys(value[k]);
+    else out[k] = scrubForLog_(value[k], depth + 1);
+  });
+  return out;
 }
 
 /**
@@ -140,7 +164,16 @@ var GasLogger = {
   _runId: null,
   _fileId: null,
   _axiomConfig: null,
+  _actor: null,
 
+  /**
+   * Stamps `actor` (an already-masked identity, e.g. a masked voter name or 'admin') on every
+   * later entry of this execution, so one person's calls can be tied together.
+   * @param {string} actor
+   */
+  setActor: function(actor) {
+    this._actor = actor ? String(actor) : null;
+  },
   /**
    * Call at the start of every trigger function.
    * Generates a fresh execId and reads the optional test runId from Script Properties.
@@ -152,6 +185,7 @@ var GasLogger = {
     this._runId = PropertiesService.getScriptProperties().getProperty('RCV_TEST_RUN_ID') || null;
     this._entries = [];
     this._fileId = null;
+    this._actor = null;
     Logger.log('[GasLogger] init — trigger=' + triggerName +
       ' execId=' + this._execId + (this._runId ? ' runId=' + this._runId : ''));
     return this._execId;
@@ -226,6 +260,7 @@ var GasLogger = {
     var target = (typeof APP_DEPLOY_TARGET !== 'undefined' && APP_DEPLOY_TARGET) || 'unknown';
     var entry = { ts: new Date().toISOString(), tag: tag, data: data, execId: this._execId, version: version, target: target };
     if (this._runId) entry.runId = this._runId;
+    if (this._actor) entry.actor = this._actor;
     Logger.log('[GasLogger] ' + JSON.stringify(entry));
     if (this._enabled) this._entries.push(entry);
     if (flush) this.flush();
@@ -340,6 +375,7 @@ function authorizeExternalRequestScope() {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     buildAxiomRows_: buildAxiomRows_,
+    scrubForLog_: scrubForLog_,
     maskPiiForLog_: maskPiiForLog_,
     maskNameForLog_: maskNameForLog_,
     maskRecipientListForLog_: maskRecipientListForLog_
