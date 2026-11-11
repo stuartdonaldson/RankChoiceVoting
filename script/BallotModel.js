@@ -488,6 +488,7 @@ function createNewBallot_(ss, id) {
  * config field — like "Admin-Only-Notes" — added after this sheet was created) goes on the
  * row below the last config row with content, reusing blank rows above the first section
  * marker and otherwise inserting rows in front of it — also when a marker sits on row 1.
+ * Standard config keys absent from the sheet are appended with an empty value.
  * Runs the repair path first (_withBallotWrite_).
  *
  * @param {Sheet} sheet
@@ -512,6 +513,10 @@ function _planBallotConfigOps_(snap, updates) {
     var entry = snap.config.byKey[key];
     if (entry) update.push({ row: entry.row, cells: { Value: updates[key] } });
     else append.push({ Key: key, Value: updates[key] });
+  });
+  // Any config key the sheet lacks is written blank too, so every ballot ends up with the full set.
+  _BALLOT_CONFIG_ROWS.forEach(function (key) {
+    if (!snap.config.byKey[key] && !updates.hasOwnProperty(key)) append.push({ Key: key, Value: '' });
   });
   var ops = [];
   if (update.length) ops.push({ section: 'config', update: update });

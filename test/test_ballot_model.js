@@ -134,10 +134,11 @@ function testWriteBallotConfigSelfHealsMissingAdminOnlyNotesRowOnOldSheet() {
   // write runs the repair path first (rcballot-8i5.4), which gives this pre-Candidates
   // ballot an empty [Candidates] section directly above [Responses] (rows 9-10).
   assert.equal(sheet.getRange(6, 1).getValue(), 'Admin-Only-Notes');
-  assert.equal(sheet.getRange(7, 1).getValue(), '[Results]');
-  assert.equal(sheet.getRange(9, 1).getValue(), '[Candidates]');
-  assert.equal(sheet.getRange(11, 1).getValue(), '[Responses]');
-  assert.deepEqual(sheet.getRange(12, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
+  assert.deepEqual(sheet.getRange(7, 1, 2, 1).getValues().map((r) => r[0]), ['Instructions', 'Add-Instructions']); // missing keys, blank
+  assert.equal(sheet.getRange(9, 1).getValue(), '[Results]');
+  assert.equal(sheet.getRange(11, 1).getValue(), '[Candidates]');
+  assert.equal(sheet.getRange(13, 1).getValue(), '[Responses]');
+  assert.deepEqual(sheet.getRange(14, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
   assertSnapshotMatchesOldReaders(SM, sheet, 'testWriteBallotConfigSelfHealsMissingAdminOnlyNotesRowOnOldSheet');
 }
 
@@ -163,13 +164,15 @@ function testWriteBallotConfigInsertsRowWhenNoBlankSpacerExists() {
   const config = SM.readBallotConfig_(sheet);
   assert.equal(config['Admin-Only-Notes'], 'notes');
 
-  // A new row was inserted at row 5 (just above Results), shifting everything below down
-  // one row; the repair path had first put an empty [Candidates] section above [Responses].
+  // A new row was inserted at row 5 (just above Results), shifting everything below down;
+  // the other missing standard keys follow it, blank. The repair path had first put an empty
+  // [Candidates] section above [Responses].
   assert.equal(sheet.getRange(5, 1).getValue(), 'Admin-Only-Notes');
-  assert.equal(sheet.getRange(6, 1).getValue(), '[Results]');
-  assert.equal(sheet.getRange(8, 1).getValue(), '[Candidates]');
-  assert.equal(sheet.getRange(10, 1).getValue(), '[Responses]');
-  assert.deepEqual(sheet.getRange(11, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
+  assert.deepEqual(sheet.getRange(6, 1, 3, 1).getValues().map((r) => r[0]), ['Instructions', 'Accept-New', 'Add-Instructions']);
+  assert.equal(sheet.getRange(9, 1).getValue(), '[Results]');
+  assert.equal(sheet.getRange(11, 1).getValue(), '[Candidates]');
+  assert.equal(sheet.getRange(13, 1).getValue(), '[Responses]');
+  assert.deepEqual(sheet.getRange(14, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
   assertSnapshotMatchesOldReaders(SM, sheet, 'testWriteBallotConfigInsertsRowWhenNoBlankSpacerExists');
 }
 
@@ -2124,8 +2127,13 @@ function testWriteBallotConfigMarkerOnRowOneAndCallCounts() {
   ]);
   let c = countCalls(sheet, () => SM.writeBallotConfig_(sheet, { Title: 'T', 'Accept-New': 'TRUE' }));
   assert.deepEqual([c.writes, c.reads], [2, 2], 'insert + one setValues; repair read + re-read');
-  assert.deepEqual(sheet.getRange(1, 1, 3, 2).getValues(), [['Title', 'T'], ['Accept-New', 'TRUE'], ['[Results]', '']]);
-  assert.deepEqual(SM.readBallotConfig_(sheet), { Title: 'T', 'Accept-New': 'TRUE' });
+  assert.deepEqual(sheet.getRange(1, 1, 2, 2).getValues(), [['Title', 'T'], ['Accept-New', 'TRUE']]);
+  // Missing standard keys are written blank, so the whole set now sits above [Results].
+  assert.deepEqual(sheet.getRange(3, 1, 6, 2).getValues(), ['Description', 'Instructions', 'Footer', 'Contact', 'Add-Instructions', 'Admin-Only-Notes'].map((k) => [k, '']).concat([]).slice(0, 6));
+  assert.equal(sheet.getRange(9, 1).getValue(), '[Results]');
+  const cfg = SM.readBallotConfig_(sheet);
+  assert.equal(cfg.Title, 'T');
+  assert.equal(cfg['Accept-New'], 'TRUE');
   assert.deepEqual(SM.readBallotResponseRows_(sheet).map((r) => r.name + ':' + r.ranks.join(',')), ['V1:1']);
 
   const t = loadBallotModel();
