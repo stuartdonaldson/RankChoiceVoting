@@ -360,6 +360,7 @@
         </div>
       </div>
 
+      <p id="layoutError" class="field-status error hidden" role="alert"></p>
       <p class="subsection-header">Candidates</p>
       <ul id="candidateList"></ul>
       <div class="field-status" id="candidateListStatus"></div>
@@ -1147,6 +1148,9 @@
         adminOnlyNotesDisplay.textContent = data.adminOnlyNotes;
         renderAddSettingsDisplay();
         renderCandidates(data.candidates);
+        var layoutErrorEl = document.getElementById('layoutError');
+        layoutErrorEl.textContent = data.layoutError || '';
+        layoutErrorEl.classList.toggle('hidden', !data.layoutError);
         renderOrphans();
         setAppVersionFooter_(data.appVersion, data.appDeployTarget);
         loadStatus.classList.add('hidden');

@@ -77,4 +77,11 @@ assert.equal(maskNameForLog_('J'), 'J');
 assert.equal(maskNameForLog_(''), '');
 assert.equal(maskNameForLog_(null), '');
 
+// scrubForLog_ / actor: request payloads are logged, so secrets must not survive and identity rides along.
+const { scrubForLog_ } = require('../script/GasLogger.js');
+assert.deepEqual(scrubForLog_({ adminSecret: 's', properties: { A: '1' }, n: 1, s: 'x'.repeat(250) }),
+  { adminSecret: '[redacted]', properties: ['A'], n: 1, s: 'x'.repeat(200) + '...(+50)' });
+assert.equal(buildAxiomRows_([{ ts: 't', tag: 'x', data: {}, actor: 'L..e J..n' }])[0].actor, 'L..e J..n');
+assert.equal('actor' in buildAxiomRows_([{ ts: 't', tag: 'x', data: {} }])[0], false);
+
 console.log('test_gas_logger.js: PASS');

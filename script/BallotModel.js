@@ -984,7 +984,9 @@ function submitBallotResponse_(id, name, orderedCandidates, comment) {
       var t = snap.tables.responses;
       if (!t) throw new Error('Ballot has no Responses section.');
       if (t.headerRow === null || _responsesMissingName_(snap)) {
-        _logBallotEvent_('ballot.write.refused', { sheet: sheet.getName(), reason: 'responsesMissingName' });
+        _logBallotEvent_('ballot.write.refused', { sheet: sheet.getName(), reason: 'responsesMissingName',
+          markerRow: snap.layout.sections.responses && snap.layout.sections.responses.markerRow,
+          headerRow: t.headerRow, headerLabels: t.labels, lastRow: snap.layout.lastRow });
         throw new Error('Ballot sheet layout is damaged — the Responses header has no Name column.');
       }
       var view = _ballotViewFromSnapshot_(snap);
@@ -1697,6 +1699,30 @@ function _applyHeaderOnMarkerRow_(sheet, plan) {
   });
 }
 
+/**
+ * [Responses] marker whose header row is absent (the next marker sits directly below) or
+ * entirely blank (live: NUUC Ballot-BeTheChurch, marker on the last row). A header with any
+ * content but no Name is never overwritten — that is left to a human (see getAdminEditData's
+ * layoutError). Pure.
+ *
+ * @return {?{kind:string, markerRow:number, headerRow:number}} null when nothing to do.
+ */
+function _planResponsesHeader_(grid, snap) {
+  var section = snap.layout.sections.responses;
+  var t = snap.tables.responses;
+  if (!section || !t || !t.missing.length) return null;
+  if (t.headerRow === null) return { kind: 'insert', markerRow: section.markerRow, headerRow: section.markerRow + 1 };
+  var width = Math.max((grid[t.headerRow - 1] || []).length, _BALLOT_RESPONSE_FIXED_COLS.length);
+  if (_gridRowHasContent_(grid, t.headerRow, 1, width)) return null;
+  return { kind: 'blank', markerRow: section.markerRow, headerRow: t.headerRow };
+}
+
+function _applyResponsesHeader_(sheet, plan) {
+  if (plan.kind === 'insert') sheet.insertRowsAfter(plan.markerRow, 1);
+  sheet.getRange(plan.headerRow, 1, 1, _BALLOT_RESPONSE_FIXED_COLS.length).setValues([_BALLOT_RESPONSE_FIXED_COLS]);
+  _logBallotEvent_('ballot.repair.responsesHeader', { sheet: sheet.getName(), kind: plan.kind, row: plan.headerRow });
+}
+
 /** Legacy config keys (e.g. 'Info') to rename to their current key. Pure. */
 function _planLegacyConfigKeys_(grid, snap) {
   var out = [];
@@ -1818,6 +1844,7 @@ var _BALLOT_REPAIR_STEPS_ = [
   { name: 'candidatesOldColumns', plan: _planCandidatesOldColumns_, apply: _applyCandidatesOldColumns_ },
   { name: 'candidatesHeader', plan: _planCandidatesHeader_, apply: _applyCandidatesHeader_ },
   { name: 'headerOnMarkerRow', plan: _planHeaderOnMarkerRow_, apply: _applyHeaderOnMarkerRow_ },
+  { name: 'responsesHeader', plan: _planResponsesHeader_, apply: _applyResponsesHeader_ },
   { name: 'candidatesFromResponses', plan: _planCandidatesFromResponses_, apply: _applyCandidatesFromResponses_ },
   { name: 'rankColumns', plan: _planRankColumns_, apply: _applyRankColumns_ }
 ];
@@ -2292,6 +2319,7 @@ if (typeof module !== 'undefined' && module.exports) {
     _snapMissingLabels_: _snapMissingLabels_,
     _planHeaderOnMarkerRow_: _planHeaderOnMarkerRow_,
     _repairBallotSheet_: _repairBallotSheet_,
+    _planResponsesHeader_: _planResponsesHeader_,
     _responsesMissingName_: _responsesMissingName_,
     _withBallotWrite_: _withBallotWrite_,
     _applyBallotOps_: _applyBallotOps_,

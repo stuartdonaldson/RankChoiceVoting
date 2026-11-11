@@ -1786,6 +1786,51 @@ function testWriteEntryRepairsHeaderOnMarkerRow() {
 // Reads never write; ranks by name (rcballot-8i5.3).
 // ---------------------------------------------------------------------------
 
+/** [Responses] marker with no header row (marker last, or next marker directly below): repair writes the fixed header; a vote then saves. */
+function testResponsesHeaderMissingIsRepaired() {
+  [false, true].forEach((markerLast) => {
+    const { SM, ss, sandbox } = loadBallotModel();
+    const cands = [['[Candidates]'], ['', 'Name', 'Details', 'Link Text', 'Link URL'], ['', 'Alice'], ['', 'Bob']];
+    const rows = [['Title', 'T']].concat(markerLast ? [['[Results]']] : [], cands, [['[Responses]']], markerLast ? [] : [['[Results]']]);
+    const sheet = writeGrid(ss.insertSheet('Ballot-NoHdr'), rows);
+    const before = SM._readBallot_(sheet);
+    assert.equal(SM._responsesMissingName_(before), true);
+    assert.notEqual(SM._planResponsesHeader_(rectGrid(rows), before), null);
+
+    assert.equal(SM._repairBallotSheet_(sheet).repaired, true);
+    assert.deepEqual(sheet.getRange(rowOf(sheet, '[Responses]') + 1, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
+    assert.equal(logLinesWith(sandbox, 'ballot.repair.responsesHeader').length, 1);
+    assert.equal(SM._responsesMissingName_(SM._readBallot_(sheet)), false);
+    assert.equal(SM._repairBallotSheet_(sheet).repaired, false);
+  });
+}
+
+/** A Name-less header that has content is never overwritten, and a write is still refused with evidence logged. */
+function testResponsesHeaderWithContentButNoNameIsLeftAlone() {
+  const { SM, ss, sandbox } = loadBallotModel();
+  const rows = [['[Results]'], ['[Candidates]'], ['', 'Name'], ['', 'Alice'], ['[Responses]'], ['Date', 'Who', 'Weight', 'Comment']];
+  const sheet = writeGrid(ss.insertSheet('Ballot-Odd'), rows);
+  assert.equal(SM._planResponsesHeader_(rectGrid(rows), SM._readBallot_(sheet)), null);
+  assert.throws(() => SM.submitBallotResponse_('Odd', 'Ann', ['Alice'], ''), /Responses header has no Name column/);
+  assert.deepEqual(sheet.getRange(6, 1, 1, 4).getValues()[0], ['Date', 'Who', 'Weight', 'Comment']);
+  const line = logLinesWith(sandbox, 'ballot.write.refused')[0];
+  assert.equal(line.indexOf('"headerRow":6') !== -1 && line.indexOf('"Who"') !== -1, true, line);
+}
+
+/** getAdminEditData reports layoutError when the damage could not be repaired, and '' when healthy. */
+function testAdminEditDataReportsUnrepairedLayout() {
+  const { SM, ss, sandbox } = loadBallotModelWithAdmin();
+  sandbox._getWebAppUrl_ = () => 'https://example.test/exec';
+  writeGrid(ss.insertSheet('Ballot-Odd'), [['[Results]'], ['[Candidates]'], ['', 'Name'], ['', 'Alice'], ['[Responses]'], ['Date', 'Who', 'Weight', 'Comment']]);
+  assert.match(sandbox.getAdminEditData('Odd').layoutError, /no "Name" column/);
+  writeGrid(ss.insertSheet('Ballot-Ok'), [['[Results]'], ['[Candidates]'], ['', 'Name'], ['', 'Alice'], ['[Responses]']]);
+  assert.equal(sandbox.getAdminEditData('Ok').layoutError, '');
+}
+
+// ---------------------------------------------------------------------------
+// Reads never write; ranks by name (rcballot-8i5.3).
+// ---------------------------------------------------------------------------
+
 /** Damaged-sheet builders: each returns a sheet some repair step would change. */
 const DAMAGED_SHEETS = {
   missingResults: (ss) => { const sh = buildOrderedBallot(ss, 'D1', ['results', 'candidates', 'responses']); sh.getRange(rowOf(sh, '[Results]'), 1).setValue(''); return sh; },
@@ -2390,6 +2435,9 @@ function run() {
   testReadBallotIsOneGetValuesAndWritesNothing();
   testHeaderOnMarkerRowRepairRestoresLegacyVotes();
   testWriteEntryRepairsHeaderOnMarkerRow();
+  testResponsesHeaderMissingIsRepaired();
+  testResponsesHeaderWithContentButNoNameIsLeftAlone();
+  testAdminEditDataReportsUnrepairedLayout();
   testReadEntryPointsNeverWrite();
   testHeaderlessCandidatesRepairedOnRepairPath();
   testHandSortedCandidatesKeepRanksByNameThroughReadsAndWrites();

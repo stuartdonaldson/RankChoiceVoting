@@ -7,7 +7,10 @@ const assert = require('node:assert/strict');
 // deployment and before ADMIN_SHARED_SECRET is bootstrapped. Ported from F3Go30's
 // test/test_webapp_version_route.js — Stage 2 folds both into packages/gas-deploy's coverage.
 
-global.GasLogger = { log: function () {}, logError: function () {}, run: function (name, fn) { return fn(); } };
+global.GasLogger = { log: function () {}, logError: function () {}, setActor: function () {}, run: function (name, fn) { return fn(); } };
+global.maskNameForLog_ = require('../script/GasLogger.js').maskNameForLog_;
+global.maskPiiForLog_ = require('../script/GasLogger.js').maskPiiForLog_;
+global.scrubForLog_ = require('../script/GasLogger.js').scrubForLog_;
 global.ContentService = {
   MimeType: { JSON: 'application/json' },
   createTextOutput: function (text) {
@@ -77,6 +80,25 @@ function readJson_(output) {
   assert.equal(body.ok, true);
   assert.equal(body.target, 'SIT');
   assert.equal(body.deploymentId, 'AKfycbwRCVTEST');
+})();
+
+(function testRequestLogCarriesScrubbedBodyAndMaskedIdentity() {
+  const { buildWebAppRequestLog_, requestActorForLog_ } = require('../script/WebApp.js');
+  const vote = { postData: { type: 'text/plain', length: 90, contents: JSON.stringify({ name: 'submitBallotRanking', args: ['BeTheChurch', 'Little John', ['A', 'B'], 'nice']}) }, parameter: { cmd: 'api' }, queryString: 'cmd=api' };
+  const log = buildWebAppRequestLog_(vote);
+  assert.deepEqual(log.body, { name: 'submitBallotRanking', args: ['BeTheChurch', 'L..e J..n', ['A', 'B'], 'nice'] });
+  assert.equal(log.who, 'L..e J..n');
+  assert.equal(JSON.stringify(log).includes('Little John'), false);
+  assert.equal(requestActorForLog_(vote), 'L..e J..n');
+
+  const admin = { postData: { type: 'text/plain', length: 50, contents: JSON.stringify({ action: 'setScriptProperties', adminSecret: 'topsecret', properties: { AXIOM_TOKEN: 'xyz' } }) }, parameter: { cmd: 'admin' } };
+  const alog = JSON.stringify(buildWebAppRequestLog_(admin));
+  assert.equal(/topsecret|xyz/.test(alog), false);
+  assert.equal(alog.includes('AXIOM_TOKEN'), true);
+  assert.equal(requestActorForLog_(admin), 'admin');
+
+  const get = buildWebAppRequestLog_({ parameter: { cmd: 'ballot' }, queryString: 'cmd=ballot&id=X&name=Little%20John&action=submit' });
+  assert.equal(get.queryString.includes('Little'), false);
 })();
 
 console.log('test_webapp_version_route: all tests passed');

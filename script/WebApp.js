@@ -55,16 +55,67 @@ function handleVersionRequest_() {
 }
 
 /**
- * Never includes postData.contents — request bodies (cmd=admin) may carry
- * secrets/voter data, and GasLogger.log() data must never contain either.
- * Only type/length are safe to log.
+ * Request logging: the body is logged only after scrubForLog_ and name masking (below), never raw —
+ * it may carry adminSecret or a voter's name, which GasLogger.log() data must not contain.
+ */
+// Ballot RPCs whose argument at this index is a respondent's name (masked, never logged raw).
+var _API_PERSON_ARG_ = { getBallotForName: 1, submitBallotRanking: 1 };
+
+function _parsePostBody_(e) {
+  try {
+    return e && e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/** Masked respondent name carried by a ?cmd=api body, or ''. */
+function _apiPersonForLog_(body) {
+  var idx = body && _API_PERSON_ARG_[body.name];
+  return idx !== undefined && body.args && typeof body.args[idx] === 'string' ? maskNameForLog_(body.args[idx]) : '';
+}
+
+/**
+ * What was requested, safe to log: cmd, query string (name= masked), and for a POST the parsed
+ * body scrubbed by scrubForLog_ (secrets redacted, respondent name masked, long text truncated).
  */
 function buildWebAppRequestLog_(e) {
-  return {
+  var log = {
     cmd: (e && e.parameter && e.parameter.cmd) || '',
-    queryString: (e && e.queryString) || null,
+    queryString: e && e.queryString ? String(e.queryString).replace(/([?&]name=)([^&]*)/, function (m, p, v) {
+      var raw = v;
+      try { raw = decodeURIComponent(v.replace(/\+/g, ' ')); } catch (err) { /* keep raw */ }
+      return p + maskNameForLog_(raw);
+    }) : null,
     postData: e && e.postData ? { type: e.postData.type, length: e.postData.length } : null
   };
+  var body = _parsePostBody_(e);
+  if (body && typeof body === 'object') {
+    var who = _apiPersonForLog_(body);
+    var scrubbed = scrubForLog_(body);
+    if (who) scrubbed.args[_API_PERSON_ARG_[body.name]] = who;
+    log.body = scrubbed;
+    if (who) log.who = who;
+  }
+  return log;
+}
+
+/**
+ * Identity to stamp on this request's entries: the masked respondent name when the call names
+ * one, else 'admin' for admin actions/RPCs, else the masked signed-in email when the
+ * deployment exposes one (empty on an anonymous deployment).
+ */
+function requestActorForLog_(e) {
+  var body = _parsePostBody_(e);
+  var who = _apiPersonForLog_(body);
+  if (who) return who;
+  var cmd = e && e.parameter && e.parameter.cmd;
+  if (cmd === 'admin' || (body && /^(admin|getAdmin|createBallotForAdmin)/.test(String(body.name || '')))) return 'admin';
+  try {
+    return typeof Session !== 'undefined' ? maskPiiForLog_(Session.getActiveUser().getEmail()) : '';
+  } catch (err) {
+    return '';
+  }
 }
 
 /**
@@ -106,6 +157,7 @@ function doGet(e) {
 
 function doPost(e) {
   return GasLogger.run('doPost', function () {
+    GasLogger.setActor(requestActorForLog_(e));
     GasLogger.log('doPost', buildWebAppRequestLog_(e));
     var cmd = e && e.parameter && e.parameter.cmd;
 
@@ -329,6 +381,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     jsonOutput_: jsonOutput_,
     buildWebAppRequestLog_: buildWebAppRequestLog_,
+    requestActorForLog_: requestActorForLog_,
     handleVersionRequest_: handleVersionRequest_,
     extractDeploymentIdFromUrl_: extractDeploymentIdFromUrl_,
     doGet: doGet,
