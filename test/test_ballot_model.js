@@ -1839,6 +1839,22 @@ function testResponsesHeaderMissingIsRepaired() {
   });
 }
 
+/** A blank header over response data is not auto-repaired (rank labels unknown); an empty section is. */
+function testResponsesBlankHeaderWithDataIsLeftAlone() {
+  const { SM, ss } = loadBallotModel();
+  const rows = [['[Results]'], ['[Candidates]'], ['', 'Name'], ['', 'Alice'], ['[Responses]'], [], ['2026-01-01', 'Ann', 1, '', 1]];
+  const sheet = writeGrid(ss.insertSheet('Ballot-Pop'), rows);
+  assert.equal(SM._planResponsesHeader_(rectGrid(rows), SM._readBallot_(sheet)), null);
+}
+
+/** [Responses] recreation still works when [Config] is the last section. */
+function testResponsesRecreatedWhenConfigIsLast() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = writeGrid(ss.insertSheet('Ballot-CfgLast'), [['[Results]'], ['[Candidates]'], ['', 'Name'], ['', 'Alice'], ['[Config]'], ['', 'Title', 'T']]);
+  SM._ensureBallotSections_(sheet);
+  assert.notEqual(rowOf(sheet, '[Responses]'), -1);
+}
+
 /** A Name-less header that has content is never overwritten, and a write is still refused with evidence logged. */
 function testResponsesHeaderWithContentButNoNameIsLeftAlone() {
   const { SM, ss, sandbox } = loadBallotModel();
@@ -2481,6 +2497,8 @@ function run() {
   testHeaderOnMarkerRowRepairRestoresLegacyVotes();
   testWriteEntryRepairsHeaderOnMarkerRow();
   testResponsesHeaderMissingIsRepaired();
+  testResponsesBlankHeaderWithDataIsLeftAlone();
+  testResponsesRecreatedWhenConfigIsLast();
   testResponsesHeaderWithContentButNoNameIsLeftAlone();
   testAdminEditDataReportsUnrepairedLayout();
   testReadEntryPointsNeverWrite();

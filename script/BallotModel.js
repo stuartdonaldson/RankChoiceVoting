@@ -353,7 +353,7 @@ function _ensureResponsesSection_(sheet, layout) {
  */
 function _repairResponsesSectionLocked_(sheet, layout) {
   var last = null;
-  _BALLOT_SECTION_KEYS_.forEach(function (k) {
+  _BALLOT_SCAN_KEYS_.forEach(function (k) {
     var section = layout.sections[k];
     if (section && (!last || section.markerRow > last.markerRow)) last = section;
   });
@@ -1746,6 +1746,12 @@ function _planResponsesHeader_(grid, snap) {
   if (t.headerRow === null) return { kind: 'insert', markerRow: section.markerRow, headerRow: section.markerRow + 1 };
   var width = Math.max((grid[t.headerRow - 1] || []).length, _BALLOT_RESPONSE_FIXED_COLS.length);
   if (_gridRowHasContent_(grid, t.headerRow, 1, width)) return null;
+  // Rows of response data below a blank header: the original rank labels are unknown, so leave
+  // it for manual recovery (getAdminEditData's layoutError) rather than mislabel them.
+  var lastData = section.endRow || t.headerRow;
+  for (var r = t.headerRow + 1; r <= lastData; r++) {
+    if (_gridRowHasContent_(grid, r, 1, width)) return null;
+  }
   return { kind: 'blank', markerRow: section.markerRow, headerRow: t.headerRow };
 }
 

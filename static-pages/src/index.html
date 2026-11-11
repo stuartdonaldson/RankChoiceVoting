@@ -239,6 +239,8 @@
   #candidateList .topic-row { gap: 4px; grid-template-columns: auto 1fr auto auto auto auto; }
   #candidateList .topic-info-content { margin-top: 0; padding-left: 34px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
   #candidateList .topic-info-content.expanded { display: block; }
+  #candidateList .topic-info-content[hidden] { display: none; }
+  #candidateList button.topic-info-content { background: none; border: none; text-align: left; font: inherit; color: inherit; width: 100%; }
   #candidateList .topic-info-link { margin-top: 0; padding-left: 34px; }
   /* Respondent ranking rows: tight spacing only; handle/ℹ️ sizes unchanged. */
   ul#topicList li { padding: 0 8px; margin-bottom: 2px; }
@@ -937,11 +939,15 @@
       row.appendChild(downBtn);
       row.appendChild(delBtn);
 
-      var details = document.createElement('div');
+      var details = document.createElement('button');
+      details.type = 'button';
       details.className = 'topic-info-content' + (candidate.details ? '' : ' empty');
       details.textContent = candidate.details || 'No details yet.';
       details.hidden = !candidate.details;
-      details.addEventListener('click', function () { details.classList.toggle('expanded'); });
+      details.setAttribute('aria-expanded', 'false');
+      details.addEventListener('click', function () {
+        details.setAttribute('aria-expanded', String(details.classList.toggle('expanded')));
+      });
 
       var link = document.createElement('a');
       link.className = 'topic-info-link';
@@ -1028,6 +1034,7 @@
           text.textContent = candidate.name;
           details.textContent = candidate.details || 'No details yet.';
           details.className = 'topic-info-content' + (candidate.details ? '' : ' empty');
+          details.setAttribute('aria-expanded', 'false');
           editBtn.setAttribute('aria-label', 'Edit ' + candidate.name);
           showDisplay();
         }, function (err) {

@@ -101,4 +101,23 @@ function readJson_(output) {
   assert.equal(get.queryString.includes('Little'), false);
 })();
 
+(function testPrReviewFixes() {
+  const { buildWebAppRequestLog_, requestActorForLog_ } = require('../script/WebApp.js');
+  // Bodyless / invalid / null JSON bodies must not throw.
+  [undefined, { contents: '' }, { contents: 'not json' }, { contents: 'null' }].forEach((pd) => {
+    const e = { parameter: { cmd: 'version' }, postData: pd };
+    assert.doesNotThrow(() => requestActorForLog_(e));
+    assert.doesNotThrow(() => buildWebAppRequestLog_(e));
+  });
+  // name= first or repeated is masked.
+  const q = buildWebAppRequestLog_({ parameter: {}, queryString: 'name=Little%20John&cmd=ballot&name=Friar+Tuck' }).queryString;
+  assert.equal(/Little|Friar|Tuck|John/.test(q), false, q);
+  // Admin PII: contact masked, setSheet rows reduced to a count.
+  const contact = JSON.stringify(buildWebAppRequestLog_({ parameter: { cmd: 'api' }, postData: { type: 't', length: 1, contents: JSON.stringify({ name: 'adminSaveContact', args: ['B', 'robin.hood@example.com'] }) } }));
+  assert.equal(contact.includes('robin.hood@example.com'), false, contact);
+  const sheet = JSON.stringify(buildWebAppRequestLog_({ parameter: { cmd: 'admin' }, postData: { type: 't', length: 1, contents: JSON.stringify({ action: 'setSheet', sheetName: 'X', rows: [['Little John']] }) } }));
+  assert.equal(sheet.includes('Little John'), false, sheet);
+  assert.equal(sheet.includes('"rowCount":1'), true, sheet);
+})();
+
 console.log('test_webapp_version_route: all tests passed');
