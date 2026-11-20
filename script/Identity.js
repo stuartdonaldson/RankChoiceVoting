@@ -21,6 +21,9 @@
  * in that row or in the spreadsheet-level 'Config' tab's 'Admins' key (super-admins), else the
  * RPC throws 'Not authorized …'. Fails closed: a read error while checking refuses.
  *
+ * RESULTS (AC rev 2): getAdminAnalysisData_ needs a verified signed-in caller (rcvRequireSignedIn_)
+ * but not an admin.
+ *
  * PII: never log an email, name, picture URL or assertion. Logs carry reason codes only.
  *
  * Every top-level name ends in '_' so google.script.run cannot reach it.
@@ -221,6 +224,18 @@ function rcvRequireBallotAdmin_(id) {
     throw new Error(RCV_NOT_AUTHORIZED_);
   }
   return access;
+}
+
+/**
+ * Throws message unless this request has a verified signed-in caller. Open (no-op) on a
+ * deployment without sign-in, like the admin rule.
+ *
+ * @param {string} message refusal text (starts 'Not authorized')
+ */
+function rcvRequireSignedIn_(message) {
+  if (!rcvRequestEnabled_() || rcvRequestIdentity_()) return;
+  GasLogger.log('identity.signin.required', { reason: 'anonymous' });
+  throw new Error(message);
 }
 
 /**

@@ -579,7 +579,7 @@
           <button type="button" class="pencil-btn" id="adminsEditBtn" aria-label="Edit ballot admins">✏️</button>
         </div>
         <div class="field-panel hidden" id="adminsPanel">
-          <p class="field-help">Comma-separated Google account emails. Only these people (and the site's super-admins) can edit this ballot or see its analysis. Leave blank to let anyone edit it.</p>
+          <p class="field-help">Comma-separated Google account emails. Only these people (and the site's super-admins) can edit this ballot. Leave blank to let anyone edit it.</p>
           <label for="adminsInput">Admins</label>
           <textarea id="adminsInput" rows="2"></textarea>
           <div class="field-panel-actions">
@@ -1698,6 +1698,14 @@
         editRoot.classList.remove('hidden');
         renderAdmins(data);
       }, function (err) {
+        if (/^Not authorized/.test(err.message || '')) {
+          // AC rev 2: a claimed ballot's edit page is for its admins only — say so plainly and
+          // point at the sign-in control at the top, rather than show an empty form.
+          loadStatus.textContent = 'You need to be an admin of this ballot to edit it. ' +
+            (signedIn_() ? 'You are signed in as ' + auth_.email + ', which is not one of its admins — sign in with an admin account above, or ask one of its admins to add you.'
+              : 'Sign in with Google using the button at the top of the page, or ask one of its admins to add you.');
+          return;
+        }
         loadStatus.textContent = 'Could not load ballot: ' + adminErrorText_(err);
       });
     };
@@ -1711,44 +1719,50 @@
     var adminsStatus = document.getElementById('adminsStatus');
     var claimBtn = document.getElementById('claimBtn');
     var currentAdmins = [];
+    var isSuperAdmin = false;
+
+    function myEmail() { return signedIn_() ? String(auth_.email).toLowerCase() : ''; }
 
     function renderAdmins(data) {
       var access = data.access || {};
       if (!access.enabled) { adminsBlock.classList.add('hidden'); return; }
+      if (access.isSuperAdmin !== undefined) isSuperAdmin = !!access.isSuperAdmin;
       currentAdmins = data.admins || [];
       adminsBlock.classList.remove('hidden');
       adminsDisplay.textContent = currentAdmins.length ? currentAdmins.join(', ') : '(none — anyone can edit this ballot)';
       adminsHelp.textContent = currentAdmins.length
-        ? 'Only these Google accounts (and the site\u2019s super-admins) can edit this ballot or see its analysis.'
+        ? 'Only these Google accounts (and the site\u2019s super-admins) can edit this ballot; anyone signed in can view its results.'
         : 'This ballot has no admins yet, so anyone with the link can edit it.' +
           (signedIn_() ? ' Make yourself an admin to restrict it.' : ' Sign in at the top of the page to claim it.');
       claimBtn.classList.toggle('hidden', !(signedIn_() && currentAdmins.indexOf(String(auth_.email).toLowerCase()) === -1));
     }
 
+    var adminsPanelHelp = adminsPanel.querySelector('.field-help');
     document.getElementById('adminsEditBtn').addEventListener('click', function () {
-      adminsInput.value = currentAdmins.join(', ');
+      // AC rev 2: a non-super-admin's own email is always kept — prefill it so that is visible.
+      var list = currentAdmins.slice();
+      var me = myEmail();
+      if (me && !isSuperAdmin && list.indexOf(me) === -1) list.push(me);
+      adminsInput.value = list.join(', ');
+      adminsPanelHelp.textContent = 'Comma-separated Google account emails. Only these people (and the site\u2019s super-admins) can edit this ballot. Leave blank to let anyone edit it.' +
+        (me && !isSuperAdmin ? ' Your own email (' + me + ') is always kept on the list, so you cannot lock yourself out.' : '') +
+        (me ? '' : ' Sign in to set admins.');
       setStatus(adminsStatus, '', false);
       adminsPanel.classList.remove('hidden');
     });
     document.getElementById('adminsCancelBtn').addEventListener('click', function () { adminsPanel.classList.add('hidden'); });
 
-    function saveAdmins(value, confirmed) {
+    function saveAdmins(value) {
       setStatus(adminsStatus, 'Saving…', false);
-      callApi_('adminSaveAdmins', ballotId, value, !!confirmed).then(function (res) {
+      callApi_('adminSaveAdmins', ballotId, value).then(function (res) {
         adminsPanel.classList.add('hidden');
         setStatus(adminsStatus, 'Saved.', false);
         renderAdmins({ access: { enabled: true }, admins: res.admins });
       }, function (err) {
-        var msg = err.message || '';
-        if (/^lockout_confirm:/.test(msg)) {
-          if (window.confirm('Warning: ' + msg.replace(/^lockout_confirm:\s*/, '') + ' Save anyway?')) saveAdmins(value, true);
-          else setStatus(adminsStatus, 'Not saved.', false);
-          return;
-        }
         setStatus(adminsStatus, 'Could not save: ' + adminErrorText_(err), true);
       });
     }
-    document.getElementById('adminsSaveBtn').addEventListener('click', function () { saveAdmins(adminsInput.value.trim(), false); });
+    document.getElementById('adminsSaveBtn').addEventListener('click', function () { saveAdmins(adminsInput.value.trim()); });
 
     claimBtn.addEventListener('click', function () {
       claimBtn.disabled = true;
@@ -1907,6 +1921,11 @@
         analyzeRoot.appendChild(feedbackSection(data.comments || []));
         analyzeRoot.classList.remove('hidden');
       }, function (err) {
+        if (/^Not authorized/.test(err.message || '')) {
+          // AC rev 2: results need a signed-in caller (not an admin); the sign-in control is at the top.
+          analyzeStatus.textContent = 'Sign in with Google (button at the top of the page) to view results.';
+          return;
+        }
         analyzeStatus.textContent = 'Could not load analysis: ' + adminErrorText_(err);
       });
     };

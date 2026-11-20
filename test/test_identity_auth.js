@@ -13,7 +13,7 @@
  * disabled), Responses Email/Picture/Google-Sub columns + self-heal of an existing ballot,
  * resume by sub across a renamed typed name, Signins upsert, the admin rule matrix across every
  * gated RPC (unclaimed/claimed x anonymous/non-admin/ballot-admin/super-admin), add-myself, the
- * lockout guard, PROD staying open, and that no email/name/assertion reaches a log entry.
+ * admins self-include rule, analysis sign-in rule, PROD staying open, and that no email/name/assertion reaches a log entry.
  */
 
 const assert = require('assert');
@@ -274,7 +274,6 @@ test('identity column names are reserved as candidate names', () => {
 function gatedCalls(id) {
   return [
     ['getAdminEditData', [id]],
-    ['getAdminAnalysisData_', [id]],
     ['adminSaveTitle', [id, 'T']],
     ['adminSaveDescription', [id, 'D']],
     ['adminSaveInstructions', [id, 'I']],
@@ -367,7 +366,7 @@ test('Make me an admin: signed-in user claims an unclaimed ballot; anonymous can
   assert.equal(data.access.isBallotAdmin, true);
 });
 
-test('unclaimed ballot: anonymous cannot set admins; signed-in list excluding self needs confirm', () => {
+test('unclaimed ballot: anonymous cannot set admins; a signed-in non-super-admin is always kept', () => {
   const t = loadApp();
   newBallot(t, 'b1');
   setSuperAdmins(t, ROOT.email);
@@ -375,23 +374,53 @@ test('unclaimed ballot: anonymous cannot set admins; signed-in list excluding se
   assert.match(call(t.app, 'adminSaveAdmins', ['b1', ALICE.email]).error, NOT_AUTH);
   assert.equal(t.app.rcvParseEmailList_(t.app._readBallotView_(t.ss.getSheetByName('Ballot-b1')).config.Admins).length, 0);
   assert.equal(outcome(call(t.app, 'adminSaveTitle', ['b1', 'still open'])), 'allowed'); // other fields stay open
-  assert.match(call(t.app, 'adminSaveAdmins', ['b1', ALICE.email], BOB).error, /^lockout_confirm:/);
-  assert.deepEqual(call(t.app, 'adminSaveAdmins', ['b1', ALICE.email, true], BOB).result.admins, [ALICE.email]);
+  // AC rev 2: no lockout confirm — the caller's own email is auto-added.
+  assert.deepEqual(call(t.app, 'adminSaveAdmins', ['b1', ALICE.email], BOB).result.admins, [ALICE.email, BOB.email]);
+  assert.equal(outcome(call(t.app, 'getAdminEditData', ['b1'], BOB)), 'allowed');
 });
 
-test('lockout guard: removing yourself needs confirm; super-admin needs none; blank list unclaims', () => {
+test('save admins: non-super-admin always includes self; super-admin exempt; blank list unclaims', () => {
   const t = loadApp();
   newBallot(t, 'b1');
   setSuperAdmins(t, ROOT.email);
   t.app._adminWriteConfigUnchecked_('b1', { Admins: ALICE.email });
-  assert.match(call(t.app, 'adminSaveAdmins', ['b1', BOB.email], ALICE).error, /^lockout_confirm:/);
+  assert.deepEqual(call(t.app, 'adminSaveAdmins', ['b1', BOB.email], ALICE).result.admins, [BOB.email, ALICE.email]);
+  assert.deepEqual(call(t.app, 'adminSaveAdmins', ['b1', BOB.email, true], ALICE).result.admins, [BOB.email, ALICE.email]); // extra arg ignored
+  assert.deepEqual(call(t.app, 'adminSaveAdmins', ['b1', ''], ALICE).result.admins, [ALICE.email]); // cannot unclaim themselves out
   assert.match(call(t.app, 'adminSaveAdmins', ['b1', 'not-an-email'], ALICE).error, /email address/);
   assert.deepEqual(call(t.app, 'adminSaveAdmins', ['b1', 'Alice@Example.com, ' + BOB.email], ALICE).result.admins, [ALICE.email, BOB.email]);
+  // Super-admin: any list, including one without themselves.
   assert.deepEqual(call(t.app, 'adminSaveAdmins', ['b1', BOB.email], ROOT).result.admins, [BOB.email]);
   assert.match(call(t.app, 'adminSaveTitle', ['b1', 'x'], ALICE).error, NOT_AUTH);
-  assert.equal(outcome(call(t.app, 'adminSaveAdmins', ['b1', ALICE.email, true], ROOT)), 'allowed'); // super-admin recovers
-  call(t.app, 'adminSaveAdmins', ['b1', ''], ALICE);
+  assert.deepEqual(call(t.app, 'adminSaveAdmins', ['b1', ALICE.email], ROOT).result.admins, [ALICE.email]); // super-admin recovers
+  assert.deepEqual(call(t.app, 'adminSaveAdmins', ['b1', ''], ROOT).result.admins, []);
   assert.equal(outcome(call(t.app, 'adminSaveTitle', ['b1', 'x'])), 'allowed');
+});
+
+test('edit data on a claimed ballot: anonymous/non-admin refused, admin/super-admin allowed', () => {
+  [[null, 'refused'], [BOB, 'refused'], [ALICE, 'allowed'], [ROOT, 'allowed']].forEach(([who, expected]) => {
+    const t = loadApp();
+    newBallot(t, 'b1');
+    setSuperAdmins(t, ROOT.email);
+    t.app._adminWriteConfigUnchecked_('b1', { Admins: ALICE.email });
+    assert.equal(outcome(call(t.app, 'getAdminEditData', ['b1'], who)), expected, who ? who.email : 'anonymous');
+  });
+});
+
+test('analysis: anonymous refused with sign-in message; any signed-in caller allowed (claimed and unclaimed)', () => {
+  [false, true].forEach((claimed) => {
+    const t = loadApp();
+    newBallot(t, 'b1');
+    setSuperAdmins(t, ROOT.email);
+    if (claimed) t.app._adminWriteConfigUnchecked_('b1', { Admins: ALICE.email });
+    assert.match(call(t.app, 'getAdminAnalysisData_', ['b1']).error, /^Not authorized: sign in with Google to view results/);
+    [BOB, ALICE, ROOT].forEach((who) => {
+      assert.equal(outcome(call(t.app, 'getAdminAnalysisData_', ['b1'], who)), 'allowed', `${claimed} ${who.email}`);
+    });
+  });
+  const off = loadApp({ target: 'PROD' });
+  newBallot(off, 'b1');
+  assert.equal(outcome(call(off.app, 'getAdminAnalysisData_', ['b1'])), 'allowed'); // prod unchanged
 });
 
 test('admin list: claimed ballot hides notes and respondent names from non-admins', () => {
