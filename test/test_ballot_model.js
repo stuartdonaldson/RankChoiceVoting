@@ -49,19 +49,21 @@ function testCreateNewBallotCreatesSkeleton() {
   assert.equal(config['Accept-New'], 'TRUE');
   assert.equal(config['Add-Instructions'], '[TODO: instructions shown above the "+ Add New" button, if enabled — delete this bracket and edit the example] Have another book you’d like ABC to consider? Add the title and author, and preferably a link to the book.');
   assert.equal(config['Admin-Only-Notes'], '');
+  assert.equal(config['Feedback-Prompt'], '');
+  assert.equal(config['Show-Details-Preview'], 'FALSE');
 
-  // Results marker at row 10, Candidates marker/header at 11/12, Responses marker at row
-  // 13, Responses header at row 14. Markers are bracket-decorated ("[Results]", not
+  // Results marker at row 12, Candidates marker/header at 13/14, Responses marker at row
+  // 15, Responses header at row 16. Markers are bracket-decorated ("[Results]", not
   // "Results") so a ballot candidate literally named "Results"/"Candidates"/"Responses"
   // can never be mistaken for the real marker; the Candidates header (row 12) starts
   // at col B (col A stays blank/reserved) so candidate data is never in the
   // marker-scanned column.
-  assert.equal(sheet.getRange(10, 1).getValue(), '[Results]');
-  assert.equal(sheet.getRange(11, 1).getValue(), '[Candidates]');
-  assert.equal(sheet.getRange(12, 1).getValue(), ''); // col A reserved, always blank here
-  assert.deepEqual(sheet.getRange(12, 2, 1, 2).getValues()[0], ['Name', 'Details']);
-  assert.equal(sheet.getRange(13, 1).getValue(), '[Responses]');
-  assert.deepEqual(sheet.getRange(14, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
+  assert.equal(sheet.getRange(12, 1).getValue(), '[Results]');
+  assert.equal(sheet.getRange(13, 1).getValue(), '[Candidates]');
+  assert.equal(sheet.getRange(14, 1).getValue(), ''); // col A reserved, always blank here
+  assert.deepEqual(sheet.getRange(14, 2, 1, 2).getValues()[0], ['Name', 'Details']);
+  assert.equal(sheet.getRange(15, 1).getValue(), '[Responses]');
+  assert.deepEqual(sheet.getRange(16, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
   assertSnapshotMatchesOldReaders(SM, sheet, 'testCreateNewBallotCreatesSkeleton');
 }
 
@@ -96,12 +98,12 @@ function testWriteThenReadConfigRoundTrips() {
   assertSnapshotMatchesOldReaders(SM, sheet, 'testWriteThenReadConfigRoundTrips');
 }
 
-/** Rows 2-9 of a migrated sheet: the eight standard keys (key col B, value col C), in registry order. */
+/** Rows 2-11 of a migrated sheet: the ten standard keys (key col B, value col C), in registry order. */
 function assertMigratedConfigBlock(sheet, expected) {
   assert.equal(sheet.getRange(1, 1).getValue(), '[Config]');
-  const keys = ['Title', 'Description', 'Instructions', 'Footer', 'Contact', 'Accept-New', 'Add-Instructions', 'Admin-Only-Notes'];
-  assert.deepEqual(sheet.getRange(2, 2, 8, 2).getValues(), keys.map((k) => [k, expected[k] === undefined ? '' : expected[k]]));
-  assert.equal(sheet.getRange(10, 1).getValue(), '[Results]'); // legacy rows are gone; Results follows the block
+  const keys = ['Title', 'Description', 'Instructions', 'Footer', 'Contact', 'Accept-New', 'Add-Instructions', 'Admin-Only-Notes', 'Feedback-Prompt', 'Show-Details-Preview'];
+  assert.deepEqual(sheet.getRange(2, 2, 10, 2).getValues(), keys.map((k) => [k, expected[k] === undefined ? '' : expected[k]]));
+  assert.equal(sheet.getRange(12, 1).getValue(), '[Results]'); // legacy rows are gone; Results follows the block
 }
 
 /**
@@ -127,8 +129,8 @@ function testWriteBallotConfigSelfHealsMissingAdminOnlyNotesRowOnOldSheet() {
     'Accept-New': 'TRUE', 'Admin-Only-Notes': 'newly added notes',
   });
   assert.equal(logLinesWith(sandbox, 'ballot.repair.configSection').length, 1);
-  assert.equal(sheet.getRange(12, 1).getValue(), '[Candidates]'); // the repair path's empty Candidates section above [Responses]
-  assert.equal(sheet.getRange(14, 1).getValue(), '[Responses]');
+  assert.equal(sheet.getRange(14, 1).getValue(), '[Candidates]'); // the repair path's empty Candidates section above [Responses]
+  assert.equal(sheet.getRange(16, 1).getValue(), '[Responses]');
   assertSnapshotMatchesOldReaders(SM, sheet, 'testWriteBallotConfigSelfHealsMissingAdminOnlyNotesRowOnOldSheet');
 }
 
@@ -154,8 +156,8 @@ function testConfigMigrationKeepsUnknownKeys() {
   sheet.getRange(1, 1, 2, 2).setValues([['Title', 'T'], ['Custom-Key', 'keep me']]);
   sheet.getRange(4, 1).setValue('[Results]');
   SM._repairBallotSheet_(sheet);
-  assert.equal(sheet.getRange(10, 2).getValue(), 'Custom-Key');
-  assert.equal(sheet.getRange(10, 3).getValue(), 'keep me');
+  assert.equal(sheet.getRange(12, 2).getValue(), 'Custom-Key');
+  assert.equal(sheet.getRange(12, 3).getValue(), 'keep me');
   assert.equal(SM.readBallotConfig_(sheet)['Custom-Key'], 'keep me');
   assert.equal(SM.readBallotConfig_(sheet).Title, 'T');
   assert.equal(SM._repairBallotSheet_(sheet).repaired, false); // already migrated: idempotent
@@ -522,22 +524,22 @@ function testPlainTextMarkersAreNotMatchedOrRewritten() {
   const sheet = SM.createNewBallot_(ss, 'PlainText');
   // Plain-text look-alikes sitting in column A of the Results region (rows 11..) —
   // above the real [Candidates]/[Responses] markers, where a top-down scan hits them first.
-  sheet.getRange(10, 1).setValue('[Results]');
+  sheet.getRange(12, 1).setValue('[Results]');
   SM.writeBallotResults_(sheet, [['x'], ['x'], ['x'], ['x']]);
   ['Responses', 'Candidates', 'Items', '[Items]', 'Results'].forEach((text, i) => {
-    sheet.getRange(11 + i, 1).setValue(text);
+    sheet.getRange(13 + i, 1).setValue(text);
   });
-  const before = sheet.getRange(11, 1, 5, 1).getValues().map((r) => r[0]);
+  const before = sheet.getRange(13, 1, 5, 1).getValues().map((r) => r[0]);
 
   SM.writeBallotCandidateDetails_(sheet, [{ name: 'Alice', details: 'a' }]);
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet).map((it) => it.name), ['Alice']);
   assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice']);
-  assert.equal(findMarkerRow(sheet, '[Results]'), 10);
-  assert.equal(findMarkerRow(sheet, '[Candidates]') > 15, true);
+  assert.equal(findMarkerRow(sheet, '[Results]'), 12);
+  assert.equal(findMarkerRow(sheet, '[Candidates]') > 17, true);
   assert.equal(findMarkerRow(sheet, '[Responses]') > findMarkerRow(sheet, '[Candidates]'), true);
-  assert.deepEqual(sheet.getRange(11, 1, 5, 1).getValues().map((r) => r[0]), before); // not rewritten
-  assert.equal(sheet.getRange(11, 1).getValue(), 'Responses');
-  assert.equal(sheet.getRange(12, 1).getValue(), 'Candidates');
+  assert.deepEqual(sheet.getRange(13, 1, 5, 1).getValues().map((r) => r[0]), before); // not rewritten
+  assert.equal(sheet.getRange(13, 1).getValue(), 'Responses');
+  assert.equal(sheet.getRange(14, 1).getValue(), 'Candidates');
 
   // A sheet whose ONLY marker-like cells are plain text has no markers.
   const bare = ss.insertSheet('Ballot-BareOnly');
@@ -556,24 +558,24 @@ function testWriteBallotResultsUsesColumnBAndClearsColumnA() {
   SM.submitBallotResponse_('ResultsColB', 'V', ['Alice'], '');
 
   // Legacy-style output previously written from column A (candidate names included).
-  sheet.getRange(10, 1).setValue('[Results]');
+  sheet.getRange(12, 1).setValue('[Results]');
   SM.writeBallotResults_(sheet, [['placeholder']]);
-  sheet.getRange(11, 1, 1, 2).setValues([['Responses', 'old']]);
+  sheet.getRange(13, 1, 1, 2).setValues([['Responses', 'old']]);
 
   SM.writeBallotResults_(sheet, [['Header', 'Winner'], ['Alice', 3], ['Bob', 1]]);
 
   const candidatesRow = findMarkerRow(sheet, '[Candidates]');
-  assert.equal(candidatesRow, 14); // 3 rows between [Results] (10) and [Candidates]
-  for (let r = 11; r < candidatesRow; r++) {
+  assert.equal(candidatesRow, 16); // 3 rows between [Results] (12) and [Candidates]
+  for (let r = 13; r < candidatesRow; r++) {
     assert.equal(sheet.getRange(r, 1).getValue(), '', 'col A row ' + r + ' must be blank');
   }
-  assert.deepEqual(sheet.getRange(11, 2, 3, 2).getValues(), [['Header', 'Winner'], ['Alice', 3], ['Bob', 1]]);
+  assert.deepEqual(sheet.getRange(13, 2, 3, 2).getValues(), [['Header', 'Winner'], ['Alice', 3], ['Bob', 1]]);
 
   // Shrinking the output leaves no stale text in any column of the region.
   SM.writeBallotResults_(sheet, [['only']]);
   const newCandidatesRow = findMarkerRow(sheet, '[Candidates]');
-  assert.equal(newCandidatesRow, 12);
-  assert.deepEqual(sheet.getRange(11, 1, 1, 3).getValues()[0], ['', 'only', '']);
+  assert.equal(newCandidatesRow, 14);
+  assert.deepEqual(sheet.getRange(13, 1, 1, 3).getValues()[0], ['', 'only', '']);
 }
 
 /** A region already holding column-A text (old output) is fully cleared on rewrite. */
@@ -581,10 +583,10 @@ function testWriteBallotResultsClearsPreexistingColumnAText() {
   const { SM, ss } = loadBallotModel();
   const sheet = SM.createNewBallot_(ss, 'ResultsClear');
   SM.writeBallotResults_(sheet, [['a'], ['b'], ['c']]);
-  sheet.getRange(11, 1, 3, 3).setValues([['Alice', 'x', 'y'], ['Bob', 'x', 'y'], ['Carol', 'x', 'y']]);
+  sheet.getRange(13, 1, 3, 3).setValues([['Alice', 'x', 'y'], ['Bob', 'x', 'y'], ['Carol', 'x', 'y']]);
 
   SM.writeBallotResults_(sheet, [['n1'], ['n2'], ['n3']]);
-  assert.deepEqual(sheet.getRange(11, 1, 3, 3).getValues(), [['', 'n1', ''], ['', 'n2', ''], ['', 'n3', '']]);
+  assert.deepEqual(sheet.getRange(13, 1, 3, 3).getValues(), [['', 'n1', ''], ['', 'n2', ''], ['', 'n3', '']]);
 }
 
 /** Candidate names equal to any marker text (bracketed or not, any case/padding) are rejected. */
@@ -729,8 +731,8 @@ function logLinesWith(sandbox, tag) {
  */
 function createBallotWithoutResponsesSection(SM, ss, id) {
   const sheet = SM.createNewBallot_(ss, id);
-  sheet.deleteRows(13, 2); // rows 13/14: [Responses] marker + header
-  assert.equal(sheet.getLastRow(), 12);
+  sheet.deleteRows(15, 2); // rows 15/16: [Responses] marker + header
+  assert.equal(sheet.getLastRow(), 14);
   return sheet;
 }
 
@@ -742,15 +744,15 @@ function createBallotWithoutResponsesSection(SM, ss, id) {
 function testMissingResponsesSectionSelfHealsAndReturnsCandidates() {
   const { SM, ss, sandbox } = loadBallotModel();
   const sheet = createBallotWithoutResponsesSection(SM, ss, 'NoResponses');
-  sheet.getRange(13, 2, 2, 2).setValues([['Alice', 'first'], ['Bob', 'second']]);
+  sheet.getRange(15, 2, 2, 2).setValues([['Alice', 'first'], ['Bob', 'second']]);
 
   sheet._writeCalls = 0;
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet), []);
   assert.equal(sheet._writeCalls, 0);
   SM._repairBallotSheet_(sheet);
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet).map((it) => it.name), ['Alice', 'Bob']);
-  assert.equal(sheet.getRange(15, 1).getValue(), '[Responses]');
-  assert.deepEqual(sheet.getRange(16, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
+  assert.equal(sheet.getRange(17, 1).getValue(), '[Responses]');
+  assert.deepEqual(sheet.getRange(18, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
   assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice', 'Bob']);
   assert.equal(logLinesWith(sandbox, 'ballot.repair.responsesSection').length, 1);
   assertSnapshotMatchesOldReaders(SM, sheet, 'testMissingResponsesSectionSelfHealsAndReturnsCandidates');
@@ -763,11 +765,11 @@ function testMissingResponsesSectionSelfHealsAndReturnsCandidates() {
 function testMissingResponsesSectionWithColumnAContentIsNotRepaired() {
   const { SM, ss, sandbox } = loadBallotModel();
   const sheet = createBallotWithoutResponsesSection(SM, ss, 'NoResponsesColA');
-  sheet.getRange(13, 1).setValue('Alice');
+  sheet.getRange(15, 1).setValue('Alice');
 
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet), []);
   SM._repairBallotSheet_(sheet); // the repair path refuses to guess
-  assert.equal(sheet.getLastRow(), 13);
+  assert.equal(sheet.getLastRow(), 15);
   assert.equal(logLinesWith(sandbox, 'ballot.parse.responsesMarkerMissing').length > 0, true);
   assertSnapshotMatchesOldReaders(SM, sheet, 'testMissingResponsesSectionWithColumnAContentIsNotRepaired');
 }
@@ -777,12 +779,12 @@ function testCandidateInColumnAIsLoggedAndIgnored() {
   const { SM, ss, sandbox } = loadBallotModel();
   const sheet = SM.createNewBallot_(ss, 'ColA');
   SM.writeBallotCandidateDetails_(sheet, [{ name: 'Alice', details: '' }, { name: 'Bob', details: '' }]);
-  sheet.getRange(14, 1).setValue('Carol'); // beside Bob, in the reserved column
+  sheet.getRange(16, 1).setValue('Carol'); // beside Bob, in the reserved column
 
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet).map((it) => it.name), ['Alice', 'Bob']);
   const lines = logLinesWith(sandbox, 'ballot.parse.candidateInColumnA');
   assert.equal(lines.length > 0, true);
-  assert.equal(lines[0].indexOf('14') !== -1, true);
+  assert.equal(lines[0].indexOf('16') !== -1, true);
   assertSnapshotMatchesOldReaders(SM, sheet, 'testCandidateInColumnAIsLoggedAndIgnored');
 }
 
@@ -927,7 +929,7 @@ function testSelfRepairWritesRunUnderLock() {
   // Missing trailing Candidates header columns.
   t = loadBallotModel();
   sheet = t.SM.createNewBallot_(t.ss, 'RepairD');
-  sheet.getRange(12, 4, 1, 2).clearContent();
+  sheet.getRange(14, 4, 1, 2).clearContent();
   log = spyWrites(sheet, t.sandbox.LockService._state);
   t.SM._ensureCandidatesHeaderColumns_(sheet);
   assertAllWritesLocked(log, '_ensureCandidatesHeaderColumns_');
@@ -997,6 +999,7 @@ function testHighlightSectionMarkersUnfreezesStaleFourteenRowFreeze() {
 
   // Header genuinely at row 14: a deliberate freeze, left alone.
   const same = SM.createNewBallot_(ss, 'SameFreeze');
+  same.deleteRows(10, 2); // drop the two newest config rows so the Responses header is back on row 14
   same.setFrozenRows(14);
   SM._highlightSectionMarkers_(same);
   assert.equal(same.getFrozenRows(), 14);
@@ -1505,11 +1508,11 @@ function testSectionWritesLeaveOtherSectionsUnchangedInAllOrders() {
 function testWriteBallotConfigInsertsAboveFirstMarkerInAnyOrder() {
   SECTION_ORDERS.forEach((order) => {
     const { SM, ss } = loadBallotModel();
-    const sheet = buildOrderedBallot(ss, 'Cfg', order); // [Config] fills rows 1-9: no blank row to reuse
+    const sheet = buildOrderedBallot(ss, 'Cfg', order); // [Config] fills rows 1-9 (the two newer keys get appended after Extra-Key): no blank row to reuse
     const others = Object.keys(SECTION_MARKERS).map((k) => sectionSnapshot(sheet, k));
     SM.writeBallotConfig_(sheet, { Title: 'New', 'Extra-Key': 'v' });
     assert.equal(sheet.getRange(10, 2).getValue(), 'Extra-Key', order.join('/'));
-    assert.equal(sheet.getRange(11, 1).getValue(), SECTION_MARKERS[order[0]], order.join('/'));
+    assert.equal(sheet.getRange(13, 1).getValue(), SECTION_MARKERS[order[0]], order.join('/'));
     assert.deepEqual(Object.keys(SECTION_MARKERS).map((k) => sectionSnapshot(sheet, k)), others, order.join('/'));
     const config = SM.readBallotConfig_(sheet);
     assert.equal(config.Title, 'New');
@@ -2199,6 +2202,7 @@ function testWriteBallotConfigMarkerOnRowOneAndCallCounts() {
 
   const t = loadBallotModel();
   const healthy = buildOrderedBallot(t.ss, 'CfgCount', ['results', 'candidates', 'responses']);
+  t.SM.writeBallotConfig_(healthy, {}); // one-time self-heal: appends the standard keys this fixture predates (Feedback-Prompt, Show-Details-Preview)
   let c = countCalls(healthy, () => t.SM.writeBallotConfig_(healthy, { Title: 'x', Description: 'y' }));
   assert.deepEqual([c.writes, c.reads], [1, 1], 'adjacent keys: one setValues');
   c = countCalls(healthy, () => t.SM.writeBallotConfig_(healthy, { Title: 'x2', Footer: 'f2' }));

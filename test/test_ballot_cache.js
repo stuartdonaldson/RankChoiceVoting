@@ -106,6 +106,49 @@ function testAdminWriteConfigRefreshesCache() {
   assert.equal(second.title, 'Updated Title');
 }
 
+/** rcballot-cck.1/.2: Show-Details-Preview and Feedback-Prompt round-trip through admin save, cache and respondent payload; missing/blank rows mean off / default. */
+function testDetailsPreviewAndFeedbackPromptConfig() {
+  const { app, ss } = loadApp();
+  app.createNewBallot_(ss, 'Cck');
+  let cfg = app.getBallotForRespondent_('Cck', '');
+  assert.equal(cfg.showDetailsPreview, false);
+  assert.equal(cfg.feedbackPrompt, "Any feedback you'd like to add?");
+  let edit = app.getAdminEditData('Cck');
+  assert.equal(edit.showDetailsPreview, false);
+  assert.equal(edit.feedbackPrompt, '');
+  assert.equal(edit.defaultFeedbackPrompt, "Any feedback you'd like to add?");
+
+  app.adminSaveShowDetailsPreview('Cck', true);
+  app.adminSaveFeedbackPrompt('Cck', '  What feedback do you have?  ');
+  cfg = app.getBallotForRespondent_('Cck', '');
+  assert.equal(cfg.showDetailsPreview, true);
+  assert.equal(cfg.feedbackPrompt, 'What feedback do you have?');
+  assert.equal(app.getAdminEditData('Cck').feedbackPrompt, 'What feedback do you have?');
+
+  app.adminSaveShowDetailsPreview('Cck', false);
+  app.adminSaveFeedbackPrompt('Cck', '   ');
+  cfg = app.getBallotForRespondent_('Cck', '');
+  assert.equal(cfg.showDetailsPreview, false);
+  assert.equal(cfg.feedbackPrompt, "Any feedback you'd like to add?");
+}
+
+/** An existing ballot with neither new config row reads as preview off + default prompt, and heals on first write. */
+function testLegacyBallotWithoutNewConfigRowsBehavesAsDefaults() {
+  const { app, ss } = loadApp();
+  const sheet = ss.insertSheet('Ballot-OldCfg');
+  writeGrid(sheet, [
+    ['[Config]'], ['', 'Title', 'T'], ['', 'Accept-New', 'TRUE'],
+    ['[Results]'], ['[Candidates]'], ['', 'Name', 'Details', 'Link Text', 'Link URL'], ['', 'Alice', 'a'],
+    ['[Responses]'], ['Date', 'Name', 'Weight', 'Comment', 'Alice'],
+  ]);
+  const cfg = app.getBallotForRespondent_('OldCfg', '');
+  assert.equal(cfg.showDetailsPreview, false);
+  assert.equal(cfg.feedbackPrompt, "Any feedback you'd like to add?");
+  app.adminSaveShowDetailsPreview('OldCfg', true);
+  assert.equal(app.getBallotForRespondent_('OldCfg', '').showDetailsPreview, true);
+  assert.equal(app.getAdminEditData('OldCfg').candidates.length, 1);
+}
+
 function testAdminAddCandidateRefreshesCache() {
   const { app, ss } = loadApp();
   app.createNewBallot_(ss, 'AdminAdd');
@@ -339,14 +382,14 @@ function testOnEditNeverWrites() {
 function testAdminEditLoadRepairsMissingResponses() {
   const { app, ss } = loadApp();
   const sheet = app.createNewBallot_(ss, 'NoResp');
-  sheet.deleteRows(13, 2); // [Responses] marker + header lost
-  sheet.getRange(13, 2, 2, 2).setValues([['Alice', 'a'], ['Bob', 'b']]); // hand-pasted candidates
+  sheet.deleteRows(15, 2); // [Responses] marker + header lost
+  sheet.getRange(15, 2, 2, 2).setValues([['Alice', 'a'], ['Bob', 'b']]); // hand-pasted candidates
 
   assert.deepEqual(app.getCachedBallotData_('NoResp').candidates.length, 0); // reads: nothing, and no repair
-  assert.equal(app.findBallotSheet_(ss, 'NoResp').getRange(15, 1).getValue(), '');
+  assert.equal(app.findBallotSheet_(ss, 'NoResp').getRange(17, 1).getValue(), '');
 
   const edit = app.getAdminEditData('NoResp');
-  assert.equal(sheet.getRange(15, 1).getValue(), '[Responses]');
+  assert.equal(sheet.getRange(17, 1).getValue(), '[Responses]');
   assert.deepEqual(edit.candidates.map(function (c) { return c.name; }), ['Alice', 'Bob']);
   assert.equal(logLines(app, 'ballot.repair.responsesSection').length, 1);
   assert.equal(logLines(app, 'ballot.repair.rankColumns').length, 1);
@@ -410,6 +453,8 @@ function run() {
   testHandEnteredWeightsInReadRevoteAndAnalysis();
   testLegacyResponsesLayoutRefusedThenRepairedOnAdminLoad();
   testOnEditNeverWrites();
+  testDetailsPreviewAndFeedbackPromptConfig();
+  testLegacyBallotWithoutNewConfigRowsBehavesAsDefaults();
   testAdminEditLoadRepairsMissingResponses();
   testHeaderlessCandidatesShownAfterAdminLoad();
   testOrphanColumnShownOnEditPageAndExcludedFromAnalysis();

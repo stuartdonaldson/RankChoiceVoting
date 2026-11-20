@@ -69,7 +69,7 @@ var _BALLOT_RESPONSES_MARKER = '[Responses]';
 // Bare words (lowercase, brackets stripped) a candidate may not be named: the marker
 // words plus the former "Items" section name. See the file header's column-A rule.
 var _BALLOT_RESERVED_NAMES_ = ['results', 'candidates', 'responses', 'items'];
-var _BALLOT_CONFIG_ROWS = ['Title', 'Description', 'Instructions', 'Footer', 'Contact', 'Accept-New', 'Add-Instructions', 'Admin-Only-Notes'];
+var _BALLOT_CONFIG_ROWS = ['Title', 'Description', 'Instructions', 'Footer', 'Contact', 'Accept-New', 'Add-Instructions', 'Admin-Only-Notes', 'Feedback-Prompt', 'Show-Details-Preview'];
 // Legacy config key recognized by readBallotConfig_ purely to migrate older sheets in
 // place (the cell is rewritten to the current key name the first time it is read).
 var _BALLOT_LEGACY_CONFIG_KEYS_ = { 'Admin-Only-Notes': ['Info'] };
@@ -126,7 +126,7 @@ function findBallotSheet_(ss, id) {
 function createBallotSheet_(ss, id) {
   var sheet = ss.insertSheet(getBallotSheetName_(id));
   sheet.getRange(1, 1).setValue(_BALLOT_CONFIG_MARKER);
-  sheet.getRange(2, _BALLOT_CONFIG_KEY_COL, 8, 2).setValues([
+  sheet.getRange(2, _BALLOT_CONFIG_KEY_COL, 10, 2).setValues([
     // Each placeholder is "[TODO: what to enter — delete this bracket] <example>": the
     // bracketed lead-in says what the field is for, and the text after it is a working
     // example, so the admin deletes the bracket and edits the example rather than writing
@@ -141,13 +141,16 @@ function createBallotSheet_(ss, id) {
     ['Contact', '[TODO: contact name/email for questions — delete this bracket and edit the example] Questions or suggestions? Post in #ao-active-book-club.'],
     ['Accept-New', 'TRUE'],
     ['Add-Instructions', '[TODO: instructions shown above the "+ Add New" button, if enabled — delete this bracket and edit the example] Have another book you’d like ABC to consider? Add the title and author, and preferably a link to the book.'],
-    ['Admin-Only-Notes', '']
+    // Blank Feedback-Prompt = the built-in default prompt; Show-Details-Preview is a yes/no toggle (blank = off).
+    ['Admin-Only-Notes', ''],
+    ['Feedback-Prompt', ''],
+    ['Show-Details-Preview', 'FALSE']
   ]);
-  sheet.getRange(10, 1).setValue(_BALLOT_RESULTS_MARKER);
-  sheet.getRange(11, 1).setValue(_BALLOT_CANDIDATES_MARKER);
-  sheet.getRange(12, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).setValues([_BALLOT_CANDIDATES_HEADER]);
-  sheet.getRange(13, 1).setValue(_BALLOT_RESPONSES_MARKER);
-  sheet.getRange(14, 1, 1, _BALLOT_RESPONSE_FIXED_COLS.length).setValues([_BALLOT_RESPONSE_FIXED_COLS]);
+  sheet.getRange(12, 1).setValue(_BALLOT_RESULTS_MARKER);
+  sheet.getRange(13, 1).setValue(_BALLOT_CANDIDATES_MARKER);
+  sheet.getRange(14, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).setValues([_BALLOT_CANDIDATES_HEADER]);
+  sheet.getRange(15, 1).setValue(_BALLOT_RESPONSES_MARKER);
+  sheet.getRange(16, 1, 1, _BALLOT_RESPONSE_FIXED_COLS.length).setValues([_BALLOT_RESPONSE_FIXED_COLS]);
   _highlightSectionMarkers_(sheet);
   return sheet;
 }
@@ -685,6 +688,32 @@ function _ballotAcceptsNew_(config) {
 }
 
 /**
+ * Yes/no per-ballot toggle (e.g. 'Show-Details-Preview'). TRUE/yes/y/on/1 (any case) = on;
+ * blank, missing or anything else = off, so ballots created before the row existed stay off.
+ *
+ * @param {Object} config as returned by readBallotConfig_
+ * @param {string} key
+ * @return {boolean}
+ */
+function _ballotFlag_(config, key) {
+  return ['TRUE', 'YES', 'Y', 'ON', '1'].indexOf(String((config || {})[key] || '').trim().toUpperCase()) !== -1;
+}
+
+var _DEFAULT_FEEDBACK_PROMPT_ = 'Any feedback you\'d like to add?';
+
+/**
+ * The prompt shown above the ballot's feedback box: the admin's Feedback-Prompt, or the
+ * built-in default when it is blank or the row is missing.
+ *
+ * @param {Object} config as returned by readBallotConfig_
+ * @return {string}
+ */
+function _ballotFeedbackPrompt_(config) {
+  var v = String((config || {})['Feedback-Prompt'] || '').trim();
+  return v || _DEFAULT_FEEDBACK_PROMPT_;
+}
+
+/**
  * Candidate names, in Candidates-table order (the table is the source of candidate
  * identity). Snapshot-backed: one read, no write. A candidate with no Responses rank
  * column is still listed (its ranks read ''); the repair path adds the column.
@@ -951,6 +980,8 @@ function _buildRespondentBranding_(id, config, candidateRows) {
     contact: config.Contact || '',
     acceptNew: _ballotAcceptsNew_(config),
     addInstructions: config['Add-Instructions'] || '',
+    feedbackPrompt: _ballotFeedbackPrompt_(config),
+    showDetailsPreview: _ballotFlag_(config, 'Show-Details-Preview'),
     candidates: candidates,
     itemDetails: itemDetails,
     comment: '',

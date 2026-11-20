@@ -35,6 +35,8 @@ var _API_WHITELIST_ = {
   adminSaveFooter: adminSaveFooter,
   adminSaveContact: adminSaveContact,
   adminSaveAdminOnlyNotes: adminSaveAdminOnlyNotes,
+  adminSaveFeedbackPrompt: adminSaveFeedbackPrompt,
+  adminSaveShowDetailsPreview: adminSaveShowDetailsPreview,
   adminSaveAddSettings: adminSaveAddSettings,
   adminSaveCandidate: adminSaveCandidate,
   adminAddCandidate: adminAddCandidate,

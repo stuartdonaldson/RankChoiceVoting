@@ -339,6 +339,9 @@ function getAdminEditData(id) {
     contact: config.Contact || '',
     acceptNew: _ballotAcceptsNew_(config),
     addInstructions: config['Add-Instructions'] || '',
+    feedbackPrompt: config['Feedback-Prompt'] || '',
+    defaultFeedbackPrompt: _DEFAULT_FEEDBACK_PROMPT_,
+    showDetailsPreview: _ballotFlag_(config, 'Show-Details-Preview'),
     adminOnlyNotes: config['Admin-Only-Notes'] || '',
     candidates: candidateRows,
     layoutError: layoutError,
@@ -381,6 +384,12 @@ function adminSaveFooter(id, value) { return _adminWriteConfig_(id, { Footer: St
 
 /** RPC: saves the Contact field's pencil-icon editor. @return {{ok:boolean}} */
 function adminSaveContact(id, value) { return _adminWriteConfig_(id, { Contact: String(value || '') }); }
+
+/** RPC: saves the Feedback-Prompt (blank = built-in default). @return {{ok:boolean}} */
+function adminSaveFeedbackPrompt(id, value) { return _adminWriteConfig_(id, { 'Feedback-Prompt': String(value || '').trim() }); }
+
+/** RPC: saves the Show-Details-Preview yes/no toggle. @return {{ok:boolean}} */
+function adminSaveShowDetailsPreview(id, on) { return _adminWriteConfig_(id, { 'Show-Details-Preview': on ? 'TRUE' : 'FALSE' }); }
 
 /** RPC: saves the Admin-Only Notes field's pencil-icon editor. @return {{ok:boolean}} */
 function adminSaveAdminOnlyNotes(id, value) { return _adminWriteConfig_(id, { 'Admin-Only-Notes': String(value || '') }); }
