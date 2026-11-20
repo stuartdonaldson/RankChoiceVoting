@@ -289,6 +289,9 @@
 
   /* --- Analyze view --- */
   .method-note { background: var(--info-bg); color: var(--info-text); font-size: 0.9em; padding: 10px 12px; border-radius: var(--radius-button); margin-bottom: 16px; }
+  ol.finish-order { margin: 4px 0 12px; padding-left: 28px; }
+  ol.finish-order li { margin-bottom: 2px; }
+  .score-details { margin-bottom: 12px; }
   table.results-table { border-collapse: collapse; margin-bottom: 15px; width: 100%; }
   table.results-table th, table.results-table td { border: 1px solid var(--border); padding: 6px 8px; }
   table.results-table th { background: var(--surface-secondary); text-align: left; }
@@ -1789,10 +1792,10 @@
 
     function formatFinishOrder(order) {
       if (!order || !order.length) return '';
-      return order.map(function (entry) {
-        var label = entry.names.length > 1 ? '(tie) ' + entry.names.join(' / ') : entry.names[0];
-        return entry.place + '. ' + escapeHtml_(label);
-      }).join('&nbsp;&nbsp;');
+      return '<ol class="finish-order">' + order.map(function (entry) {
+        var label = entry.names.length > 1 ? entry.names.join(' / ') + ' (tie)' : entry.names[0];
+        return '<li value="' + Number(entry.place) + '">' + escapeHtml_(label) + '</li>';
+      }).join('') + '</ol>';
     }
 
     function summaryTable(summary) {
@@ -1829,11 +1832,12 @@
         html += '<p>No ' + escapeHtml_(label) + ' winner (cycle detected).</p>';
       }
       if (finishOrder) {
-        html += '<p><strong>Finish order:</strong> ' + formatFinishOrder(finishOrder) + '</p>';
+        html += '<p><strong>Finish order:</strong></p>' + formatFinishOrder(finishOrder);
       }
-      html += '<p><strong>Heuristic display score (not the finish order):</strong></p>';
-      html += '<p style="font-size:0.9em;margin:5px 0;"><em>' + escapeHtml_(scoreExplanation) + '</em></p>';
-      html += rankedCandidatesTable(result.rankedCandidates);
+      html += '<details class="ballot-info score-details"><summary>How each choice scored</summary>' +
+        '<p style="font-size:0.9em;margin:5px 0;"><em>' + escapeHtml_(scoreExplanation) +
+        '. This is a single-pass score, so it can differ from the finish order above.</em></p>' +
+        rankedCandidatesTable(result.rankedCandidates) + '</details>';
       return html;
     }
 
@@ -1901,8 +1905,8 @@
           html += '<p><b>Tie after all eliminations:</b> ' + escapeHtml_(data.rcv.tie.join(', ')) + '</p>';
         }
         html += '<p><b>Finish order</b> (computed by removing each round’s winner and ' +
-          're-running RCV on who’s left, not the final round’s runner-up): ' +
-          formatFinishOrder(data.rcvFinishOrder) + '</p>';
+          're-running RCV on who’s left, not the final round’s runner-up):</p>' +
+          formatFinishOrder(data.rcvFinishOrder);
         html += summaryTable(data.rcv.summary);
 
         html += condorcetMethodHtml('Basic Condorcet', data.condorcet.condorcet, data.finishOrders.condorcet,
