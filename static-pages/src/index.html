@@ -309,7 +309,7 @@
 
   <!-- ============================= EDIT VIEW ============================= -->
   <div id="view-edit" class="hidden">
-    <p><a id="backLink" href="?cmd=admin">&larr; Back to ballot list</a></p>
+    <p><a id="backLink" href="?cmd=admin">&larr; Back to ballot list</a> <span class="ballot-nav" id="editNavTop"></span></p>
     <div id="createdBanner" class="hidden">Ballot created — fill in the fields below using the pencil icons.</div>
     <p id="editLoadStatus">Loading…</p>
 
@@ -575,13 +575,13 @@
         <div class="field-status" id="clearStatus"></div>
       </div>
 
-      <p style="margin-top:24px;"><a id="backLinkBottom" href="?cmd=admin">&larr; Back to ballot list</a></p>
+      <p style="margin-top:24px;"><a id="backLinkBottom" href="?cmd=admin">&larr; Back to ballot list</a> <span class="ballot-nav" id="editNavBottom"></span></p>
     </div>
   </div>
 
   <!-- ============================= ANALYZE VIEW ============================= -->
   <div id="view-analyze" class="hidden">
-    <p><a href="?cmd=admin">&larr; Back to ballot list</a></p>
+    <p><a href="?cmd=admin">&larr; Back to ballot list</a> <span class="ballot-nav" id="analyzeNav"></span></p>
     <p id="analyzeStatus">Loading…</p>
     <div id="analyzeRoot" class="hidden"></div>
   </div>
@@ -818,6 +818,32 @@
     return i === -1 ? '' : src.slice(i).trim();
   }
   // </rich-text-helpers>
+
+  /**
+   * Fills container with admin navigation links for ballot id (DOM-built, id URL-encoded):
+   * kinds are 'view' (live ballot, new tab), 'edit' and 'analyze', as on the list card.
+   */
+  function fillBallotNav_(container, id, kinds) {
+    container.textContent = '';
+    var enc = encodeURIComponent(id);
+    kinds.forEach(function (kind) {
+      var a = document.createElement('a');
+      if (kind === 'view') {
+        a.href = '?cmd=ballot&id=' + enc;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = 'View ballot \u2197';
+      } else if (kind === 'edit') {
+        a.href = '?cmd=admin&action=edit&id=' + enc;
+        a.textContent = 'Edit';
+      } else {
+        a.href = '?cmd=admin&action=analyze&id=' + enc;
+        a.textContent = 'Run Analysis';
+      }
+      container.appendChild(document.createTextNode(' \u00b7 '));
+      container.appendChild(a);
+    });
+  }
 
   function setAppVersionFooter_(appVersion, appDeployTarget) {
     var el = document.getElementById('appVersionFooter');
@@ -1466,6 +1492,8 @@
 
     window.initEditView_ = function (id, justCreated) {
       document.getElementById('view-edit').classList.remove('hidden');
+      fillBallotNav_(document.getElementById('editNavTop'), id, ['view', 'analyze']);
+      fillBallotNav_(document.getElementById('editNavBottom'), id, ['view', 'analyze']);
       createdBanner.classList.toggle('hidden', !justCreated);
       callApi_('getAdminEditData', id).then(function (data) {
         if (!data || data.error) {
@@ -1558,6 +1586,7 @@
 
     window.initAnalyzeView_ = function (id) {
       document.getElementById('view-analyze').classList.remove('hidden');
+      fillBallotNav_(document.getElementById('analyzeNav'), id, ['edit', 'view']);
       callApi_('getAdminAnalysisData_', id).then(function (data) {
         analyzeStatus.classList.add('hidden');
         if (!data || data.error) {
