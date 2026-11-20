@@ -73,11 +73,12 @@ const config = {
   resolveBeforeStamp: true,
   describeDeployment: (version) => `v${version} RCV`,
 
-  // NUUC runs under a separate Google account, hence its own authKey; sit/prod take the default.
+  // NUUC and SIT run under the Northlake Google account (SIT moved there 2026-11-20 for NUUC-Dispatch
+  // sign-in, rcballot-dx3.1), hence nuucAuth; prod takes the default.
   // No scriptIdKey/sheetIdKey: those are declared in gas-project.json now, and leaving the legacy
   // *Key indirection declared beside it would be the second mechanism adr/0004 argues against.
   targets: {
-    sit:  { label: 'SIT',  emoji: '🧪', counter: 'build',   deploymentIdKey: 'sitDeploymentId'  },
+    sit:  { label: 'SIT',  emoji: '🧪', counter: 'build',   deploymentIdKey: 'sitDeploymentId', authKey: 'nuucAuth' },
     prod: { label: 'PROD', emoji: '🚀', counter: 'version', deploymentIdKey: 'prodDeploymentId' },
     nuuc: { label: 'NUUC', emoji: '⛪', counter: 'version', deploymentIdKey: 'nuucDeploymentId', authKey: 'nuucAuth' },
   },

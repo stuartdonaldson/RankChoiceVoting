@@ -19,10 +19,10 @@
 
   "envs": {
     "sit": {
-      "scriptId": "1tGLrQlOPDiHAbGj8t2TbZhqdCSjp1l7z5n3qajwX85b8Z-vx7SKQoj3I",
-      "sheetId": "1RCQlZ8FH5fdmh3ias5iIrttnD_IVLvctrMGvUNVdWeA",
-      "static": { "host": "f3", "dest": "ballot/sit" },
-      "dispatch": { "url": "", "clientId": "", "aud": "rcballot-test" }
+      "scriptId": "1YxgaLgz-5cOQFsTeqXt-QmvhqEM4xjP1GYmk6hjOyN-g40cbj5M6Fgoi",
+      "sheetId": "",
+      "static": { "host": "nuuc", "dest": "pub/ballot-sit" },
+      "dispatch": { "url": "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec", "clientId": "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com", "aud": "rcballot-test" }
     },
     "prod": {
       "scriptId": "1NJRGvSY8SJw6dOU4d6CvWrIUNCNR-m1WsOddoAuOZ6q5PtWKFUDJNzyh",
@@ -33,7 +33,7 @@
       "scriptId": "1t8dC-Buza2quFmE12AyDluOqUsoKl9zS6QDVBWLcrnboJs7G__8qFS87",
       "sheetId": "1lyuR9KotUjSX3UlwLNX4Z11d6erya5OOfOUpvJV2BaA",
       "static": { "host": "nuuc", "dest": "pub/ballot" },
-      "dispatch": { "url": "", "clientId": "", "aud": "rcballot" }
+      "dispatch": { "url": "https://script.google.com/macros/s/AKfycbz-YsKzVeoehCr05zF4kF_wbKuTAhMm1RU1KSXK-W6UOKt9zg1zVTUi_TKKYnpkhSR-/exec", "clientId": "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com", "aud": "rcballot" }
     }
   },
 
