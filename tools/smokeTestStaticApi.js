@@ -21,7 +21,9 @@
  *   7. getBallotConfig / getBallotForName — the voting page's own two initial calls.
  *   8. submitBallotRanking x3 — three ballots with different orderings.
  *   9. addBallotTopic — a respondent-added candidate mid-race.
- *  10. getAdminAnalysisData_ — assert RCV + all four Condorcet methods return a sane shape.
+ *  10. getAdminAnalysisData_ — sign-in enabled (getDiagnostics.identityEnabled): assert the anonymous
+ *      call is refused with the sign-in message; otherwise assert RCV + all four Condorcet methods
+ *      return a sane shape.
  *  11. Cleanup: deleteSheet via the existing secret-gated cmd=admin ops API (best-effort).
  *
  * Requires a live SIT deployment (sitDeploymentId in local.settings.json — see
@@ -36,6 +38,8 @@
 const { post, loadSettings, saveSetting_, generateSecret_, ENV_MAP, UNGATED_ACTIONS } = require('./callWebapp.js');
 
 const ENV = 'sit';
+// Prefix of script/webAdmin.js getAdminAnalysisData_'s refusal for an anonymous caller.
+const SIGNIN_REFUSAL_ = 'Not authorized: sign in with Google to view results.';
 
 function apiUrl_(deploymentId) {
   return `https://script.google.com/macros/s/${deploymentId}/exec?cmd=api`;
@@ -84,6 +88,15 @@ async function main() {
   const candidateA = 'Alpha';
   const candidateB = 'Bravo';
   const candidateC = 'Charlie';
+
+  // Read the sign-in switch through the secret-gated diagnostics call (null when unreadable).
+  let identityEnabled = null;
+  const secret0 = await ensureAdminSecret_(deploymentId, settings);
+  if (secret0) {
+    const diag = await post(adminUrl_(deploymentId), { action: 'getDiagnostics', adminSecret: secret0 });
+    if (diag && diag.ok && typeof diag.identityEnabled === 'boolean') identityEnabled = diag.identityEnabled;
+    record_('getDiagnostics reports identityEnabled', identityEnabled !== null, 'identityEnabled=' + identityEnabled);
+  }
 
   try {
     // 1. createBallotForAdmin_
@@ -147,13 +160,24 @@ async function main() {
     const addTopic = await callApi_(deploymentId, 'addBallotTopic', id, 'Delta', 'added by a respondent');
     record_('addBallotTopic (respondent add)', !!(addTopic && addTopic.result && addTopic.result.candidate === 'Delta'), JSON.stringify(addTopic));
 
-    // 10. Analysis
+    // 10. Analysis. rcballot-dx3.3 AC rev 2: with sign-in enabled (getDiagnostics.identityEnabled)
+    // results need a verified signed-in caller, which this anonymous script cannot be — so the
+    // positive check is that the call is REFUSED with the sign-in message (signed-in coverage
+    // stays manual: it needs a browser GIS token). With sign-in off, assert the data shape.
+    // A ballot created above is unclaimed (no Admins row), so every other admin RPC here stays open.
     const analysis = await callApi_(deploymentId, 'getAdminAnalysisData_', id);
-    const a = analysis && analysis.result;
-    const analysisOk = !!(a && !a.error && a.rcv && (a.rcv.winner || a.rcv.tie) &&
-      a.condorcet && a.condorcet.condorcet && a.condorcet.schulze && a.condorcet.rankedPairs && a.condorcet.minimax &&
-      a.finishOrders && a.finishOrders.condorcet);
-    record_('getAdminAnalysisData_ returns full result shape', analysisOk, analysisOk ? ('winner=' + (a.rcv.winner || 'tie:' + a.rcv.tie)) : JSON.stringify(analysis));
+    if (identityEnabled === null) {
+      record_('getAdminAnalysisData_', false, 'could not read getDiagnostics.identityEnabled (no admin secret locally) — cannot pick the expected outcome');
+    } else if (identityEnabled) {
+      const refused = !!(analysis && typeof analysis.error === 'string' && analysis.error.indexOf(SIGNIN_REFUSAL_) === 0 && !analysis.result);
+      record_('getAdminAnalysisData_ refused anonymously (identityEnabled)', refused, refused ? '' : JSON.stringify(analysis));
+    } else {
+      const a = analysis && analysis.result;
+      const analysisOk = !!(a && !a.error && a.rcv && (a.rcv.winner || a.rcv.tie) &&
+        a.condorcet && a.condorcet.condorcet && a.condorcet.schulze && a.condorcet.rankedPairs && a.condorcet.minimax &&
+        a.finishOrders && a.finishOrders.condorcet);
+      record_('getAdminAnalysisData_ returns full result shape', analysisOk, analysisOk ? ('winner=' + (a.rcv.winner || 'tie:' + a.rcv.tie)) : JSON.stringify(analysis));
+    }
 
     // Step 11 — the live static page check — was REMOVED when this project moved onto gas-static.
     // It fetched the published page and scraped its body for this deployment's /exec URL, using a

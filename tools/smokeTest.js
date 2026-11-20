@@ -111,14 +111,22 @@ async function main() {
     const csv1 = (getResult1 && getResult1.csv) || '';
     const hasConfigSkeleton = csv1.includes('Title') && csv1.includes('Results') && csv1.includes('Responses') &&
       csv1.includes('Date\tName\tWeight\tComment');
+    // rcballot-3h6: a new ballot starts with an [Info] section holding the View/Edit links.
+    const csvLines1 = csv1.split('\n');
+    const infoOk = csvLines1[0].split('\t')[0] === '[Info]' && /^\t?View ballot\t.*cmd=ballot/.test(csvLines1[1] || '') &&
+      /^\t?Edit ballot\t.*cmd=admin/.test(csvLines1[2] || '');
+    record_('getSheet shows [Info] links at top', infoOk, infoOk ? '' : csvLines1.slice(0, 3).join(' | '));
     record_('getSheet shows config skeleton', hasConfigSkeleton, hasConfigSkeleton ? '' : csv1.slice(0, 300));
     if (!hasConfigSkeleton) throw new Error('config skeleton missing from getSheet csv');
 
-    // 4. setSheet — seed one response row directly below the Responses header (row 14 -> row 15).
+    // 4. setSheet — seed one response row directly below the Responses header (found by marker, not
+    // a fixed row: the [Info] section and config rows shift it).
+    const responsesMarkerRow = csvLines1.findIndex(l => l.split('\t')[0] === '[Responses]') + 1;
+    if (responsesMarkerRow < 1) throw new Error('[Responses] marker not found in getSheet csv');
     const seededComment = 'seeded by smokeTest ' + id;
     const setResult = await post(url_(deploymentId), payload_('setSheet', {
       sheetName,
-      row: 15,
+      row: responsesMarkerRow + 2, // marker, header, then the first data row
       col: 1,
       rows: [[new Date().toISOString(), 'Smoke Voter', 1, seededComment]],
     }, adminSecret));
