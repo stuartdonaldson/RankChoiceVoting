@@ -304,26 +304,7 @@ function _highlightSectionMarkers_(sheet) {
   if (responsesRow !== -1) {
     var lastCol = Math.max(sheet.getLastColumn(), _BALLOT_RESPONSE_FIXED_COLS.length);
     highlightRow(responsesRow + 1, lastCol);
-    _unfreezeStaleHeaderRows_(sheet, responsesRow + 1);
   }
-}
-
-/**
- * Undoes the old fixed 14-row freeze (formerly set at sheet creation, where row 14 was
- * the Responses header) once the Responses header has moved off row 14 — the freeze then
- * pinned analysis output instead. Only exactly 14 is treated as that legacy value; any
- * other frozen-row count is a user choice and is left alone.
- *
- * @param {Sheet} sheet
- * @param {number} responsesHeaderRow
- */
-function _unfreezeStaleHeaderRows_(sheet, responsesHeaderRow) {
-  if (sheet.getFrozenRows() !== 14 || responsesHeaderRow === 14) return;
-  _withBallotLock_(function () {
-    if (sheet.getFrozenRows() !== 14) return; // re-check under the lock
-    sheet.setFrozenRows(0);
-    _logBallotEvent_('ballot.repair.frozenRows', { sheet: sheet.getName(), responsesHeaderRow: responsesHeaderRow });
-  });
 }
 
 /**

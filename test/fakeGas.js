@@ -113,9 +113,8 @@ class FakeSheet {
     this._cells = new Map();
     this._lastRow = 0;
     this._lastCol = 0;
-    this._frozenRows = 0;
     this._getValuesCalls = 0; // every FakeRange.getValues() on this sheet, for read-count assertions
-    // every mutating call (setValue/setValues/clearContent/format/insert/delete rows/freeze),
+    // every mutating call (setValue/setValues/clearContent/format/insert/delete rows),
     // for "reads never write" assertions — reset it before the code under test runs.
     this._writeCalls = 0;
   }
@@ -150,8 +149,6 @@ class FakeSheet {
     return this.getRange(1, 1, Math.max(this._lastRow, 1), Math.max(this._lastCol, 1));
   }
 
-  setFrozenRows(n) { this._writeCalls += 1; this._frozenRows = n; return this; }
-  getFrozenRows() { return this._frozenRows; }
 
   /** Shifts every row after `afterRow` down by `howMany`, growing lastRow. */
   insertRowsAfter(afterRow, howMany) {
