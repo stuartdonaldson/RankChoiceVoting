@@ -272,7 +272,7 @@ function createBallotForAdmin_(id) {
  * back to the sheet, same as before) but returns the raw result for the client to render.
  *
  * @param {string} id
- * @return {Object} {rcv, rcvFinishOrder, condorcet, finishOrders, sheetName} or {error}.
+ * @return {Object} {rcv, rcvFinishOrder, condorcet, finishOrders, sheetName, comments} or {error}.
  */
 function getAdminAnalysisData_(id) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -287,8 +287,38 @@ function getAdminAnalysisData_(id) {
     rcvFinishOrder: results.rcvFinishOrder,
     condorcet: results.condorcet,
     finishOrders: results.finishOrders,
-    sheetName: getBallotSheetName_(id)
+    sheetName: getBallotSheetName_(id),
+    comments: _feedbackComments_(_readBallotView_(sheet).rows)
   };
+}
+
+/**
+ * Non-blank feedback comments from a view's response rows, newest first (rcballot-5i2).
+ * Rows with weight 0 are kept but flagged counted:false. Never log the result (PII).
+ *
+ * @param {Array<{row:number, date:*, name:string, weight:number, comment:string}>} rows
+ * @return {Array<{name:string, date:string, comment:string, counted:boolean}>} date is an
+ *   ISO string when the cell is a date, else the cell's text ('' when absent).
+ */
+function _feedbackComments_(rows) {
+  var items = [];
+  rows.forEach(function (r) {
+    var text = String(r.comment || '');
+    if (!text.trim()) return;
+    var ms = NaN;
+    var date = '';
+    if (Object.prototype.toString.call(r.date) === '[object Date]') {
+      ms = r.date.getTime();
+      date = isNaN(ms) ? '' : r.date.toISOString();
+    } else if (r.date !== '' && r.date != null) {
+      date = String(r.date);
+      ms = Date.parse(date);
+    }
+    items.push({ ms: isNaN(ms) ? -Infinity : ms, row: r.row,
+      out: { name: r.name, date: date, comment: text, counted: r.weight > 0 } });
+  });
+  items.sort(function (a, b) { return (b.ms - a.ms) || (b.row - a.row) || 0; });
+  return items.map(function (i) { return i.out; });
 }
 
 /**

@@ -480,7 +480,39 @@ function testOrphanColumnShownOnEditPageAndExcludedFromAnalysis() {
   assert.equal(results.condorcet.condorcet.winner, 'Carol');
 }
 
+/** rcballot-5i2: analysis returns non-blank feedback comments, newest first, flagged counted. */
+function testAnalysisReturnsFeedbackComments() {
+  const { app, ss } = loadApp();
+  const sheet = app.createNewBallot_(ss, 'Fb');
+  ['Alice', 'Bob'].forEach(function (n) { app.addBallotCandidateForAdmin_('Fb', n, '', '', ''); });
+  app.submitBallotResponse_('Fb', 'V1', ['Alice', 'Bob'], 'first\nsee https://x.example <b>hi</b>');
+  app.submitBallotResponse_('Fb', 'V2', ['Bob', 'Alice'], '');
+  app.submitBallotResponse_('Fb', 'V3', ['Alice', 'Bob'], 'third');
+  app.submitBallotResponse_('Fb', 'V4', ['Bob', 'Alice'], 'excluded');
+  // Fix dates (older first by row) and zero V4's weight by hand.
+  const snap = app._readBallotView_(sheet).rows;
+  const byName = {};
+  snap.forEach(function (r) { byName[r.name] = r.row; });
+  const hdr = sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn()).getValues();
+  let wCol = -1;
+  hdr.forEach(function (row) { row.forEach(function (v, i) { if (v === 'Weight' && wCol < 0) wCol = i + 1; }); });
+  sheet.getRange(byName.V1, 1).setValue(new Date('2026-01-01T00:00:00Z'));
+  sheet.getRange(byName.V2, 1).setValue(new Date('2026-01-02T00:00:00Z'));
+  sheet.getRange(byName.V3, 1).setValue(new Date('2026-01-03T00:00:00Z'));
+  sheet.getRange(byName.V4, 1).setValue(new Date('2026-01-04T00:00:00Z'));
+  sheet.getRange(byName.V4, wCol).setValue(0);
+
+  const res = app.getAdminAnalysisData_('Fb');
+  assert.equal(res.error, undefined, res.error);
+  const c = JSON.parse(JSON.stringify(res.comments));
+  assert.deepEqual(c.map(function (x) { return x.name; }), ['V4', 'V3', 'V1']); // blank V2 omitted, newest first
+  assert.deepEqual(c.map(function (x) { return x.counted; }), [false, true, true]);
+  assert.equal(c[0].date, '2026-01-04T00:00:00.000Z');
+  assert.equal(c[2].comment, 'first\nsee https://x.example <b>hi</b>'); // verbatim, not escaped
+}
+
 function run() {
+  testAnalysisReturnsFeedbackComments();
   testCacheMissBuildsFromSheetAndPopulatesCache();
   testGetCachedBallotDataReturnsNullForUnknownBallot();
   testGetBallotForRespondentServesFromCacheWithoutTouchingSheetWhenNoName();

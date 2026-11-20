@@ -1584,6 +1584,43 @@
       return html;
     }
 
+    function formatCommentDate(d) {
+      if (!d) return '';
+      var t = new Date(d);
+      return isNaN(t.getTime()) ? String(d) : t.toLocaleString();
+    }
+
+    // User text only ever reaches the DOM via setRich_ / textContent, never innerHTML.
+    function feedbackSection(comments) {
+      var sec = document.createElement('div');
+      var h = document.createElement('h2');
+      h.textContent = 'Feedback comments (' + comments.length + ')';
+      sec.appendChild(h);
+      if (!comments.length) {
+        var none = document.createElement('p');
+        none.className = 'muted';
+        none.textContent = 'No feedback comments yet.';
+        sec.appendChild(none);
+        return sec;
+      }
+      comments.forEach(function (c) {
+        var item = document.createElement('div');
+        item.style.marginBottom = '14px';
+        var body = document.createElement('div');
+        body.style.whiteSpace = 'pre-wrap';
+        setRich_(body, c.comment);
+        var meta = document.createElement('div');
+        meta.style.color = 'var(--text-muted)';
+        meta.style.fontSize = '0.85em';
+        meta.textContent = [c.name, formatCommentDate(c.date)].filter(Boolean).join(' · ') +
+          (c.counted === false ? ' (not counted)' : '');
+        item.appendChild(body);
+        item.appendChild(meta);
+        sec.appendChild(item);
+      });
+      return sec;
+    }
+
     window.initAnalyzeView_ = function (id) {
       document.getElementById('view-analyze').classList.remove('hidden');
       fillBallotNav_(document.getElementById('analyzeNav'), id, ['edit', 'view']);
@@ -1628,6 +1665,7 @@
           escapeHtml_(data.sheetName) + ' sheet.</em></p>';
 
         analyzeRoot.innerHTML = html;
+        analyzeRoot.appendChild(feedbackSection(data.comments || []));
         analyzeRoot.classList.remove('hidden');
       }, function (err) {
         analyzeStatus.textContent = 'Could not load analysis: ' + err.message;
