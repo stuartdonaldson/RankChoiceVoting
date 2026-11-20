@@ -20,7 +20,7 @@
   "envs": {
     "sit": {
       "scriptId": "1YxgaLgz-5cOQFsTeqXt-QmvhqEM4xjP1GYmk6hjOyN-g40cbj5M6Fgoi",
-      "sheetId": "",
+      "sheetId": "1zrnm2zXU1UsmQXO1cHmGh_Bt_y078k45Y8x11XblYII",
       "static": { "host": "nuuc", "dest": "pub/ballot-sit" },
       "dispatch": { "url": "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec", "clientId": "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com", "aud": "rcballot-test" }
     },
