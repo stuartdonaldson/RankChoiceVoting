@@ -272,7 +272,10 @@ function handleAdminPost_(e) {
           axiomTokenSet: !!axiomToken,
           axiomTokenLength: axiomToken ? axiomToken.length : 0,
           axiomDataset: axiomDataset || null,
-          gasLoggerFolderIdSet: !!diagProps.getProperty('GAS_LOGGER_PARENT_FOLDER_ID')
+          gasLoggerFolderIdSet: !!diagProps.getProperty('GAS_LOGGER_PARENT_FOLDER_ID'),
+          // rcballot-dx3: Dispatch sign-in wiring — audience and whether its key is installed.
+          assertionAud: typeof rcvAssertionAud_ === 'function' ? rcvAssertionAud_() : null,
+          identityEnabled: typeof rcvIdentityEnabled_ === 'function' ? rcvIdentityEnabled_() : false
         };
         // Optional: fire a real test ingest and report the raw HTTP result (or thrown
         // exception message) so a broken Axiom pipe is diagnosable without Stackdriver access.
