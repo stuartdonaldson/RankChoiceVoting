@@ -69,7 +69,7 @@ var _BALLOT_RESPONSES_MARKER = '[Responses]';
 // Bare words (lowercase, brackets stripped) a candidate may not be named: the marker
 // words plus the former "Items" section name. See the file header's column-A rule.
 var _BALLOT_RESERVED_NAMES_ = ['results', 'candidates', 'responses', 'items'];
-var _BALLOT_CONFIG_ROWS = ['Title', 'Description', 'Instructions', 'Footer', 'Contact', 'Accept-New', 'Add-Instructions', 'Admin-Only-Notes', 'Feedback-Prompt', 'Show-Details-Preview'];
+var _BALLOT_CONFIG_ROWS = ['Title', 'Description', 'Instructions', 'Footer', 'Contact', 'Accept-New', 'Add-Instructions', 'Admin-Only-Notes', 'Feedback-Prompt', 'Show-Details-Preview', 'Description-Link-Text', 'Description-Link-URL'];
 // Legacy config key recognized by readBallotConfig_ purely to migrate older sheets in
 // place (the cell is rewritten to the current key name the first time it is read).
 var _BALLOT_LEGACY_CONFIG_KEYS_ = { 'Admin-Only-Notes': ['Info'] };
@@ -147,7 +147,7 @@ function findBallotSheet_(ss, id) {
 function createBallotSheet_(ss, id) {
   var sheet = ss.insertSheet(getBallotSheetName_(id));
   sheet.getRange(1, 1).setValue(_BALLOT_CONFIG_MARKER);
-  sheet.getRange(2, _BALLOT_CONFIG_KEY_COL, 10, 2).setValues([
+  sheet.getRange(2, _BALLOT_CONFIG_KEY_COL, 12, 2).setValues([
     // Each placeholder is "[TODO: what to enter — delete this bracket] <example>": the
     // bracketed lead-in says what the field is for, and the text after it is a working
     // example, so the admin deletes the bracket and edits the example rather than writing
@@ -165,13 +165,16 @@ function createBallotSheet_(ss, id) {
     // Blank Feedback-Prompt = the built-in default prompt; Show-Details-Preview is a yes/no toggle (blank = off).
     ['Admin-Only-Notes', ''],
     ['Feedback-Prompt', ''],
-    ['Show-Details-Preview', 'FALSE']
+    ['Show-Details-Preview', 'FALSE'],
+    // Optional labelled link shown at the end of the Description (blank = no link).
+    ['Description-Link-Text', ''],
+    ['Description-Link-URL', '']
   ]);
-  sheet.getRange(12, 1).setValue(_BALLOT_RESULTS_MARKER);
-  sheet.getRange(13, 1).setValue(_BALLOT_CANDIDATES_MARKER);
-  sheet.getRange(14, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).setValues([_BALLOT_CANDIDATES_HEADER]);
-  sheet.getRange(15, 1).setValue(_BALLOT_RESPONSES_MARKER);
-  sheet.getRange(16, 1, 1, _BALLOT_RESPONSE_FIXED_COLS.length).setValues([_BALLOT_RESPONSE_FIXED_COLS]);
+  sheet.getRange(14, 1).setValue(_BALLOT_RESULTS_MARKER);
+  sheet.getRange(15, 1).setValue(_BALLOT_CANDIDATES_MARKER);
+  sheet.getRange(16, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).setValues([_BALLOT_CANDIDATES_HEADER]);
+  sheet.getRange(17, 1).setValue(_BALLOT_RESPONSES_MARKER);
+  sheet.getRange(18, 1, 1, _BALLOT_RESPONSE_FIXED_COLS.length).setValues([_BALLOT_RESPONSE_FIXED_COLS]);
   _highlightSectionMarkers_(sheet);
   return sheet;
 }
@@ -720,6 +723,30 @@ function _ballotFlag_(config, key) {
   return ['TRUE', 'YES', 'Y', 'ON', '1'].indexOf(String((config || {})[key] || '').trim().toUpperCase()) !== -1;
 }
 
+/**
+ * True when value is an absolute http(s) URL with no whitespace; the only kind of
+ * Description-Link-URL that is saved or rendered as a link.
+ *
+ * @param {*} value
+ * @return {boolean}
+ */
+function _isHttpUrl_(value) {
+  return /^https?:\/\/[^\s<>"']+$/i.test(String(value == null ? '' : value).trim());
+}
+
+/**
+ * The Description link for the respondent payload: {text, url}, or null when the URL row
+ * is blank, missing or not http(s). Text falls back to the URL.
+ *
+ * @param {Object} config as returned by readBallotConfig_
+ * @return {{text:string, url:string}|null}
+ */
+function _ballotDescriptionLink_(config) {
+  var url = String((config || {})['Description-Link-URL'] || '').trim();
+  if (!_isHttpUrl_(url)) return null;
+  return { text: String((config || {})['Description-Link-Text'] || '').trim() || url, url: url };
+}
+
 var _DEFAULT_FEEDBACK_PROMPT_ = 'Any feedback you\'d like to add?';
 
 /**
@@ -1003,6 +1030,8 @@ function _buildRespondentBranding_(id, config, candidateRows) {
     addInstructions: config['Add-Instructions'] || '',
     feedbackPrompt: _ballotFeedbackPrompt_(config),
     showDetailsPreview: _ballotFlag_(config, 'Show-Details-Preview'),
+    descriptionLinkText: String(config['Description-Link-Text'] || '').trim(),
+    descriptionLinkUrl: _ballotDescriptionLink_(config) ? _ballotDescriptionLink_(config).url : '',
     candidates: candidates,
     itemDetails: itemDetails,
     comment: '',

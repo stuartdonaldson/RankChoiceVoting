@@ -347,6 +347,8 @@ function getAdminEditData(id) {
     feedbackPrompt: config['Feedback-Prompt'] || '',
     defaultFeedbackPrompt: _DEFAULT_FEEDBACK_PROMPT_,
     showDetailsPreview: _ballotFlag_(config, 'Show-Details-Preview'),
+    descriptionLinkText: config['Description-Link-Text'] || '',
+    descriptionLinkUrl: config['Description-Link-URL'] || '',
     adminOnlyNotes: config['Admin-Only-Notes'] || '',
     candidates: candidateRows,
     layoutError: layoutError,
@@ -389,6 +391,21 @@ function adminSaveFooter(id, value) { return _adminWriteConfig_(id, { Footer: St
 
 /** RPC: saves the Contact field's pencil-icon editor. @return {{ok:boolean}} */
 function adminSaveContact(id, value) { return _adminWriteConfig_(id, { Contact: String(value || '') }); }
+
+/**
+ * RPC: saves the optional Description link (Link Text + Link URL) together. A non-blank
+ * URL must be http(s); a blank URL clears the link (and the text is kept as typed).
+ *
+ * @param {string} id
+ * @param {string} text
+ * @param {string} url
+ * @return {{ok:boolean}}
+ */
+function adminSaveDescriptionLink(id, text, url) {
+  var u = String(url || '').trim();
+  if (u && !_isHttpUrl_(u)) throw new Error('Link URL must start with http:// or https:// and contain no spaces.');
+  return _adminWriteConfig_(id, { 'Description-Link-Text': String(text || '').trim(), 'Description-Link-URL': u });
+}
 
 /** RPC: saves the Feedback-Prompt (blank = built-in default). @return {{ok:boolean}} */
 function adminSaveFeedbackPrompt(id, value) { return _adminWriteConfig_(id, { 'Feedback-Prompt': String(value || '').trim() }); }

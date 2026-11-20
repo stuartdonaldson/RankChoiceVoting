@@ -132,6 +132,48 @@ function testDetailsPreviewAndFeedbackPromptConfig() {
   assert.equal(cfg.feedbackPrompt, "Any feedback you'd like to add?");
 }
 
+/** rcballot-9rc: Description link round-trips (admin save, edit data, respondent payload); URL falls back for label; non-http(s) rejected; missing rows = no link. */
+function testDescriptionLinkConfig() {
+  const { app, ss } = loadApp();
+  app.createNewBallot_(ss, 'Dl');
+  let cfg = app.getBallotForRespondent_('Dl', '');
+  assert.equal(cfg.descriptionLinkUrl, '');
+  assert.equal(cfg.descriptionLinkText, '');
+  let edit = app.getAdminEditData('Dl');
+  assert.equal(edit.descriptionLinkUrl, '');
+  assert.equal(edit.descriptionLinkText, '');
+
+  app.adminSaveDescriptionLink('Dl', '  Original responses  ', ' https://docs.google.com/document/d/abc ');
+  cfg = app.getBallotForRespondent_('Dl', '');
+  assert.equal(cfg.descriptionLinkText, 'Original responses');
+  assert.equal(cfg.descriptionLinkUrl, 'https://docs.google.com/document/d/abc');
+  edit = app.getAdminEditData('Dl');
+  assert.equal(edit.descriptionLinkText, 'Original responses');
+  assert.equal(edit.descriptionLinkUrl, 'https://docs.google.com/document/d/abc');
+
+  // Blank text: payload carries blank text; the client falls back to the URL as the label.
+  app.adminSaveDescriptionLink('Dl', '', 'http://example.com/x');
+  cfg = app.getBallotForRespondent_('Dl', '');
+  assert.equal(cfg.descriptionLinkText, '');
+  assert.equal(cfg.descriptionLinkUrl, 'http://example.com/x');
+
+  // Non-http(s) or spaced URLs are rejected on save and leave the saved link untouched.
+  ['javascript:alert(1)', 'ftp://example.com', 'example.com', 'https://a b.com', 'data:text/html,x'].forEach(function (bad) {
+    assert.throws(function () { app.adminSaveDescriptionLink('Dl', 'x', bad); }, /http/);
+  });
+  assert.equal(app.getBallotForRespondent_('Dl', '').descriptionLinkUrl, 'http://example.com/x');
+
+  // A bad URL planted directly in the sheet is not served to respondents.
+  const sheet = app.findBallotSheet_(ss, 'Dl');
+  app.writeBallotConfig_(sheet, { 'Description-Link-URL': 'javascript:alert(1)' });
+  app.refreshBallotCache_('Dl', sheet);
+  assert.equal(app.getBallotForRespondent_('Dl', '').descriptionLinkUrl, '');
+
+  // Clearing the URL removes the link.
+  app.adminSaveDescriptionLink('Dl', 'gone', '');
+  assert.equal(app.getBallotForRespondent_('Dl', '').descriptionLinkUrl, '');
+}
+
 /** An existing ballot with neither new config row reads as preview off + default prompt, and heals on first write. */
 function testLegacyBallotWithoutNewConfigRowsBehavesAsDefaults() {
   const { app, ss } = loadApp();
@@ -382,14 +424,14 @@ function testOnEditNeverWrites() {
 function testAdminEditLoadRepairsMissingResponses() {
   const { app, ss } = loadApp();
   const sheet = app.createNewBallot_(ss, 'NoResp');
-  sheet.deleteRows(15, 2); // [Responses] marker + header lost
-  sheet.getRange(15, 2, 2, 2).setValues([['Alice', 'a'], ['Bob', 'b']]); // hand-pasted candidates
+  sheet.deleteRows(17, 2); // [Responses] marker + header lost
+  sheet.getRange(17, 2, 2, 2).setValues([['Alice', 'a'], ['Bob', 'b']]); // hand-pasted candidates
 
   assert.deepEqual(app.getCachedBallotData_('NoResp').candidates.length, 0); // reads: nothing, and no repair
-  assert.equal(app.findBallotSheet_(ss, 'NoResp').getRange(17, 1).getValue(), '');
+  assert.equal(app.findBallotSheet_(ss, 'NoResp').getRange(19, 1).getValue(), '');
 
   const edit = app.getAdminEditData('NoResp');
-  assert.equal(sheet.getRange(17, 1).getValue(), '[Responses]');
+  assert.equal(sheet.getRange(19, 1).getValue(), '[Responses]');
   assert.deepEqual(edit.candidates.map(function (c) { return c.name; }), ['Alice', 'Bob']);
   assert.equal(logLines(app, 'ballot.repair.responsesSection').length, 1);
   assert.equal(logLines(app, 'ballot.repair.rankColumns').length, 1);
@@ -454,6 +496,7 @@ function run() {
   testLegacyResponsesLayoutRefusedThenRepairedOnAdminLoad();
   testOnEditNeverWrites();
   testDetailsPreviewAndFeedbackPromptConfig();
+  testDescriptionLinkConfig();
   testLegacyBallotWithoutNewConfigRowsBehavesAsDefaults();
   testAdminEditLoadRepairsMissingResponses();
   testHeaderlessCandidatesShownAfterAdminLoad();

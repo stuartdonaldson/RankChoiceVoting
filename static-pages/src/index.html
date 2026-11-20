@@ -358,6 +358,26 @@
         </div>
       </div>
 
+      <div class="field-block">
+        <span class="field-name-tag">Description Link <span class="optional-tag">(optional)</span></span>
+        <div class="field-row">
+          <p class="sub rich" id="descriptionLinkDisplay"></p>
+          <button type="button" class="pencil-btn" id="descriptionLinkEditBtn" aria-label="Edit Description Link">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="descriptionLinkPanel">
+          <p class="field-help">An optional link shown on its own line at the end of the Description (for example, to a document with background material). Link URL must start with http:// or https://. Link Text is the clickable label; if you leave it blank the URL itself is shown. Leave Link URL blank for no link. The link opens in a new tab.</p>
+          <label for="descriptionLinkTextInput">Link Text (optional)</label>
+          <input type="text" id="descriptionLinkTextInput">
+          <label for="descriptionLinkUrlInput">Link URL</label>
+          <input type="url" id="descriptionLinkUrlInput" placeholder="https://…">
+          <div class="field-panel-actions">
+            <button type="button" id="descriptionLinkSaveBtn">Save</button>
+            <button type="button" class="secondary" id="descriptionLinkCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="descriptionLinkStatus"></div>
+        </div>
+      </div>
+
       <div class="fixed-block">
         <label for="staticNameInput">Your name</label>
         <input type="text" id="staticNameInput" disabled placeholder="(respondent types their name here)">
@@ -760,6 +780,29 @@
         el.appendChild(document.createTextNode(seg.value));
       }
     });
+  }
+
+  /** The trimmed URL when it is an absolute http(s) URL without whitespace or markup characters, else ''. */
+  function safeHttpUrl_(url) {
+    var u = String(url == null ? '' : url).trim();
+    return /^https?:\/\/[^\s<>"']+$/i.test(u) ? u : '';
+  }
+
+  /**
+   * setRich_ plus the optional Description link on its own line at the end: label = linkText,
+   * falling back to the URL; only http(s) URLs render (anything else is ignored). DOM-built.
+   */
+  function setRichWithLink_(el, text, linkText, linkUrl) {
+    setRich_(el, text);
+    var url = safeHttpUrl_(linkUrl);
+    if (!url) return;
+    if (el.textContent !== '' || el.children.length) el.appendChild(document.createTextNode('\n'));
+    var a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = String(linkText == null ? '' : linkText).trim() || url;
+    el.appendChild(a);
   }
 
   /** Text before the first blank line (a line holding only whitespace), trimmed; '' for none. */
@@ -1329,7 +1372,59 @@
     });
 
     wireSimpleField('title', 'adminSaveTitle');
-    wireSimpleField('description', 'adminSaveDescription', setRich_);
+    // The Description display carries the optional Description link at its end, so a Description
+    // save re-renders with the saved link, and a link save re-renders with the saved Description.
+    function renderDescriptionDisplay() {
+      setRichWithLink_(descriptionDisplay, fieldData.description, fieldData.descriptionLinkText, fieldData.descriptionLinkUrl);
+    }
+    wireSimpleField('description', 'adminSaveDescription', function (el, v) {
+      fieldData.description = v;
+      renderDescriptionDisplay();
+    });
+
+    // Description link (Description-Link-Text + Description-Link-URL), saved together in one RPC.
+    var descriptionLinkDisplay = document.getElementById('descriptionLinkDisplay');
+    var descriptionLinkPanel = document.getElementById('descriptionLinkPanel');
+    var descriptionLinkTextInput = document.getElementById('descriptionLinkTextInput');
+    var descriptionLinkUrlInput = document.getElementById('descriptionLinkUrlInput');
+    var descriptionLinkSaveBtn = document.getElementById('descriptionLinkSaveBtn');
+    var descriptionLinkStatus = document.getElementById('descriptionLinkStatus');
+    function renderDescriptionLinkDisplay() {
+      if (safeHttpUrl_(fieldData.descriptionLinkUrl)) {
+        setRichWithLink_(descriptionLinkDisplay, '', fieldData.descriptionLinkText, fieldData.descriptionLinkUrl);
+      } else {
+        descriptionLinkDisplay.textContent = '(none)';
+      }
+    }
+    document.getElementById('descriptionLinkEditBtn').addEventListener('click', function () {
+      descriptionLinkTextInput.value = fieldData.descriptionLinkText || '';
+      descriptionLinkUrlInput.value = fieldData.descriptionLinkUrl || '';
+      setStatus(descriptionLinkStatus, '', false);
+      descriptionLinkPanel.classList.remove('hidden');
+    });
+    document.getElementById('descriptionLinkCancelBtn').addEventListener('click', function () { descriptionLinkPanel.classList.add('hidden'); });
+    descriptionLinkSaveBtn.addEventListener('click', function () {
+      var text = descriptionLinkTextInput.value.trim();
+      var url = descriptionLinkUrlInput.value.trim();
+      if (url && !safeHttpUrl_(url)) {
+        setStatus(descriptionLinkStatus, 'Link URL must start with http:// or https:// and contain no spaces.', true);
+        return;
+      }
+      descriptionLinkSaveBtn.disabled = true;
+      setStatus(descriptionLinkStatus, 'Saving…', false);
+      callApi_('adminSaveDescriptionLink', ballotId, text, url).then(function () {
+        descriptionLinkSaveBtn.disabled = false;
+        fieldData.descriptionLinkText = text;
+        fieldData.descriptionLinkUrl = url;
+        renderDescriptionLinkDisplay();
+        renderDescriptionDisplay();
+        descriptionLinkPanel.classList.add('hidden');
+        setStatus(descriptionLinkStatus, '', false);
+      }, function (err) {
+        descriptionLinkSaveBtn.disabled = false;
+        setStatus(descriptionLinkStatus, 'Could not save: ' + err.message, true);
+      });
+    });
     wireSimpleField('instructions', 'adminSaveInstructions', setRich_);
     wireSimpleField('footer', 'adminSaveFooter', setRich_);
     wireSimpleField('contact', 'adminSaveContact', setRich_);
@@ -1379,7 +1474,8 @@
         }
         fieldData = data;
         titleDisplay.textContent = data.title;
-        setRich_(descriptionDisplay, data.description);
+        renderDescriptionDisplay();
+        renderDescriptionLinkDisplay();
         setRich_(instructionsDisplay, data.instructions);
         setRich_(footerDisplay, data.footer);
         setRich_(contactDisplay, data.contact);
@@ -1519,6 +1615,8 @@
     var itemDetailsByName = {};
     var showDetailsPreview = false;
     var ballotDescription = '';
+    var ballotDescriptionLinkText = '';
+    var ballotDescriptionLinkUrl = '';
     var ballotInstructions = '';
     var _BALLOT_NAME_STORAGE_KEY_PREFIX = 'rcvBallotName:';
 
@@ -1560,7 +1658,9 @@
     function showStep(el) {
       [stepNoBallot, stepName, stepRank, stepDone].forEach(function (s) { s.classList.add('hidden'); });
       el.classList.remove('hidden');
-      setRich_(pageDescription, (el === stepRank) ? ballotInstructions : ballotDescription);
+      // The Description link belongs to the Description only, not the rank-step Instructions.
+      if (el === stepRank) setRich_(pageDescription, ballotInstructions);
+      else setRichWithLink_(pageDescription, ballotDescription, ballotDescriptionLinkText, ballotDescriptionLinkUrl);
     }
 
     function setStatus(el, msg, isError) {
@@ -1706,6 +1806,8 @@
       pageTitle.textContent = config.title || 'RankChoiceVoting Ballot';
       document.title = config.title || 'RankChoiceVoting Ballot';
       ballotDescription = config.description || '';
+      ballotDescriptionLinkText = config.descriptionLinkText || '';
+      ballotDescriptionLinkUrl = config.descriptionLinkUrl || '';
       ballotInstructions = config.instructions || '';
       setRich_(pageFooter, config.footer || '');
       setRich_(pageContact, config.contact ? 'Contact: ' + config.contact : '');
