@@ -434,7 +434,8 @@ function _adminWriteConfigUnchecked_(id, updates) {
 
 /**
  * RPC (rcballot-dx3.3): replaces ballot id's Admins list. Same admin rule as every other save.
- * Refuses on a deployment without sign-in. When the new list is non-empty, leaves out the caller,
+ * Refuses on a deployment without sign-in, and refuses a non-empty list from an anonymous caller
+ * (unclaimed ballots included). When the new list is non-empty, leaves out the caller,
  * and the caller is not a super-admin, the save would lock them out: it throws
  * 'lockout_confirm: …' unless confirmLockout is true (the page asks first). A blank list makes
  * the ballot unclaimed (open to anyone) again.
@@ -450,9 +451,14 @@ function adminSaveAdmins(id, value, confirmLockout) {
   var admins = rcvParseEmailList_(value);
   var bad = admins.filter(function (e) { return !rcvLooksLikeEmail_(e); });
   if (bad.length) throw new Error('Every admin entry must be an email address (' + bad.length + ' is not).');
+  // Claiming a ballot needs a verified identity, even on an unclaimed one: otherwise an anonymous
+  // visitor could hand any ballot to a stranger's address and lock everyone else out.
+  if (admins.length && !access.email) {
+    GasLogger.log('identity.admin.refused', { reason: 'anonymous_set_admins' });
+    throw new Error('Not authorized: sign in with Google to set ballot admins.');
+  }
   if (admins.length && !access.isSuperAdmin && admins.indexOf(access.email) === -1 && confirmLockout !== true) {
-    throw new Error('lockout_confirm: this list does not include you' + (access.email ? '' : ' (you are not signed in)') +
-      ', so you will no longer be able to edit this ballot.');
+    throw new Error('lockout_confirm: this list does not include you, so you will no longer be able to edit this ballot.');
   }
   rcvWriteBallotAdmins_(id, admins);
   return { ok: true, admins: admins };

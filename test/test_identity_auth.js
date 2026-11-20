@@ -333,7 +333,9 @@ test('unclaimed ballot: every admin RPC open to anonymous, non-admin and admins'
       newBallot(t, 'b1');
       setSuperAdmins(t, ROOT.email);
       const res = call(t.app, name, args, who);
-      assert.equal(outcome(res), 'allowed', `${who ? who.email : 'anonymous'} ${name}: ${res.error || 'ok'}`);
+      // Setting a non-empty Admins list always needs a verified caller (review fix, rcballot-dx3.3).
+      const expected = name === 'adminSaveAdmins' && !who ? 'refused' : 'allowed';
+      assert.equal(outcome(res), expected, `${who ? who.email : 'anonymous'} ${name}: ${res.error || 'ok'}`);
     });
   });
 });
@@ -363,6 +365,18 @@ test('Make me an admin: signed-in user claims an unclaimed ballot; anonymous can
   assert.deepEqual(data.admins, [BOB.email]);
   assert.equal(data.access.claimed, true);
   assert.equal(data.access.isBallotAdmin, true);
+});
+
+test('unclaimed ballot: anonymous cannot set admins; signed-in list excluding self needs confirm', () => {
+  const t = loadApp();
+  newBallot(t, 'b1');
+  setSuperAdmins(t, ROOT.email);
+  assert.match(call(t.app, 'adminSaveAdmins', ['b1', BOB.email, true]).error, NOT_AUTH);
+  assert.match(call(t.app, 'adminSaveAdmins', ['b1', ALICE.email]).error, NOT_AUTH);
+  assert.equal(t.app.rcvParseEmailList_(t.app._readBallotView_(t.ss.getSheetByName('Ballot-b1')).config.Admins).length, 0);
+  assert.equal(outcome(call(t.app, 'adminSaveTitle', ['b1', 'still open'])), 'allowed'); // other fields stay open
+  assert.match(call(t.app, 'adminSaveAdmins', ['b1', ALICE.email], BOB).error, /^lockout_confirm:/);
+  assert.deepEqual(call(t.app, 'adminSaveAdmins', ['b1', ALICE.email, true], BOB).result.admins, [ALICE.email]);
 });
 
 test('lockout guard: removing yourself needs confirm; super-admin needs none; blank list unclaims', () => {
