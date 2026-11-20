@@ -251,6 +251,18 @@
   .topic-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
   .handle { font-size: 1.1rem; color: var(--text-secondary); padding: 10px 4px; min-height: 44px; display: flex; align-items: center; }
   #topicList .handle { cursor: grab; touch-action: none; }
+  .rich { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .rich a { overflow-wrap: anywhere; }
+  /* Details preview (Show-Details-Preview on): bold name over a muted first-paragraph line clamped to 2 lines. */
+  #topicList .topic-text.with-preview { white-space: normal; min-width: 0; }
+  #topicList .topic-text.with-preview .topic-name { display: block; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #topicList .topic-text .topic-preview { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--text-secondary); font-size: 0.85em; font-weight: normal; overflow-wrap: anywhere; }
+  #topicList .topic-text.expanded .topic-preview { display: none; }
+  .details-first { color: var(--text-body); }
+  .details-rest { color: var(--text-muted); }
+  .feedback-block { margin: 16px 0; }
+  .feedback-block label { display: block; margin-bottom: 4px; }
+  .feedback-block textarea { margin-top: 0; }
   .topic-text { min-width: 0; overflow-wrap: break-word; font-weight: bold; }
   #topicList .topic-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: normal; }
   .topic-text.has-details { cursor: pointer; }
@@ -331,11 +343,11 @@
       <div class="field-block">
         <span class="field-name-tag">Description</span>
         <div class="field-row">
-          <p class="sub" id="descriptionDisplay"></p>
+          <p class="sub rich" id="descriptionDisplay"></p>
           <button type="button" class="pencil-btn" id="descriptionEditBtn" aria-label="Edit Description">✏️</button>
         </div>
         <div class="field-panel hidden" id="descriptionPanel">
-          <p class="field-help">Shown on the landing page, before a respondent enters their name. Include any "how to start" guidance here too — there's no separate fixed instruction text below it anymore.</p>
+          <p class="field-help">Shown on the landing page, before a respondent enters their name. Include any "how to start" guidance here too — there's no separate fixed instruction text below it anymore. Line breaks are kept and bare http(s):// links become clickable.</p>
           <label for="descriptionInput">Description</label>
           <textarea id="descriptionInput" rows="3"></textarea>
           <div class="field-panel-actions">
@@ -357,11 +369,11 @@
       <div class="field-block">
         <span class="field-name-tag">Ballot Instructions</span>
         <div class="field-row">
-          <p class="sub" id="instructionsDisplay"></p>
+          <p class="sub rich" id="instructionsDisplay"></p>
           <button type="button" class="pencil-btn" id="instructionsEditBtn" aria-label="Edit Ballot Instructions">✏️</button>
         </div>
         <div class="field-panel hidden" id="instructionsPanel">
-          <p class="field-help">Shown above the ranking list on the ballot page — replaces the landing description above once a respondent starts ranking. Include the drag/reorder guidance here too — there's no separate fixed instruction text below it anymore.</p>
+          <p class="field-help">Shown above the ranking list on the ballot page — replaces the landing description above once a respondent starts ranking. Include the drag/reorder guidance here too — there's no separate fixed instruction text below it anymore. Line breaks are kept and bare http(s):// links become clickable.</p>
           <label for="instructionsInput">Ballot Instructions</label>
           <textarea id="instructionsInput" rows="3"></textarea>
           <div class="field-panel-actions">
@@ -374,6 +386,24 @@
 
       <p id="layoutError" class="field-status error hidden" role="alert"></p>
       <p class="subsection-header">Candidates</p>
+
+      <div class="field-block">
+        <span class="field-name-tag">Details Preview</span>
+        <div class="field-row">
+          <p id="detailsPreviewDisplay"></p>
+          <button type="button" class="pencil-btn" id="detailsPreviewEditBtn" aria-label="Edit Details Preview setting">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="detailsPreviewPanel">
+          <p class="field-help">When on, each ballot item that has Details shows its name in bold with the FIRST PARAGRAPH of its Details (the text before the first blank line) as a short muted summary underneath, cut to two lines. Tapping the item expands the full Details, including every later paragraph and the link. When off, only the name shows until a respondent taps it. Write each candidate's Details with this in mind: first paragraph = the summary shown under the name; later paragraphs (after a blank line) appear only when the item is expanded.</p>
+          <label><input type="checkbox" id="detailsPreviewInput"> Show the first paragraph of Details under each item name</label>
+          <div class="field-panel-actions">
+            <button type="button" id="detailsPreviewSaveBtn">Save</button>
+            <button type="button" class="secondary" id="detailsPreviewCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="detailsPreviewStatus"></div>
+        </div>
+      </div>
+
       <ul id="candidateList"></ul>
       <div class="field-status" id="candidateListStatus"></div>
       <div id="orphanBlock" class="hidden">
@@ -390,7 +420,8 @@
           <label for="newCandidateNameInput">Name</label>
           <input type="text" id="newCandidateNameInput">
           <label for="newCandidateDetailsInput">Details (optional)</label>
-          <textarea id="newCandidateDetailsInput" rows="2"></textarea>
+          <textarea id="newCandidateDetailsInput" rows="4" placeholder="First paragraph = summary shown under the name when Details Preview is on. Leave a blank line, then add longer text that appears only when the item is expanded."></textarea>
+          <p class="field-help">Candidate Details: the first paragraph (text before the first blank line) is the summary shown under the name when Details Preview is on; later paragraphs (after a blank line) appear only when the item is expanded. Line breaks are kept and bare http(s):// links become clickable.</p>
           <label for="newCandidateLinkTextInput">Link Text (optional)</label>
           <input type="text" id="newCandidateLinkTextInput">
           <label for="newCandidateLinkUrlInput">Link URL (optional)</label>
@@ -403,11 +434,6 @@
         </div>
       </div>
 
-      <div class="fixed-block">
-        <button type="button" disabled>Submit</button>
-        <button type="button" class="secondary" disabled style="margin-top:8px;">Back</button>
-      </div>
-
       <p class="subsection-header">Add New Candidates <span class="optional-tag">(only shown to respondents when enabled)</span></p>
 
       <div class="field-block">
@@ -415,9 +441,9 @@
           <p class="sub" id="addSettingsDisplay"></p>
           <button type="button" class="pencil-btn" id="addSettingsEditBtn" aria-label="Edit Adding New Candidates settings">✏️</button>
         </div>
-        <p class="sub" id="addInstructionsDisplay"></p>
+        <p class="sub rich" id="addInstructionsDisplay"></p>
         <div class="field-panel hidden" id="addSettingsPanel">
-          <p class="field-help">Controls whether respondents can add their own candidate from the ballot page, and what instructions they see above the "+ Add New" button.</p>
+          <p class="field-help">Controls whether respondents can add their own candidate from the ballot page, and what instructions they see above the "+ Add New" button. Line breaks are kept and bare http(s):// links become clickable.</p>
           <label><input type="checkbox" id="acceptNewInput"> Accept new candidates from respondents</label>
           <label for="addInstructionsInput">Instructions to Add</label>
           <textarea id="addInstructionsInput" rows="2"></textarea>
@@ -435,22 +461,43 @@
 
       <p class="subsection-header">Feedback</p>
 
+      <div class="field-block">
+        <span class="field-name-tag">Feedback Prompt</span>
+        <div class="field-row">
+          <p class="rich" id="feedbackPromptDisplay"></p>
+          <button type="button" class="pencil-btn" id="feedbackPromptEditBtn" aria-label="Edit Feedback Prompt">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="feedbackPromptPanel">
+          <p class="field-help">The question shown above the always-visible feedback box on the ballot page, just above Submit. Leave it blank to use the default, "Any feedback you'd like to add?".</p>
+          <label for="feedbackPromptInput">Feedback Prompt</label>
+          <textarea id="feedbackPromptInput" rows="2"></textarea>
+          <div class="field-panel-actions">
+            <button type="button" id="feedbackPromptSaveBtn">Save</button>
+            <button type="button" class="secondary" id="feedbackPromptCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="feedbackPromptStatus"></div>
+        </div>
+      </div>
+
       <div class="fixed-block">
-        <button type="button" disabled>+ Add Feedback</button>
-        <label for="staticFeedbackInput" style="margin-top:10px;">Feedback (optional)</label>
-        <textarea id="staticFeedbackInput" rows="3" disabled placeholder="Any feedback you'd like to add?"></textarea>
+        <textarea id="staticFeedbackInput" rows="3" disabled></textarea>
+      </div>
+
+      <div class="fixed-block">
+        <button type="button" disabled>Submit</button>
+        <button type="button" class="secondary" disabled style="margin-top:8px;">Back</button>
       </div>
 
       <div class="field-block">
         <span class="field-name-tag">Footer</span>
         <div class="field-row">
-          <p id="footerDisplay"></p>
+          <p class="rich" id="footerDisplay"></p>
           <button type="button" class="pencil-btn" id="footerEditBtn" aria-label="Edit Footer">✏️</button>
         </div>
         <div class="field-panel hidden" id="footerPanel">
-          <p class="field-help">Shown at the bottom of the ballot page.</p>
+          <p class="field-help">Shown at the bottom of the ballot page. Line breaks are kept and bare http(s):// links become clickable.</p>
           <label for="footerInput">Footer</label>
-          <input type="text" id="footerInput">
+          <textarea id="footerInput" rows="2"></textarea>
           <div class="field-panel-actions">
             <button type="button" id="footerSaveBtn">Save</button>
             <button type="button" class="secondary" id="footerCancelBtn">Cancel</button>
@@ -462,13 +509,13 @@
       <div class="field-block">
         <span class="field-name-tag">Contact</span>
         <div class="field-row">
-          <p id="contactDisplay"></p>
+          <p class="rich" id="contactDisplay"></p>
           <button type="button" class="pencil-btn" id="contactEditBtn" aria-label="Edit Contact">✏️</button>
         </div>
         <div class="field-panel hidden" id="contactPanel">
-          <p class="field-help">Shown at the bottom of the ballot page, below the footer, as "Contact: ...".</p>
+          <p class="field-help">Shown at the bottom of the ballot page, below the footer, as "Contact: ...". Line breaks are kept and bare http(s):// links become clickable.</p>
           <label for="contactInput">Contact</label>
-          <input type="text" id="contactInput">
+          <textarea id="contactInput" rows="2"></textarea>
           <div class="field-panel-actions">
             <button type="button" id="contactSaveBtn">Save</button>
             <button type="button" class="secondary" id="contactCancelBtn">Cancel</button>
@@ -511,7 +558,7 @@
   <!-- ============================= BALLOT VIEW ============================= -->
   <div id="view-ballot" class="hidden">
     <h1 id="pageTitle">RankChoiceVoting Ballot</h1>
-    <p class="sub" id="pageDescription"></p>
+    <p class="sub rich" id="pageDescription"></p>
 
     <div id="step-noBallot" class="hidden">
       <p>No ballot is currently available at this link. If you were given a link with a ballot name in it (e.g. <code>?cmd=ballot&amp;id=my-ballot</code>), double check it's correct.</p>
@@ -535,11 +582,8 @@
            BallotModel.js's createBallotSheet_ default. -->
       <ul id="topicList"></ul>
 
-      <button id="submitBtn">Submit</button>
-      <button id="backBtn" class="secondary">Back</button>
-
       <div id="addSection">
-        <p class="sub" id="addInstructionsText"></p>
+        <p class="sub rich" id="addInstructionsText"></p>
         <button id="addNewBtn" type="button" class="secondary">+ Add New</button>
         <div id="addPanel" class="add-panel hidden">
           <label for="newItemInput">Name</label>
@@ -553,13 +597,13 @@
         </div>
       </div>
 
-      <div id="feedbackSection">
-        <button id="feedbackToggleBtn" type="button" class="secondary">+ Add Feedback</button>
-        <div id="feedbackPanel" class="add-panel hidden">
-          <label for="commentInput">Feedback (optional)</label>
-          <textarea id="commentInput" rows="4" placeholder="Any feedback you'd like to add?"></textarea>
-        </div>
+      <div id="feedbackSection" class="feedback-block">
+        <label for="commentInput" id="feedbackPromptLabel">Any feedback you'd like to add?</label>
+        <textarea id="commentInput" rows="4"></textarea>
       </div>
+
+      <button id="submitBtn">Submit</button>
+      <button id="backBtn" class="secondary">Back</button>
 
       <div id="status2"></div>
     </div>
@@ -569,8 +613,8 @@
       <button id="editAgainBtn" class="secondary">Re-rank</button>
     </div>
 
-    <footer class="ballot-footer" id="pageFooter"></footer>
-    <p class="ballot-contact" id="pageContact"></p>
+    <footer class="ballot-footer rich" id="pageFooter"></footer>
+    <p class="ballot-contact rich" id="pageContact"></p>
   </div>
 
   <footer class="app-version-footer" id="appVersionFooter"></footer>
@@ -662,6 +706,64 @@
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
   }
+
+  // <rich-text-helpers> — unit-tested by test/test_rich_text.js (extracted between these markers).
+  // Admin-entered copy keeps its line breaks (CSS white-space: pre-wrap on .rich) and bare
+  // http(s) URLs become links. Output is built from DOM nodes (text nodes + <a>) and never
+  // assigned through innerHTML, so admin text cannot inject markup.
+  var RICH_URL_RE_ = /https?:\/\/[^\s<>"']+/gi;
+
+  /** Splits text into [{type:'text'|'link', value}] — links are bare http(s) URLs minus trailing punctuation. */
+  function parseRichText_(text) {
+    var src = String(text == null ? '' : text).replace(/\r\n?/g, '\n');
+    var out = [];
+    var last = 0;
+    var m;
+    RICH_URL_RE_.lastIndex = 0;
+    while ((m = RICH_URL_RE_.exec(src)) !== null) {
+      var url = m[0];
+      var trail = url.match(/[.,;:!?)\]}]+$/);
+      if (trail) url = url.slice(0, url.length - trail[0].length);
+      if (!/^https?:\/\/[^\s]+/i.test(url)) continue;
+      if (m.index > last) out.push({ type: 'text', value: src.slice(last, m.index) });
+      out.push({ type: 'link', value: url });
+      last = m.index + url.length;
+      RICH_URL_RE_.lastIndex = last;
+    }
+    if (last < src.length) out.push({ type: 'text', value: src.slice(last) });
+    return out;
+  }
+
+  /** Replaces el's content with text (line breaks via CSS pre-wrap) plus clickable bare URLs. */
+  function setRich_(el, text) {
+    el.textContent = '';
+    parseRichText_(text).forEach(function (seg) {
+      if (seg.type === 'link') {
+        var a = document.createElement('a');
+        a.href = seg.value;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = seg.value;
+        el.appendChild(a);
+      } else {
+        el.appendChild(document.createTextNode(seg.value));
+      }
+    });
+  }
+
+  /** Text before the first blank line (a line holding only whitespace), trimmed; '' for none. */
+  function firstParagraph_(text) {
+    var src = String(text == null ? '' : text).replace(/\r\n?/g, '\n').replace(/^\s*\n/, '');
+    return src.split(/\n[ \t]*\n/)[0].trim();
+  }
+
+  /** Everything after the first paragraph (blank lines trimmed); '' when there is only one paragraph. */
+  function remainingParagraphs_(text) {
+    var src = String(text == null ? '' : text).replace(/\r\n?/g, '\n').replace(/^\s*\n/, '');
+    var i = src.search(/\n[ \t]*\n/);
+    return i === -1 ? '' : src.slice(i).trim();
+  }
+  // </rich-text-helpers>
 
   function setAppVersionFooter_(appVersion, appDeployTarget) {
     var el = document.getElementById('appVersionFooter');
@@ -777,7 +879,7 @@
       });
     });
 
-    function wireSimpleField(key, rpcName) {
+    function wireSimpleField(key, rpcName, renderDisplay) {
       var display = document.getElementById(key + 'Display');
       var editBtn = document.getElementById(key + 'EditBtn');
       var panel = document.getElementById(key + 'Panel');
@@ -802,7 +904,7 @@
         callApi_(rpcName, ballotId, value).then(function () {
           saveBtn.disabled = false;
           fieldData[key] = value;
-          display.textContent = value;
+          if (renderDisplay) renderDisplay(display, value); else display.textContent = value;
           panel.classList.add('hidden');
           setStatus(status, '', false);
         }, function (err) {
@@ -862,6 +964,26 @@
       candidates.forEach(function (candidate, i) {
         candidateList.appendChild(buildCandidateItem(candidate, i));
       });
+    }
+
+    // Admin candidate rows show the first paragraph (the Details Preview summary) in normal text
+    // and any later paragraphs muted, so the convention is visible on the list itself.
+    function renderCandidateDetails_(el, detailsText) {
+      el.textContent = '';
+      if (!detailsText) { el.textContent = 'No details yet.'; return; }
+      var first = document.createElement('span');
+      first.className = 'details-first';
+      first.title = 'First paragraph — the summary shown under the name when Details Preview is on';
+      first.textContent = firstParagraph_(detailsText);
+      el.appendChild(first);
+      var rest = remainingParagraphs_(detailsText);
+      if (rest) {
+        var r = document.createElement('span');
+        r.className = 'details-rest';
+        r.title = 'Later paragraphs — shown only when the item is expanded';
+        r.textContent = '\n\n' + rest;
+        el.appendChild(r);
+      }
     }
 
     function buildCandidateItem(candidate, index) {
@@ -942,7 +1064,7 @@
       var details = document.createElement('button');
       details.type = 'button';
       details.className = 'topic-info-content' + (candidate.details ? '' : ' empty');
-      details.textContent = candidate.details || 'No details yet.';
+      renderCandidateDetails_(details, candidate.details);
       details.hidden = !candidate.details;
       details.setAttribute('aria-expanded', 'false');
       details.addEventListener('click', function () {
@@ -960,7 +1082,8 @@
       panel.innerHTML =
         '<p class="field-help">What respondents drag-order to rank. Edit this candidate’s name, details, and link below.</p>' +
         '<label>Name</label><input type="text" class="cand-name-input">' +
-        '<label>Details (optional)</label><textarea rows="2" class="cand-details-input"></textarea>' +
+        '<label>Details (optional)</label><textarea rows="4" class="cand-details-input" placeholder="First paragraph = summary shown under the name when Details Preview is on. Leave a blank line, then add longer text that appears only when the item is expanded."></textarea>' +
+        '<p class="field-help">Candidate Details: the first paragraph (text before the first blank line) is the summary shown under the name when Details Preview is on; later paragraphs (after a blank line) appear only when the item is expanded. Line breaks are kept and bare http(s):// links become clickable.</p>' +
         '<label>Link Text (optional)</label><input type="text" class="cand-link-text-input">' +
         '<label>Link URL (optional)</label><input type="url" class="cand-link-url-input" placeholder="https://…">' +
         '<div class="field-panel-actions">' +
@@ -1032,7 +1155,7 @@
           candidate.linkText = result.linkText;
           candidate.linkUrl = result.linkUrl;
           text.textContent = candidate.name;
-          details.textContent = candidate.details || 'No details yet.';
+          renderCandidateDetails_(details, candidate.details);
           details.className = 'topic-info-content' + (candidate.details ? '' : ' empty');
           details.setAttribute('aria-expanded', 'false');
           editBtn.setAttribute('aria-label', 'Edit ' + candidate.name);
@@ -1109,9 +1232,9 @@
       addSettingsDisplay.textContent = fieldData.acceptNew
         ? 'On — respondents can add their own candidate.'
         : 'Off — respondents cannot add candidates.';
-      addInstructionsDisplay.textContent = fieldData.addInstructions
+      setRich_(addInstructionsDisplay, fieldData.addInstructions
         ? 'Instructions shown to respondents: "' + fieldData.addInstructions + '"'
-        : '';
+        : '');
       addInstructionsDisplay.hidden = !fieldData.addInstructions;
       addNewButtonPreview.hidden = !fieldData.acceptNew;
     }
@@ -1144,10 +1267,44 @@
     });
 
     wireSimpleField('title', 'adminSaveTitle');
-    wireSimpleField('description', 'adminSaveDescription');
-    wireSimpleField('instructions', 'adminSaveInstructions');
-    wireSimpleField('footer', 'adminSaveFooter');
-    wireSimpleField('contact', 'adminSaveContact');
+    wireSimpleField('description', 'adminSaveDescription', setRich_);
+    wireSimpleField('instructions', 'adminSaveInstructions', setRich_);
+    wireSimpleField('footer', 'adminSaveFooter', setRich_);
+    wireSimpleField('contact', 'adminSaveContact', setRich_);
+    wireSimpleField('feedbackPrompt', 'adminSaveFeedbackPrompt', function (el, v) { setRich_(el, v || fieldData.defaultFeedbackPrompt || ''); });
+
+    // Details Preview toggle (Show-Details-Preview): same pencil/panel pattern as the other fields.
+    var detailsPreviewDisplay = document.getElementById('detailsPreviewDisplay');
+    var detailsPreviewPanel = document.getElementById('detailsPreviewPanel');
+    var detailsPreviewInput = document.getElementById('detailsPreviewInput');
+    var detailsPreviewSaveBtn = document.getElementById('detailsPreviewSaveBtn');
+    var detailsPreviewStatus = document.getElementById('detailsPreviewStatus');
+    function renderDetailsPreviewDisplay() {
+      detailsPreviewDisplay.textContent = fieldData.showDetailsPreview
+        ? 'On — the first paragraph of each item\u2019s Details shows under its name.'
+        : 'Off — item names only; Details appear when an item is expanded.';
+    }
+    document.getElementById('detailsPreviewEditBtn').addEventListener('click', function () {
+      detailsPreviewInput.checked = !!fieldData.showDetailsPreview;
+      setStatus(detailsPreviewStatus, '', false);
+      detailsPreviewPanel.classList.remove('hidden');
+    });
+    document.getElementById('detailsPreviewCancelBtn').addEventListener('click', function () { detailsPreviewPanel.classList.add('hidden'); });
+    detailsPreviewSaveBtn.addEventListener('click', function () {
+      var on = detailsPreviewInput.checked;
+      detailsPreviewSaveBtn.disabled = true;
+      setStatus(detailsPreviewStatus, 'Saving…', false);
+      callApi_('adminSaveShowDetailsPreview', ballotId, on).then(function () {
+        detailsPreviewSaveBtn.disabled = false;
+        fieldData.showDetailsPreview = on;
+        renderDetailsPreviewDisplay();
+        detailsPreviewPanel.classList.add('hidden');
+        setStatus(detailsPreviewStatus, '', false);
+      }, function (err) {
+        detailsPreviewSaveBtn.disabled = false;
+        setStatus(detailsPreviewStatus, 'Could not save: ' + err.message, true);
+      });
+    });
     wireSimpleField('adminOnlyNotes', 'adminSaveAdminOnlyNotes');
 
     window.initEditView_ = function (id, justCreated) {
@@ -1160,10 +1317,12 @@
         }
         fieldData = data;
         titleDisplay.textContent = data.title;
-        descriptionDisplay.textContent = data.description;
-        instructionsDisplay.textContent = data.instructions;
-        footerDisplay.textContent = data.footer;
-        contactDisplay.textContent = data.contact;
+        setRich_(descriptionDisplay, data.description);
+        setRich_(instructionsDisplay, data.instructions);
+        setRich_(footerDisplay, data.footer);
+        setRich_(contactDisplay, data.contact);
+        setRich_(document.getElementById('feedbackPromptDisplay'), data.feedbackPrompt || data.defaultFeedbackPrompt);
+        renderDetailsPreviewDisplay();
         adminOnlyNotesDisplay.textContent = data.adminOnlyNotes;
         renderAddSettingsDisplay();
         renderCandidates(data.candidates);
@@ -1296,6 +1455,7 @@
     var currentName = '';
     var acceptNew = true;
     var itemDetailsByName = {};
+    var showDetailsPreview = false;
     var ballotDescription = '';
     var ballotInstructions = '';
     var _BALLOT_NAME_STORAGE_KEY_PREFIX = 'rcvBallotName:';
@@ -1326,8 +1486,7 @@
     var addPanel = document.getElementById('addPanel');
     var newItemInput = document.getElementById('newItemInput');
     var newItemDetailsInput = document.getElementById('newItemDetailsInput');
-    var feedbackToggleBtn = document.getElementById('feedbackToggleBtn');
-    var feedbackPanel = document.getElementById('feedbackPanel');
+    var feedbackPromptLabel = document.getElementById('feedbackPromptLabel');
     var commentInput = document.getElementById('commentInput');
     var addBtn = document.getElementById('addBtn');
     var addCancelBtn = document.getElementById('addCancelBtn');
@@ -1339,7 +1498,7 @@
     function showStep(el) {
       [stepNoBallot, stepName, stepRank, stepDone].forEach(function (s) { s.classList.add('hidden'); });
       el.classList.remove('hidden');
-      pageDescription.textContent = (el === stepRank) ? ballotInstructions : ballotDescription;
+      setRich_(pageDescription, (el === stepRank) ? ballotInstructions : ballotDescription);
     }
 
     function setStatus(el, msg, isError) {
@@ -1365,7 +1524,21 @@
 
       var text = document.createElement('span');
       text.className = 'topic-text';
-      text.textContent = topic;
+      var detailsInfo = itemDetailsByName[topic];
+      var previewText = showDetailsPreview && detailsInfo ? firstParagraph_(detailsInfo.details) : '';
+      if (previewText) {
+        text.classList.add('with-preview');
+        var nameEl = document.createElement('span');
+        nameEl.className = 'topic-name';
+        nameEl.textContent = topic;
+        var previewEl = document.createElement('span');
+        previewEl.className = 'topic-preview';
+        previewEl.textContent = previewText;
+        text.appendChild(nameEl);
+        text.appendChild(previewEl);
+      } else {
+        text.textContent = topic;
+      }
 
       row.appendChild(handle);
       row.appendChild(text);
@@ -1376,7 +1549,7 @@
 
         var infoContent = document.createElement('div');
         infoContent.className = 'topic-info-content';
-        if (info.details) infoContent.appendChild(document.createTextNode(info.details));
+        if (info.details) { var detailsBody = document.createElement('div'); detailsBody.className = 'rich'; setRich_(detailsBody, info.details); infoContent.appendChild(detailsBody); }
         infoContent.hidden = true;
 
         if (info.linkUrl) {
@@ -1398,6 +1571,7 @@
 
         var toggleInfo = function () {
           infoContent.hidden = !infoContent.hidden;
+          text.classList.toggle('expanded', !infoContent.hidden);
           infoBtn.setAttribute('aria-expanded', String(!infoContent.hidden));
         };
         infoBtn.addEventListener('click', toggleInfo);
@@ -1471,13 +1645,15 @@
       document.title = config.title || 'RankChoiceVoting Ballot';
       ballotDescription = config.description || '';
       ballotInstructions = config.instructions || '';
-      pageFooter.textContent = config.footer || '';
-      pageContact.textContent = config.contact ? 'Contact: ' + config.contact : '';
+      setRich_(pageFooter, config.footer || '');
+      setRich_(pageContact, config.contact ? 'Contact: ' + config.contact : '');
+      feedbackPromptLabel.textContent = config.feedbackPrompt || "Any feedback you'd like to add?";
+      showDetailsPreview = !!config.showDetailsPreview;
       setAppVersionFooter_(config.appVersion, config.appDeployTarget);
       itemDetailsByName = config.itemDetails || {};
       acceptNew = !!config.acceptNew;
       addSection.style.display = acceptNew ? 'block' : 'none';
-      addInstructionsText.textContent = config.addInstructions || '';
+      setRich_(addInstructionsText, config.addInstructions || '');
       addInstructionsText.style.display = config.addInstructions ? 'block' : 'none';
     }
 
@@ -1492,7 +1668,6 @@
         saveName(name);
         renderTopics(result.candidates);
         commentInput.value = result.comment || '';
-        if (commentInput.value) openFeedbackPanel(); else closeFeedbackPanel();
         showStep(stepRank);
       }, function (err) {
         startBtn.disabled = false;
@@ -1510,16 +1685,6 @@
     });
 
     nameInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') startBtn.click(); });
-
-    function openFeedbackPanel() {
-      feedbackPanel.classList.remove('hidden');
-      feedbackToggleBtn.hidden = true;
-    }
-    function closeFeedbackPanel() {
-      feedbackPanel.classList.add('hidden');
-      feedbackToggleBtn.hidden = false;
-    }
-    feedbackToggleBtn.addEventListener('click', openFeedbackPanel);
 
     function openAddPanel() {
       addPanel.classList.remove('hidden');
@@ -1540,7 +1705,7 @@
       addBtn.disabled = true;
       callApi_('addBallotTopic', ballotId, phrase, details).then(function (result) {
         addBtn.disabled = false;
-        if (details) itemDetailsByName[result.candidate] = details;
+        if (details) itemDetailsByName[result.candidate] = { details: details, linkText: '', linkUrl: '' };
         topicList.insertBefore(buildItem(result.candidate), topicList.firstChild);
         closeAddPanel();
       }, function (err) {
