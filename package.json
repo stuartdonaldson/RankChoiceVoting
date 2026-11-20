@@ -1,7 +1,7 @@
 {
   "name": "rankchoicevoting",
-  "version": "0.1.17",
-  "build": 1,
+  "version": "0.1.18",
+  "build": 0,
   "private": true,
   "packageManager": "pnpm@11.15.1",
   "scripts": {
