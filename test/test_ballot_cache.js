@@ -222,9 +222,9 @@ function testOnEditRefreshesCacheAfterManualSheetEdit() {
   const sheet = app.findBallotSheet_(ss, 'ManualEdit');
   app.getCachedBallotData_('ManualEdit', sheet); // warm the cache
 
-  // Simulate a human typing directly into the Title cell (row 2, col 3) in Sheets —
+  // Simulate a human typing directly into the Title cell (row 5, col 3 (below [Info] and the [Config] marker)) in Sheets —
   // bypasses every RPC, so only onEdit(e) can pick this up.
-  const range = sheet.getRange(2, 3);
+  const range = sheet.getRange(5, 3);
   range.setValue('Hand-Edited Title');
 
   app.onEdit({ range: range });
@@ -243,7 +243,7 @@ function testAdminEditLoadRefreshesStaleCache() {
   app.getCachedBallotData_('CopiedIn', sheet); // warm the cache with the placeholder content
 
   // Change the sheet with no onEdit call — the copy-and-rename path.
-  sheet.getRange(2, 3).setValue('Copied-In Title');
+  sheet.getRange(5, 3).setValue('Copied-In Title');
   assert.notEqual(app.getBallotConfig('CopiedIn').title, 'Copied-In Title'); // stale before
 
   app.getAdminEditData('CopiedIn');
@@ -424,14 +424,14 @@ function testOnEditNeverWrites() {
 function testAdminEditLoadRepairsMissingResponses() {
   const { app, ss } = loadApp();
   const sheet = app.createNewBallot_(ss, 'NoResp');
-  sheet.deleteRows(17, 2); // [Responses] marker + header lost
-  sheet.getRange(17, 2, 2, 2).setValues([['Alice', 'a'], ['Bob', 'b']]); // hand-pasted candidates
+  sheet.deleteRows(20, 2); // [Responses] marker + header lost
+  sheet.getRange(20, 2, 2, 2).setValues([['Alice', 'a'], ['Bob', 'b']]); // hand-pasted candidates
 
   assert.deepEqual(app.getCachedBallotData_('NoResp').candidates.length, 0); // reads: nothing, and no repair
-  assert.equal(app.findBallotSheet_(ss, 'NoResp').getRange(19, 1).getValue(), '');
+  assert.equal(app.findBallotSheet_(ss, 'NoResp').getRange(22, 1).getValue(), '');
 
   const edit = app.getAdminEditData('NoResp');
-  assert.equal(sheet.getRange(19, 1).getValue(), '[Responses]');
+  assert.equal(sheet.getRange(22, 1).getValue(), '[Responses]');
   assert.deepEqual(edit.candidates.map(function (c) { return c.name; }), ['Alice', 'Bob']);
   assert.equal(logLines(app, 'ballot.repair.responsesSection').length, 1);
   assert.equal(logLines(app, 'ballot.repair.rankColumns').length, 1);

@@ -16,6 +16,15 @@ function cellKey_(row, col) {
   return row + '_' + col;
 }
 
+/** Displayed value of =HYPERLINK("url","text"): the text, else the url. Other formulas are not modelled. */
+function evalHyperlink_(f) {
+  const args = [];
+  const re = /"((?:[^"]|"")*)"/g;
+  let m;
+  while ((m = re.exec(f)) !== null) args.push(m[1].replace(/""/g, '"'));
+  return args.length > 1 ? args[1] : (args[0] || '');
+}
+
 class FakeRange {
   constructor(sheet, row, col, numRows, numCols) {
     this.sheet = sheet;
@@ -31,6 +40,26 @@ class FakeRange {
 
   getValue() {
     return this.sheet._getCell(this.row, this.col);
+  }
+
+  /** Stores a formula (like Range.setFormula); only =HYPERLINK(url[, text]) is evaluated, to its text. */
+  setFormula(formula) {
+    this.sheet._writeCalls += 1;
+    this.sheet._setCell(this.row, this.col, String(formula));
+    return this;
+  }
+
+  getFormulas() {
+    const out = [];
+    for (let r = 0; r < this.numRows; r++) {
+      const rowOut = [];
+      for (let c = 0; c < this.numCols; c++) {
+        const raw = this.sheet._cells.get(cellKey_(this.row + r, this.col + c));
+        rowOut.push(typeof raw === 'string' && raw.charAt(0) === '=' ? raw : '');
+      }
+      out.push(rowOut);
+    }
+    return out;
   }
 
   setValue(value) {
@@ -93,6 +122,7 @@ class FakeSheet {
 
   _getCell(row, col) {
     const v = this._cells.get(cellKey_(row, col));
+    if (typeof v === 'string' && v.indexOf('=HYPERLINK(') === 0) return evalHyperlink_(v);
     return v === undefined ? '' : v;
   }
 

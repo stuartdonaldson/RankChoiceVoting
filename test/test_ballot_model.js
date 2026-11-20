@@ -17,9 +17,13 @@ const { prodAbc2026_7Rows, sitAbc2026_08Rows, writeGrid } = require('./ballotFix
  * itself guards against with its own `typeof module !== 'undefined'` check) since a second
  * `module.exports = {...}` at file scope would otherwise clobber the first file's exports.
  */
-function loadBallotModel() {
+function loadBallotModel(opts) {
   const ss = createFakeSpreadsheet();
   const sandbox = Object.assign({ module: { exports: {} } }, createFakeGasGlobals(ss));
+  // _staticPagesBaseUrl_ lives in ApiBridge.js (same global namespace in GAS). Tests give it a
+  // base only on request (opts.base); with none, [Info] creation writes a note and repair skips it.
+  sandbox.__staticBase = (opts && opts.base) || '';
+  sandbox._staticPagesBaseUrl_ = () => sandbox.__staticBase;
   vm.createContext(sandbox);
 
   const cacheSrc = fs.readFileSync(path.join(__dirname, '..', 'script', 'BallotCache.js'), 'utf8');
@@ -54,18 +58,19 @@ function testCreateNewBallotCreatesSkeleton() {
   assert.equal(config['Description-Link-Text'], '');
   assert.equal(config['Description-Link-URL'], '');
 
-  // Results marker at row 14, Candidates marker/header at 15/16, Responses marker at row
-  // 17, Responses header at row 18. Markers are bracket-decorated ("[Results]", not
-  // "Results") so a ballot candidate literally named "Results"/"Candidates"/"Responses"
-  // can never be mistaken for the real marker; the Candidates header (row 12) starts
-  // at col B (col A stays blank/reserved) so candidate data is never in the
-  // marker-scanned column.
-  assert.equal(sheet.getRange(14, 1).getValue(), '[Results]');
-  assert.equal(sheet.getRange(15, 1).getValue(), '[Candidates]');
-  assert.equal(sheet.getRange(16, 1).getValue(), ''); // col A reserved, always blank here
-  assert.deepEqual(sheet.getRange(16, 2, 1, 2).getValues()[0], ['Name', 'Details']);
-  assert.equal(sheet.getRange(17, 1).getValue(), '[Responses]');
-  assert.deepEqual(sheet.getRange(18, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
+  // [Info] rows 1-3 sit above [Config] (row 4, keys 5-16). Results marker at row 17,
+  // Candidates marker/header at 18/19, Responses marker at row 20, Responses header at row 21.
+  // Markers are bracket-decorated ("[Results]", not "Results") so a ballot candidate literally
+  // named "Results"/"Candidates"/"Responses" can never be mistaken for the real marker; the
+  // Candidates header starts at col B (col A stays blank/reserved).
+  assert.equal(sheet.getRange(1, 1).getValue(), '[Info]');
+  assert.equal(sheet.getRange(4, 1).getValue(), '[Config]');
+  assert.equal(sheet.getRange(17, 1).getValue(), '[Results]');
+  assert.equal(sheet.getRange(18, 1).getValue(), '[Candidates]');
+  assert.equal(sheet.getRange(19, 1).getValue(), ''); // col A reserved, always blank here
+  assert.deepEqual(sheet.getRange(19, 2, 1, 2).getValues()[0], ['Name', 'Details']);
+  assert.equal(sheet.getRange(20, 1).getValue(), '[Responses]');
+  assert.deepEqual(sheet.getRange(21, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
   assertSnapshotMatchesOldReaders(SM, sheet, 'testCreateNewBallotCreatesSkeleton');
 }
 
@@ -524,24 +529,24 @@ function findMarkerRow(sheet, marker) {
 function testPlainTextMarkersAreNotMatchedOrRewritten() {
   const { SM, ss } = loadBallotModel();
   const sheet = SM.createNewBallot_(ss, 'PlainText');
-  // Plain-text look-alikes sitting in column A of the Results region (rows 11..) —
+  // Plain-text look-alikes sitting in column A of the Results region (rows 14..) —
   // above the real [Candidates]/[Responses] markers, where a top-down scan hits them first.
-  sheet.getRange(14, 1).setValue('[Results]');
+  sheet.getRange(17, 1).setValue('[Results]');
   SM.writeBallotResults_(sheet, [['x'], ['x'], ['x'], ['x']]);
   ['Responses', 'Candidates', 'Items', '[Items]', 'Results'].forEach((text, i) => {
-    sheet.getRange(15 + i, 1).setValue(text);
+    sheet.getRange(18 + i, 1).setValue(text);
   });
-  const before = sheet.getRange(15, 1, 5, 1).getValues().map((r) => r[0]);
+  const before = sheet.getRange(18, 1, 5, 1).getValues().map((r) => r[0]);
 
   SM.writeBallotCandidateDetails_(sheet, [{ name: 'Alice', details: 'a' }]);
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet).map((it) => it.name), ['Alice']);
   assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice']);
-  assert.equal(findMarkerRow(sheet, '[Results]'), 14);
-  assert.equal(findMarkerRow(sheet, '[Candidates]') > 19, true);
+  assert.equal(findMarkerRow(sheet, '[Results]'), 17);
+  assert.equal(findMarkerRow(sheet, '[Candidates]') > 22, true);
   assert.equal(findMarkerRow(sheet, '[Responses]') > findMarkerRow(sheet, '[Candidates]'), true);
-  assert.deepEqual(sheet.getRange(15, 1, 5, 1).getValues().map((r) => r[0]), before); // not rewritten
-  assert.equal(sheet.getRange(15, 1).getValue(), 'Responses');
-  assert.equal(sheet.getRange(16, 1).getValue(), 'Candidates');
+  assert.deepEqual(sheet.getRange(18, 1, 5, 1).getValues().map((r) => r[0]), before); // not rewritten
+  assert.equal(sheet.getRange(18, 1).getValue(), 'Responses');
+  assert.equal(sheet.getRange(19, 1).getValue(), 'Candidates');
 
   // A sheet whose ONLY marker-like cells are plain text has no markers.
   const bare = ss.insertSheet('Ballot-BareOnly');
@@ -560,24 +565,24 @@ function testWriteBallotResultsUsesColumnBAndClearsColumnA() {
   SM.submitBallotResponse_('ResultsColB', 'V', ['Alice'], '');
 
   // Legacy-style output previously written from column A (candidate names included).
-  sheet.getRange(14, 1).setValue('[Results]');
+  sheet.getRange(17, 1).setValue('[Results]');
   SM.writeBallotResults_(sheet, [['placeholder']]);
-  sheet.getRange(15, 1, 1, 2).setValues([['Responses', 'old']]);
+  sheet.getRange(18, 1, 1, 2).setValues([['Responses', 'old']]);
 
   SM.writeBallotResults_(sheet, [['Header', 'Winner'], ['Alice', 3], ['Bob', 1]]);
 
   const candidatesRow = findMarkerRow(sheet, '[Candidates]');
-  assert.equal(candidatesRow, 18); // 3 rows between [Results] (14) and [Candidates]
-  for (let r = 15; r < candidatesRow; r++) {
+  assert.equal(candidatesRow, 21); // 3 rows between [Results] (17) and [Candidates]
+  for (let r = 18; r < candidatesRow; r++) {
     assert.equal(sheet.getRange(r, 1).getValue(), '', 'col A row ' + r + ' must be blank');
   }
-  assert.deepEqual(sheet.getRange(15, 2, 3, 2).getValues(), [['Header', 'Winner'], ['Alice', 3], ['Bob', 1]]);
+  assert.deepEqual(sheet.getRange(18, 2, 3, 2).getValues(), [['Header', 'Winner'], ['Alice', 3], ['Bob', 1]]);
 
   // Shrinking the output leaves no stale text in any column of the region.
   SM.writeBallotResults_(sheet, [['only']]);
   const newCandidatesRow = findMarkerRow(sheet, '[Candidates]');
-  assert.equal(newCandidatesRow, 16);
-  assert.deepEqual(sheet.getRange(15, 1, 1, 3).getValues()[0], ['', 'only', '']);
+  assert.equal(newCandidatesRow, 19);
+  assert.deepEqual(sheet.getRange(18, 1, 1, 3).getValues()[0], ['', 'only', '']);
 }
 
 /** A region already holding column-A text (old output) is fully cleared on rewrite. */
@@ -585,10 +590,10 @@ function testWriteBallotResultsClearsPreexistingColumnAText() {
   const { SM, ss } = loadBallotModel();
   const sheet = SM.createNewBallot_(ss, 'ResultsClear');
   SM.writeBallotResults_(sheet, [['a'], ['b'], ['c']]);
-  sheet.getRange(15, 1, 3, 3).setValues([['Alice', 'x', 'y'], ['Bob', 'x', 'y'], ['Carol', 'x', 'y']]);
+  sheet.getRange(18, 1, 3, 3).setValues([['Alice', 'x', 'y'], ['Bob', 'x', 'y'], ['Carol', 'x', 'y']]);
 
   SM.writeBallotResults_(sheet, [['n1'], ['n2'], ['n3']]);
-  assert.deepEqual(sheet.getRange(15, 1, 3, 3).getValues(), [['', 'n1', ''], ['', 'n2', ''], ['', 'n3', '']]);
+  assert.deepEqual(sheet.getRange(18, 1, 3, 3).getValues(), [['', 'n1', ''], ['', 'n2', ''], ['', 'n3', '']]);
 }
 
 /** Candidate names equal to any marker text (bracketed or not, any case/padding) are rejected. */
@@ -733,8 +738,8 @@ function logLinesWith(sandbox, tag) {
  */
 function createBallotWithoutResponsesSection(SM, ss, id) {
   const sheet = SM.createNewBallot_(ss, id);
-  sheet.deleteRows(17, 2); // rows 17/18: [Responses] marker + header
-  assert.equal(sheet.getLastRow(), 16);
+  sheet.deleteRows(20, 2); // rows 20/21: [Responses] marker + header
+  assert.equal(sheet.getLastRow(), 19);
   return sheet;
 }
 
@@ -746,15 +751,15 @@ function createBallotWithoutResponsesSection(SM, ss, id) {
 function testMissingResponsesSectionSelfHealsAndReturnsCandidates() {
   const { SM, ss, sandbox } = loadBallotModel();
   const sheet = createBallotWithoutResponsesSection(SM, ss, 'NoResponses');
-  sheet.getRange(17, 2, 2, 2).setValues([['Alice', 'first'], ['Bob', 'second']]);
+  sheet.getRange(20, 2, 2, 2).setValues([['Alice', 'first'], ['Bob', 'second']]);
 
   sheet._writeCalls = 0;
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet), []);
   assert.equal(sheet._writeCalls, 0);
   SM._repairBallotSheet_(sheet);
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet).map((it) => it.name), ['Alice', 'Bob']);
-  assert.equal(sheet.getRange(19, 1).getValue(), '[Responses]');
-  assert.deepEqual(sheet.getRange(20, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
+  assert.equal(sheet.getRange(22, 1).getValue(), '[Responses]');
+  assert.deepEqual(sheet.getRange(23, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
   assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice', 'Bob']);
   assert.equal(logLinesWith(sandbox, 'ballot.repair.responsesSection').length, 1);
   assertSnapshotMatchesOldReaders(SM, sheet, 'testMissingResponsesSectionSelfHealsAndReturnsCandidates');
@@ -767,11 +772,11 @@ function testMissingResponsesSectionSelfHealsAndReturnsCandidates() {
 function testMissingResponsesSectionWithColumnAContentIsNotRepaired() {
   const { SM, ss, sandbox } = loadBallotModel();
   const sheet = createBallotWithoutResponsesSection(SM, ss, 'NoResponsesColA');
-  sheet.getRange(17, 1).setValue('Alice');
+  sheet.getRange(20, 1).setValue('Alice');
 
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet), []);
   SM._repairBallotSheet_(sheet); // the repair path refuses to guess
-  assert.equal(sheet.getLastRow(), 17);
+  assert.equal(sheet.getLastRow(), 20);
   assert.equal(logLinesWith(sandbox, 'ballot.parse.responsesMarkerMissing').length > 0, true);
   assertSnapshotMatchesOldReaders(SM, sheet, 'testMissingResponsesSectionWithColumnAContentIsNotRepaired');
 }
@@ -781,12 +786,12 @@ function testCandidateInColumnAIsLoggedAndIgnored() {
   const { SM, ss, sandbox } = loadBallotModel();
   const sheet = SM.createNewBallot_(ss, 'ColA');
   SM.writeBallotCandidateDetails_(sheet, [{ name: 'Alice', details: '' }, { name: 'Bob', details: '' }]);
-  sheet.getRange(18, 1).setValue('Carol'); // beside Bob, in the reserved column
+  sheet.getRange(21, 1).setValue('Carol'); // beside Bob, in the reserved column
 
   assert.deepEqual(SM.readBallotCandidateDetails_(sheet).map((it) => it.name), ['Alice', 'Bob']);
   const lines = logLinesWith(sandbox, 'ballot.parse.candidateInColumnA');
   assert.equal(lines.length > 0, true);
-  assert.equal(lines[0].indexOf('18') !== -1, true);
+  assert.equal(lines[0].indexOf('21') !== -1, true);
   assertSnapshotMatchesOldReaders(SM, sheet, 'testCandidateInColumnAIsLoggedAndIgnored');
 }
 
@@ -910,7 +915,7 @@ function testSelfRepairWritesRunUnderLock() {
   // Lost [Responses] section.
   t = loadBallotModel();
   sheet = t.SM.createNewBallot_(t.ss, 'RepairB');
-  sheet.deleteRows(17, 2);
+  sheet.deleteRows(20, 2);
   log = spyWrites(sheet, t.sandbox.LockService._state);
   t.SM._ensureResponsesSection_(sheet);
   assertAllWritesLocked(log, '_ensureResponsesSection_');
@@ -931,7 +936,7 @@ function testSelfRepairWritesRunUnderLock() {
   // Missing trailing Candidates header columns.
   t = loadBallotModel();
   sheet = t.SM.createNewBallot_(t.ss, 'RepairD');
-  sheet.getRange(16, 4, 1, 2).clearContent();
+  sheet.getRange(19, 4, 1, 2).clearContent();
   log = spyWrites(sheet, t.sandbox.LockService._state);
   t.SM._ensureCandidatesHeaderColumns_(sheet);
   assertAllWritesLocked(log, '_ensureCandidatesHeaderColumns_');
@@ -939,7 +944,7 @@ function testSelfRepairWritesRunUnderLock() {
   // Legacy 'Info' config key rename.
   t = loadBallotModel();
   sheet = t.SM.createNewBallot_(t.ss, 'RepairE');
-  sheet.getRange(9, 2).setValue('Info');
+  sheet.getRange(12, 2).setValue('Info');
   log = spyWrites(sheet, t.sandbox.LockService._state);
   t.SM._repairBallotSheet_(sheet);
   assertAllWritesLocked(log, '_repairBallotSheet_ legacy key');
@@ -1001,7 +1006,7 @@ function testHighlightSectionMarkersUnfreezesStaleFourteenRowFreeze() {
 
   // Header genuinely at row 14: a deliberate freeze, left alone.
   const same = SM.createNewBallot_(ss, 'SameFreeze');
-  same.deleteRows(10, 4); // drop the four newest config rows so the Responses header is back on row 14
+  same.deleteRows(10, 7); // drop seven config rows so the Responses header is back on row 14
   same.setFrozenRows(14);
   SM._highlightSectionMarkers_(same);
   assert.equal(same.getFrozenRows(), 14);
@@ -2550,6 +2555,150 @@ function testBackupSheetNameExcludedFromBallots() {
   assert.equal(SM.findBallotSheet_(ss, name), null);
 }
 
+// ---------------------------------------------------------------------------
+// [Info] section (rcballot-3h6): output-only links above [Config].
+// ---------------------------------------------------------------------------
+
+const INFO_BASE_A = 'https://pages.example/ballot/sit/';
+const INFO_BASE_B = 'https://other.example/pub/ballot/';
+
+function infoLinks(sheet) {
+  return [2, 3].map((r) => [sheet.getRange(r, 2).getValue(), sheet.getRange(r, 3).getValue(), sheet.getRange(r, 3).getFormulas()[0][0]]);
+}
+
+/** New ballot: [Info] first, HYPERLINK formulas built from the stamped base URL, sections shifted down. */
+function testNewBallotStartsWithInfoLinks() {
+  const { SM, ss } = loadBallotModel({ base: INFO_BASE_A });
+  const sheet = SM.createNewBallot_(ss, 'Links-1');
+  assert.equal(sheet.getRange(1, 1).getValue(), '[Info]');
+  const view = INFO_BASE_A + '?cmd=ballot&id=Links-1';
+  const edit = INFO_BASE_A + '?cmd=admin&action=edit&id=Links-1';
+  assert.deepEqual(infoLinks(sheet), [
+    ['View ballot', view, '=HYPERLINK("' + view + '","' + view + '")'],
+    ['Edit ballot', edit, '=HYPERLINK("' + edit + '","' + edit + '")'],
+  ]);
+  assert.equal(sheet.getRange(4, 1).getValue(), '[Config]');
+  // Output-only: not config, not a candidate, not a response.
+  assert.equal(SM.readBallotConfig_(sheet)['View ballot'], undefined);
+  assert.deepEqual(SM.readBallotCandidates_(sheet), []);
+  assert.deepEqual(SM.readBallotResponseRows_(sheet), []);
+  assert.equal(SM._readBallotLayout_(sheet).markers.info, 1);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testNewBallotStartsWithInfoLinks');
+}
+
+/** No stamped base URL: creation writes a note instead of a link and repair leaves the sheet alone. */
+function testInfoWithoutBaseUrlWritesNoteAndRepairIsQuiet() {
+  const { SM, ss } = loadBallotModel();
+  const sheet = SM.createNewBallot_(ss, 'NoBase');
+  assert.equal(sheet.getRange(2, 3).getValue(), '(static pages URL not configured for this deployment)');
+  const bare = ss.insertSheet('Ballot-Bare');
+  bare.getRange(1, 1).setValue('[Config]');
+  bare.getRange(2, 2, 1, 2).setValues([['Title', 'T']]);
+  bare.getRange(3, 1).setValue('[Results]');
+  SM._repairBallotSheet_(sheet);
+  SM._repairBallotSheet_(bare); // repairs other damage (missing sections) but adds no [Info]
+  assert.equal(findMarkerRow(bare, '[Info]'), -1);
+  assert.equal(bare.getRange(1, 1).getValue(), '[Config]');
+  assert.equal(sheet.getRange(2, 3).getValue(), '(static pages URL not configured for this deployment)');
+}
+
+/** An existing sheet without [Info] gets it on the next repair (admin load / write); data is untouched. */
+function testRepairInsertsInfoAtTopOfExistingSheet() {
+  const { SM, ss, sandbox } = loadBallotModel();
+  const sheet = SM.createNewBallot_(ss, 'Old');
+  SM.writeBallotConfig_(sheet, { Title: 'Kept title' });
+  SM.addBallotCandidate_(sheet, 'Alice', 'a');
+  SM.submitBallotResponse_('Old', 'Voter', ['Alice'], 'hi');
+  sheet.deleteRows(1, 3); // make it look like a pre-[Info] sheet
+  assert.equal(sheet.getRange(1, 1).getValue(), '[Config]');
+  const cfgBefore = SM.readBallotConfig_(sheet);
+  const rowsBefore = SM.readBallotResponseRows_(sheet).map((r) => [r.name, r.ranks, r.comment]);
+
+  sandbox.__staticBase = INFO_BASE_A;
+  sheet._writeCalls = 0;
+  SM.readBallotConfig_(sheet);
+  SM.readBallotCandidates_(sheet);
+  assert.equal(sheet._writeCalls, 0, 'reads never repair');
+  assert.equal(sheet.getRange(1, 1).getValue(), '[Config]');
+
+  SM._repairBallotSheet_(sheet);
+  assert.equal(sheet.getRange(1, 1).getValue(), '[Info]');
+  assert.equal(sheet.getRange(2, 3).getValue(), INFO_BASE_A + '?cmd=ballot&id=Old');
+  assert.equal(sheet.getRange(4, 1).getValue(), '[Config]');
+  assert.deepEqual(SM.readBallotConfig_(sheet), cfgBefore);
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice']);
+  assert.deepEqual(SM.readBallotResponseRows_(sheet).map((r) => [r.name, r.ranks, r.comment]), rowsBefore);
+  assert.equal(logLinesWith(sandbox, 'ballot.repair.infoSection').length, 1);
+  assertSnapshotMatchesOldReaders(SM, sheet, 'testRepairInsertsInfoAtTopOfExistingSheet');
+
+  // Second repair is a no-op (healthy sheet: no write).
+  sheet._writeCalls = 0;
+  SM._repairBallotSheet_(sheet);
+  assert.equal(sheet._writeCalls, 0);
+}
+
+/** A write path runs the repair, so a vote on an old sheet inserts [Info] too. */
+function testWritePathInsertsInfo() {
+  const { SM, ss, sandbox } = loadBallotModel();
+  const sheet = SM.createNewBallot_(ss, 'WriteHeal');
+  SM.addBallotCandidate_(sheet, 'Alice', '');
+  sheet.deleteRows(1, 3);
+  sandbox.__staticBase = INFO_BASE_A;
+  SM.submitBallotResponse_('WriteHeal', 'V', ['Alice'], '');
+  assert.equal(sheet.getRange(1, 1).getValue(), '[Info]');
+  assert.deepEqual(SM.readBallotResponseRows_(sheet).map((r) => r.name), ['V']);
+}
+
+/** Changed base URL: links are rewritten in place on the next repair; nothing else moves. */
+function testRepairRewritesStaleInfoLinks() {
+  const { SM, ss, sandbox } = loadBallotModel({ base: INFO_BASE_A });
+  const sheet = SM.createNewBallot_(ss, 'Moved');
+  SM.addBallotCandidate_(sheet, 'Alice', '');
+  const lastRow = sheet.getLastRow();
+
+  sandbox.__staticBase = INFO_BASE_B;
+  SM._repairBallotSheet_(sheet);
+  assert.equal(sheet.getRange(2, 3).getValue(), INFO_BASE_B + '?cmd=ballot&id=Moved');
+  assert.equal(sheet.getRange(3, 3).getValue(), INFO_BASE_B + '?cmd=admin&action=edit&id=Moved');
+  assert.equal(sheet.getRange(2, 3).getFormulas()[0][0].indexOf('=HYPERLINK("' + INFO_BASE_B), 0);
+  assert.equal(sheet.getLastRow(), lastRow);
+  assert.equal(sheet.getRange(4, 1).getValue(), '[Config]');
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Alice']);
+
+  // A cleared link cell is restored; a truncated section grows rows after the marker.
+  sheet.getRange(3, 3).clearContent();
+  SM._repairBallotSheet_(sheet);
+  assert.equal(sheet.getRange(3, 3).getValue(), INFO_BASE_B + '?cmd=admin&action=edit&id=Moved');
+  assert.equal(logLinesWith(sandbox, 'ballot.repair.infoSection').length, 2);
+}
+
+/** Analysis output and candidate/response writes leave [Info] (and its formulas) alone. */
+function testInfoSurvivesWritesAndAnalysisOutput() {
+  const { SM, ss } = loadBallotModel({ base: INFO_BASE_A });
+  const sheet = SM.createNewBallot_(ss, 'Survives');
+  const before = infoLinks(sheet);
+  SM.addBallotCandidate_(sheet, 'Alice', '');
+  SM.submitBallotResponse_('Survives', 'V', ['Alice'], '');
+  SM.writeBallotResults_(sheet, [['a'], ['b']]);
+  SM.writeBallotResults_(sheet, [['only']]);
+  SM.writeBallotConfig_(sheet, { Title: 'New' });
+  assert.deepEqual(infoLinks(sheet), before);
+}
+
+/** A legacy sheet (no [Config]) is migrated first, then gets [Info] above it, in one repair. */
+function testRepairOnLegacySheetMigratesConfigThenInsertsInfo() {
+  const { SM, ss } = loadBallotModel({ base: INFO_BASE_A });
+  const sheet = ss.insertSheet('Ballot-Legacy');
+  sheet.getRange(1, 1, 2, 2).setValues([['Title', 'T'], ['Contact', 'C']]);
+  sheet.getRange(4, 1).setValue('[Results]');
+  SM._repairBallotSheet_(sheet);
+  assert.equal(sheet.getRange(1, 1).getValue(), '[Info]');
+  assert.equal(sheet.getRange(2, 3).getValue(), INFO_BASE_A + '?cmd=ballot&id=Legacy');
+  assert.equal(sheet.getRange(4, 1).getValue(), '[Config]');
+  assert.equal(SM.readBallotConfig_(sheet).Title, 'T');
+  assert.equal(SM.readBallotConfig_(sheet).Contact, 'C');
+}
+
 function run() {
   testAdminEditDataVoteCounts();
   testApplyBallotOpsDeleteColumn();
@@ -2602,6 +2751,13 @@ function run() {
   testWithBallotLockIsReentrantAndReleasesOnThrow();
   testModelEntryPointsWriteUnderLock();
   testSelfRepairWritesRunUnderLock();
+  testNewBallotStartsWithInfoLinks();
+  testInfoWithoutBaseUrlWritesNoteAndRepairIsQuiet();
+  testRepairInsertsInfoAtTopOfExistingSheet();
+  testWritePathInsertsInfo();
+  testRepairOnLegacySheetMigratesConfigThenInsertsInfo();
+  testRepairRewritesStaleInfoLinks();
+  testInfoSurvivesWritesAndAnalysisOutput();
   testNewBallotHasNoFrozenRows();
   testHighlightSectionMarkersUnfreezesStaleFourteenRowFreeze();
   testDuplicateIdThrows();

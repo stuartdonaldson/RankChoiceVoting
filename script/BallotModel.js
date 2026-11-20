@@ -16,6 +16,13 @@
  *   [Responses]  Header Date | Name | Weight | Comment | <one rank column per candidate>;
  *                one row per respondent.
  *
+ *   [Info]       OUTPUT-ONLY, written by the app above [Config] (rcballot-3h6): rows "View ballot"
+ *                and "Edit ballot", label in col B, a =HYPERLINK(url, url) formula in col C built
+ *                from _staticPagesBaseUrl_ (BUILD_INFO.staticUrl). Never parsed as config,
+ *                candidates or responses; kept current by the repair step 'infoSection' (inserted
+ *                when absent, links rewritten when the base URL changed). With no static base
+ *                URL stamped, repair leaves the section alone (and creation writes a note).
+ *
  * SECTION REGISTRY (_BALLOT_SECTIONS_): the one declaration of each section's marker, kind
  * (kv / output / table), first column, key column and fixed labels. Everything else is
  * driven by it. A section runs from its marker to the row before the next marker of any
@@ -62,6 +69,13 @@ var _BALLOT_CONFIG_MARKER = '[Config]';
 // Key col B, value col C inside a [Config] section; legacy sheets keep key A / value B above the first marker.
 var _BALLOT_CONFIG_KEY_COL = 2;
 var _BALLOT_RESULTS_MARKER = '[Results]';
+var _BALLOT_INFO_MARKER = '[Info]';
+// [Info] rows: label in col B, hyperlink in col C. {cmd/action query} is appended to the static base URL.
+var _BALLOT_INFO_LINKS_ = [
+  { label: 'View ballot', query: function (id) { return '?cmd=ballot&id=' + encodeURIComponent(id); } },
+  { label: 'Edit ballot', query: function (id) { return '?cmd=admin&action=edit&id=' + encodeURIComponent(id); } }
+];
+var _BALLOT_INFO_NOT_CONFIGURED_ = '(static pages URL not configured for this deployment)';
 var _BALLOT_CANDIDATES_MARKER = '[Candidates]';
 var _BALLOT_CANDIDATES_HEADER = ['Name', 'Details', 'Link Text', 'Link URL'];
 var _BALLOT_CANDIDATES_FIRST_COL = 2; // col B — col A stays blank/reserved throughout the Candidates section
@@ -152,8 +166,11 @@ function findBallotSheet_(ss, id) {
  */
 function createBallotSheet_(ss, id) {
   var sheet = ss.insertSheet(getBallotSheetName_(id));
-  sheet.getRange(1, 1).setValue(_BALLOT_CONFIG_MARKER);
-  sheet.getRange(2, _BALLOT_CONFIG_KEY_COL, 12, 2).setValues([
+  var infoRows = _BALLOT_INFO_LINKS_.length + 1;
+  _writeBallotInfoSection_(sheet, 1, id, _ballotStaticBase_());
+  var top = infoRows; // rows above [Config]
+  sheet.getRange(top + 1, 1).setValue(_BALLOT_CONFIG_MARKER);
+  sheet.getRange(top + 2, _BALLOT_CONFIG_KEY_COL, 12, 2).setValues([
     // Each placeholder is "[TODO: what to enter — delete this bracket] <example>": the
     // bracketed lead-in says what the field is for, and the text after it is a working
     // example, so the admin deletes the bracket and edits the example rather than writing
@@ -176,13 +193,84 @@ function createBallotSheet_(ss, id) {
     ['Description-Link-Text', ''],
     ['Description-Link-URL', '']
   ]);
-  sheet.getRange(14, 1).setValue(_BALLOT_RESULTS_MARKER);
-  sheet.getRange(15, 1).setValue(_BALLOT_CANDIDATES_MARKER);
-  sheet.getRange(16, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).setValues([_BALLOT_CANDIDATES_HEADER]);
-  sheet.getRange(17, 1).setValue(_BALLOT_RESPONSES_MARKER);
-  sheet.getRange(18, 1, 1, _BALLOT_RESPONSE_FIXED_COLS.length).setValues([_BALLOT_RESPONSE_FIXED_COLS]);
+  sheet.getRange(top + 14, 1).setValue(_BALLOT_RESULTS_MARKER);
+  sheet.getRange(top + 15, 1).setValue(_BALLOT_CANDIDATES_MARKER);
+  sheet.getRange(top + 16, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).setValues([_BALLOT_CANDIDATES_HEADER]);
+  sheet.getRange(top + 17, 1).setValue(_BALLOT_RESPONSES_MARKER);
+  sheet.getRange(top + 18, 1, 1, _BALLOT_RESPONSE_FIXED_COLS.length).setValues([_BALLOT_RESPONSE_FIXED_COLS]);
   _highlightSectionMarkers_(sheet);
   return sheet;
+}
+
+/**
+ * Writes an [Info] section (marker row + one row per _BALLOT_INFO_LINKS_ entry) at markerRow.
+ * Each link cell is a HYPERLINK formula whose visible text is the URL itself, so a repair can
+ * compare the cell's displayed value to the expected URL without reading formulas. With no
+ * base URL the link cells hold a plain "not configured" note. Caller holds the lock (or is
+ * creating the sheet).
+ *
+ * @param {Sheet} sheet
+ * @param {number} markerRow
+ * @param {string} id ballot id
+ * @param {string} base static pages base URL ('' = not configured)
+ */
+function _writeBallotInfoSection_(sheet, markerRow, id, base) {
+  sheet.getRange(markerRow, 1).setValue(_BALLOT_INFO_MARKER);
+  _BALLOT_INFO_LINKS_.forEach(function (l, i) {
+    var row = markerRow + 1 + i;
+    sheet.getRange(row, 2).setValue(l.label);
+    var cell = sheet.getRange(row, 3);
+    if (!base) { cell.setValue(_BALLOT_INFO_NOT_CONFIGURED_); return; }
+    var url = base + l.query(id);
+    cell.setFormula('=HYPERLINK("' + url.replace(/"/g, '""') + '","' + url.replace(/"/g, '""') + '")');
+  });
+}
+
+/** @return {string} the stamped static pages base URL ('' when unavailable); reuses ApiBridge.js's reader. */
+function _ballotStaticBase_() {
+  return (typeof _staticPagesBaseUrl_ === 'function') ? _staticPagesBaseUrl_() : '';
+}
+
+/** @return {string} ballot id of a Ballot-<id> sheet. */
+function _ballotIdFromSheet_(sheet) {
+  return sheet.getName().substring(BALLOT_SHEET_PREFIX.length);
+}
+
+/**
+ * [Info] repair plan. Needs a real [Config] marker (a legacy sheet's config block must stay at
+ * the top until configSection migrates it) and a stamped static base URL. Kinds:
+ *   insert  — no [Info] marker: marker + link rows inserted at row 1;
+ *   rewrite — marker present but a link row's label or displayed URL differs from expected
+ *             (base URL moved, or cell cleared); rows are written in place, inserting rows
+ *             after the marker first when the section is too short.
+ * Pure apart from reading the stamped base URL.
+ */
+function _planInfoSection_(grid, snap, sheet) {
+  var base = _ballotStaticBase_();
+  if (!base || !sheet || snap.layout.markers.config === -1) return null;
+  var info = snap.layout.sections.info;
+  if (!info) return { kind: 'insert', base: base };
+  var id = _ballotIdFromSheet_(sheet);
+  var stale = _BALLOT_INFO_LINKS_.some(function (l, i) {
+    var row = info.markerRow + 1 + i;
+    return row > info.endRow ||
+      String(_gridCell_(grid, row, 2)).trim() !== l.label ||
+      String(_gridCell_(grid, row, 3)) !== base + l.query(id);
+  });
+  return stale ? { kind: 'rewrite', base: base, markerRow: info.markerRow, missingRows: Math.max(0, info.markerRow + _BALLOT_INFO_LINKS_.length - info.endRow) } : null;
+}
+
+function _applyInfoSection_(sheet, plan) {
+  var id = _ballotIdFromSheet_(sheet);
+  if (plan.kind === 'insert') {
+    sheet.insertRowsBefore(1, _BALLOT_INFO_LINKS_.length + 1);
+    _writeBallotInfoSection_(sheet, 1, id, plan.base);
+    _highlightSectionMarkers_(sheet);
+  } else {
+    if (plan.missingRows) sheet.insertRowsAfter(plan.markerRow, plan.missingRows);
+    _writeBallotInfoSection_(sheet, plan.markerRow, id, plan.base);
+  }
+  _logBallotEvent_('ballot.repair.infoSection', { sheet: sheet.getName(), kind: plan.kind });
 }
 
 /**
@@ -205,6 +293,7 @@ function _highlightSectionMarkers_(sheet) {
   var candidatesRow = layout.markers.candidates;
   var responsesRow = layout.markers.responses;
 
+  highlightRow(layout.markers.info, 1);
   highlightRow(layout.markers.config, 1);
   highlightRow(resultsRow, 1);
   highlightRow(candidatesRow, 1);
@@ -569,8 +658,9 @@ function _planBallotConfigOps_(snap, updates) {
  */
 var _BALLOT_SECTION_KEYS_ = ['results', 'candidates', 'responses'];
 // Every marker the scan recognises: the three required sections plus [Config].
-var _BALLOT_SCAN_KEYS_ = ['config'].concat(_BALLOT_SECTION_KEYS_);
+var _BALLOT_SCAN_KEYS_ = ['info', 'config'].concat(_BALLOT_SECTION_KEYS_);
 var _BALLOT_SECTION_MARKER_TEXT_ = {
+  info: _BALLOT_INFO_MARKER,
   config: _BALLOT_CONFIG_MARKER,
   results: _BALLOT_RESULTS_MARKER,
   candidates: _BALLOT_CANDIDATES_MARKER,
@@ -661,7 +751,7 @@ function _scanBallotLayout_(colA, lastRow) {
   // block (col A/B) is whatever lies above the first section marker.
   var firstMarkerRow = -1;
   for (var m = 0; m < allMarkerRows.length; m++) {
-    if (allMarkerRows[m] !== markers.config) { firstMarkerRow = allMarkerRows[m]; break; }
+    if (allMarkerRows[m] !== markers.config && allMarkerRows[m] !== markers.info) { firstMarkerRow = allMarkerRows[m]; break; }
   }
   if (sections.config) {
     sections.config.keyCol = _BALLOT_CONFIG_KEY_COL;
@@ -1404,6 +1494,7 @@ function addBallotCandidateForAdmin_(id, name, details, linkText, linkUrl) {
  * their 'Name' column. responses' extra (non-fixed) columns are candidate rank columns.
  */
 var _BALLOT_SECTIONS_ = {
+  info: { marker: _BALLOT_INFO_MARKER, kind: 'output', firstCol: 2 },
   config: { marker: _BALLOT_CONFIG_MARKER, kind: 'kv' },
   results: { marker: _BALLOT_RESULTS_MARKER, kind: 'output', firstCol: 2 },
   candidates: { marker: _BALLOT_CANDIDATES_MARKER, kind: 'table', firstCol: _BALLOT_CANDIDATES_FIRST_COL, key: 'Name', columns: _BALLOT_CANDIDATES_HEADER },
@@ -2064,6 +2155,7 @@ var _BALLOT_REPAIR_STEPS_ = [
   },
   { name: 'configSection', plan: _planConfigSection_, apply: _applyConfigSection_ },
   { name: 'legacyConfigKey', plan: _planLegacyConfigKeys_, apply: _applyLegacyConfigKeys_ },
+  { name: 'infoSection', plan: _planInfoSection_, apply: _applyInfoSection_ },
   { name: 'candidatesOldColumns', plan: _planCandidatesOldColumns_, apply: _applyCandidatesOldColumns_ },
   { name: 'candidatesHeader', plan: _planCandidatesHeader_, apply: _applyCandidatesHeader_ },
   { name: 'headerOnMarkerRow', plan: _planHeaderOnMarkerRow_, apply: _applyHeaderOnMarkerRow_ },
@@ -2083,13 +2175,13 @@ var _BALLOT_REPAIR_STEPS_ = [
  */
 function _repairBallotSheet_(sheet) {
   var first = _readBallotGridAndSnap_(sheet);
-  var needed = _BALLOT_REPAIR_STEPS_.some(function (step) { return step.plan(first.grid, first.snap) !== null; });
+  var needed = _BALLOT_REPAIR_STEPS_.some(function (step) { return step.plan(first.grid, first.snap, sheet) !== null; });
   if (!needed) return { repaired: false, snap: first.snap, grid: first.grid };
   return _withBallotLock_(function () {
     var wrote = false;
     _BALLOT_REPAIR_STEPS_.forEach(function (step) {
       var cur = _readBallotGridAndSnap_(sheet);
-      var plan = step.plan(cur.grid, cur.snap);
+      var plan = step.plan(cur.grid, cur.snap, sheet);
       if (plan === null) return;
       step.apply(sheet, plan);
       wrote = true;
