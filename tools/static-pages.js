@@ -79,6 +79,21 @@ function devContact_() {
   return m ? m[1] : '';
 }
 
+/**
+ * NUUC-Dispatch sign-in settings for env (rcballot-dx3), from gas-project.json
+ * envs.<env>.dispatch — committed, non-secret project truth (GAS-Core adr/0004). An env without a
+ * `dispatch` block (prod) stamps null, which the page reads as "sign-in off"; so does any empty
+ * field (the page checks), which is how an env builds before its Dispatch target is registered.
+ *
+ * @param {string} env
+ * @return {?{url:string, clientId:string, aud:string}}
+ */
+function dispatchFor_(env) {
+  const d = project.envs[env] && project.envs[env].dispatch;
+  if (!d) return null;
+  return { url: String(d.url || ''), clientId: String(d.clientId || ''), aud: String(d.aud || '') };
+}
+
 /** Reads one field of the generated BUILD_INFO literal with the same code the pipeline reads it. */
 function buildInfoField_(name) {
   const value = readBuildInfo_(path.join(ROOT, VERSION_JS))[name];
@@ -135,6 +150,7 @@ module.exports = runStatic({
       `var STATIC_DEV_CONTACT_ = ${JSON.stringify(devContact_())};`,
     'data-theme="STATIC_THEME_"': (ctx) => `data-theme="${THEME[ctx.env] || ''}"`,
     '<!-- STATIC_THEME_FONTS_ -->': (ctx) => THEME_FONTS_HTML[THEME[ctx.env]] || '',
+    'var STATIC_DISPATCH_ = null;': (ctx) => `var STATIC_DISPATCH_ = ${JSON.stringify(dispatchFor_(ctx.env))};`,
   },
 
   envs,
@@ -144,3 +160,4 @@ module.exports = runStatic({
 
 module.exports.liveUrl_ = liveUrl_;
 module.exports.envsFromProject_ = envsFromProject_;
+module.exports.dispatchFor_ = dispatchFor_;

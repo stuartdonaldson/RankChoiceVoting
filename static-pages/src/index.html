@@ -182,6 +182,10 @@
   button:disabled { background: var(--disabled-bg); cursor: default; }
   button.secondary, a.btn.secondary { background: var(--surface-secondary); color: var(--text-primary); }
   .hidden { display: none !important; }
+  /* Optional Google sign-in (rcballot-dx3) — only rendered on Dispatch-enabled builds. */
+  .signin-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 16px; font-size: 0.9em; color: var(--text-secondary); }
+  .signin-bar img.avatar { width: 28px; height: 28px; border-radius: 50%; }
+  .signin-bar .signin-error { color: var(--error-text, #d93025); flex-basis: 100%; }
   .app-version-footer { color: var(--text-muted); font-size: 0.75em; margin-top: 24px; font-family: var(--font-mono); }
 
   /* --- List view --- */
@@ -292,6 +296,8 @@
 </style>
 </head>
 <body>
+  <!-- Admin-view sign-in (rcballot-dx3.3): filled by renderSignIn_ on Dispatch-enabled builds only. -->
+  <div id="adminSigninBar" class="signin-bar hidden"></div>
 
   <!-- ============================= LIST VIEW ============================= -->
   <div id="view-list" class="hidden">
@@ -564,6 +570,29 @@
         </div>
       </div>
 
+      <!-- Ballot admins (rcballot-dx3.3): shown only when the server reports sign-in enabled. -->
+      <div class="field-block hidden" id="adminsBlock">
+        <p class="subsection-header">Ballot admins</p>
+        <p class="field-help" id="adminsHelp"></p>
+        <div class="field-row">
+          <p id="adminsDisplay"></p>
+          <button type="button" class="pencil-btn" id="adminsEditBtn" aria-label="Edit ballot admins">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="adminsPanel">
+          <p class="field-help">Comma-separated Google account emails. Only these people (and the site's super-admins) can edit this ballot or see its analysis. Leave blank to let anyone edit it.</p>
+          <label for="adminsInput">Admins</label>
+          <textarea id="adminsInput" rows="2"></textarea>
+          <div class="field-panel-actions">
+            <button type="button" id="adminsSaveBtn">Save</button>
+            <button type="button" class="secondary" id="adminsCancelBtn">Cancel</button>
+          </div>
+        </div>
+        <div class="field-panel-actions">
+          <button type="button" class="hidden" id="claimBtn">Make me an admin</button>
+        </div>
+        <div class="field-status" id="adminsStatus"></div>
+      </div>
+
       <div class="field-block danger-zone" id="dangerZone">
         <p class="subsection-header">Danger zone</p>
         <p class="field-help">Clear all responses removes every vote from this ballot, so it starts fresh (anyone who voted can vote again). The choices and settings are kept. A backup copy of the current sheet is saved first, in a sheet named like <code>Backup-&lt;id&gt;-yyyyMMdd-HHmm</code>.</p>
@@ -602,6 +631,9 @@
            there's one editable block of copy here rather than an editable one stacked on a
            fixed one. Applies to newly created ballots; an existing ballot's Description keeps
            whatever it already has. -->
+      <!-- Optional Google sign-in (rcballot-dx3.2): filled by renderSignIn_ on Dispatch-enabled
+           builds only; typing a name without signing in always works. -->
+      <div id="ballotSigninBar" class="signin-bar hidden"></div>
       <label for="nameInput">Your name</label>
       <input type="text" id="nameInput" autocomplete="name">
       <button id="startBtn">Continue</button>
@@ -656,6 +688,9 @@
   var STATIC_BUILD_VERSION_ = null;
   var STATIC_WEBAPP_URL_ = null;
   var STATIC_DEV_CONTACT_ = null;
+  // {url, clientId, aud} for NUUC-Dispatch sign-in, from gas-project.json envs.<env>.dispatch
+  // (tools/static-pages.js). null (PROD, or an unbuilt page) or any empty field = sign-in off.
+  var STATIC_DISPATCH_ = null;
 
   var params = new URLSearchParams(window.location.search);
   var cmd = params.get('cmd') || 'admin';
@@ -676,6 +711,130 @@
     return STATIC_DEV_CONTACT_ ? ' If it keeps happening, contact ' + STATIC_DEV_CONTACT_ + '.'
       : ' If it keeps happening, contact the site administrator.';
   }
+
+
+  // ======================================================================
+  // OPTIONAL GOOGLE SIGN-IN (rcballot-dx3) — GIS button -> NUUC-Dispatch verify_identity ->
+  // signed assertion, kept in localStorage and sent in every callApi_ envelope. The server
+  // verifies it (script/Identity.js); this page never decides who someone is. Pattern:
+  // ../NForms/static/src/index.html.
+  // ======================================================================
+  var DISPATCH_ = (STATIC_DISPATCH_ && STATIC_DISPATCH_.url && STATIC_DISPATCH_.clientId && STATIC_DISPATCH_.aud)
+    ? STATIC_DISPATCH_ : null;
+  // SIT and PROD share one origin (f3go30.github.io), so storage is scoped to this build's audience.
+  var AUTH_KEY_ = 'rcvAuth.v1:' + (DISPATCH_ ? DISPATCH_.aud : '');
+  var AUTH_RENEW_SKEW_ = 300;
+  // email comes from Dispatch's verified response; name/picture are decoded from the GIS
+  // credential on this page — display-only and UNVERIFIED (the server treats them that way).
+  var auth_ = { assertion: null, email: '', name: '', picture: '' };
+  var authListeners_ = [];
+
+  function jwtPayload_(jwt) {
+    try {
+      var seg = String(jwt).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (seg.length % 4) seg += '=';
+      return JSON.parse(decodeURIComponent(escape(atob(seg))));
+    } catch (e) { return null; }
+  }
+  function saveAuth_() {
+    var p = jwtPayload_(auth_.assertion);
+    if (!p || typeof p.exp !== 'number') return;
+    try { localStorage.setItem(AUTH_KEY_, JSON.stringify({ assertion: auth_.assertion, exp: p.exp, email: auth_.email, name: auth_.name, picture: auth_.picture })); } catch (e) {}
+  }
+  function clearAuth_() { try { localStorage.removeItem(AUTH_KEY_); } catch (e) {} }
+  function loadAuth_() {
+    if (!DISPATCH_) return;
+    var c = null;
+    try { c = JSON.parse(localStorage.getItem(AUTH_KEY_) || 'null'); } catch (e) { return; }
+    if (!c || !c.assertion || typeof c.exp !== 'number' || Math.floor(Date.now() / 1000) >= c.exp - AUTH_RENEW_SKEW_) { clearAuth_(); return; }
+    auth_ = { assertion: c.assertion, email: c.email || '', name: c.name || '', picture: c.picture || '' };
+  }
+  function signedIn_() { return !!auth_.assertion; }
+  /** kind: 'in' (fresh sign-in), 'out' (signed out), 'error' (sign-in attempt failed). */
+  function notifyAuth_(kind) { authListeners_.forEach(function (fn) { try { fn(kind); } catch (e) {} }); }
+  function signOut_() {
+    auth_ = { assertion: null, email: '', name: '', picture: '' };
+    clearAuth_();
+    if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
+    notifyAuth_('out');
+  }
+
+  var gisLoading_ = false;
+  var gisReady_ = false;
+  var gisWaiters_ = [];
+  function withGis_(cb) {
+    if (gisReady_) { cb(); return; }
+    gisWaiters_.push(cb);
+    if (gisLoading_) return;
+    gisLoading_ = true;
+    var sc = document.createElement('script');
+    sc.src = 'https://accounts.google.com/gsi/client';
+    sc.async = true;
+    sc.onload = function () {
+      google.accounts.id.initialize({ client_id: DISPATCH_.clientId, callback: onGoogleCredential_, auto_select: false });
+      gisReady_ = true;
+      gisWaiters_.splice(0).forEach(function (fn) { fn(); });
+    };
+    document.head.appendChild(sc);
+  }
+
+  var signInError_ = '';
+  function onGoogleCredential_(resp) {
+    signInError_ = '';
+    var gis = jwtPayload_(resp && resp.credential) || {};
+    fetch(DISPATCH_.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'verify_identity', idToken: resp.credential, aud: DISPATCH_.aud })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (!res || !res.verified || !res.assertion) throw new Error('Sign-in could not be verified (' + ((res && res.error) || 'no assertion') + ').');
+      auth_ = { assertion: res.assertion, email: res.email || '', name: String(gis.name || ''), picture: String(gis.picture || '') };
+      saveAuth_();
+      notifyAuth_('in');
+    }).catch(function (err) {
+      signInError_ = (err && err.message) || 'Sign-in failed.';
+      notifyAuth_('error');
+    });
+  }
+
+  /** Renders the sign-in control into container (no-op on builds without sign-in). */
+  function renderSignIn_(container, intro) {
+    if (!DISPATCH_) return;
+    container.textContent = '';
+    container.classList.remove('hidden');
+    if (signedIn_()) {
+      if (/^https:\/\//.test(auth_.picture)) {
+        var img = document.createElement('img');
+        img.className = 'avatar';
+        img.alt = '';
+        img.referrerPolicy = 'no-referrer';
+        img.src = auth_.picture;
+        container.appendChild(img);
+      }
+      container.appendChild(document.createTextNode('Signed in as ' + auth_.email + ' · '));
+      var out = document.createElement('a');
+      out.href = '#';
+      out.textContent = 'Sign out';
+      out.addEventListener('click', function (e) { e.preventDefault(); signOut_(); });
+      container.appendChild(out);
+    } else {
+      if (intro) {
+        var p = document.createElement('span');
+        p.textContent = intro;
+        container.appendChild(p);
+      }
+      var btn = document.createElement('div');
+      container.appendChild(btn);
+      withGis_(function () { google.accounts.id.renderButton(btn, { type: 'standard', shape: 'pill', text: 'signin_with' }); });
+    }
+    if (signInError_) {
+      var er = document.createElement('div');
+      er.className = 'signin-error';
+      er.textContent = signInError_;
+      container.appendChild(er);
+    }
+  }
+  loadAuth_();
 
   /**
    * Calls a whitelisted GAS RPC (see ApiBridge.js's _API_WHITELIST_) via doPost ?cmd=api.
@@ -703,7 +862,11 @@
     return fetch(webappUrl_ + '?cmd=api', {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ name: name, args: args })
+      // Auth envelope (rcballot-dx3): the assertion rides beside name/args, never as an RPC
+      // argument; the server verifies it once per request (script/ApiBridge.js).
+      body: JSON.stringify(signedIn_()
+        ? { name: name, args: args, assertion: auth_.assertion, profile: { name: auth_.name, picture: auth_.picture } }
+        : { name: name, args: args })
     })
       .catch(function () {
         // fetch() itself only rejects for network-level failures (offline, DNS, CORS, the
@@ -726,6 +889,12 @@
         });
       })
       .then(function (json) {
+        // The server no longer accepts this sign-in (expired, revoked key): drop it so the
+        // next call is plainly anonymous and the page offers sign-in again.
+        if (json && json.auth && json.auth.status === 'rejected' && signedIn_()) {
+          signInError_ = 'Your sign-in expired — please sign in again.';
+          signOut_();
+        }
         if (json && json.error) throw new Error(json.error);
         return json && json.result;
       });
@@ -845,6 +1014,13 @@
     });
   }
 
+  /** Admin-RPC failure text; a server-side 'Not authorized' refusal says how to get access. */
+  function adminErrorText_(err) {
+    var msg = (err && err.message) || String(err);
+    if (!/^Not authorized/.test(msg)) return msg;
+    return 'Access refused. ' + msg + (signedIn_() ? ' You are signed in as ' + auth_.email + '.' : ' Use the sign-in button at the top of the page.');
+  }
+
   function setAppVersionFooter_(appVersion, appDeployTarget) {
     var el = document.getElementById('appVersionFooter');
     el.textContent = appVersion ? 'v' + appVersion + (appDeployTarget ? ' (' + appDeployTarget + ')' : '') : '';
@@ -868,7 +1044,8 @@
         '<div class="ballot-id">' + escapeHtml_(b.id) + '</div>' +
         '<div class="ballot-meta">' + b.candidateCount + ' candidate' + (b.candidateCount === 1 ? '' : 's') +
         ' &middot; ' + b.responseCount + ' response' + (b.responseCount === 1 ? '' : 's') +
-        ' (' + b.uniqueRespondentCount + ' unique respondent' + (b.uniqueRespondentCount === 1 ? '' : 's') + ')' + '</div>' +
+        ' (' + b.uniqueRespondentCount + ' unique respondent' + (b.uniqueRespondentCount === 1 ? '' : 's') + ')' +
+        (b.claimed && !b.canAdmin ? ' &middot; 🔒 admins only' : '') + '</div>' +
         '<div class="ballot-actions">' +
         '<a class="btn" target="_blank" href="?cmd=ballot&id=' + encodeURIComponent(b.id) + '">View Ballot</a>' +
         '<a class="btn" href="?cmd=admin&action=edit&id=' + encodeURIComponent(b.id) + '">Edit</a>' +
@@ -1519,10 +1696,72 @@
         setAppVersionFooter_(data.appVersion, data.appDeployTarget);
         loadStatus.classList.add('hidden');
         editRoot.classList.remove('hidden');
+        renderAdmins(data);
       }, function (err) {
-        loadStatus.textContent = 'Could not load ballot: ' + err.message;
+        loadStatus.textContent = 'Could not load ballot: ' + adminErrorText_(err);
       });
     };
+
+    // ---- Ballot admins (rcballot-dx3.3). The server enforces the rule; this only edits it.
+    var adminsBlock = document.getElementById('adminsBlock');
+    var adminsHelp = document.getElementById('adminsHelp');
+    var adminsDisplay = document.getElementById('adminsDisplay');
+    var adminsPanel = document.getElementById('adminsPanel');
+    var adminsInput = document.getElementById('adminsInput');
+    var adminsStatus = document.getElementById('adminsStatus');
+    var claimBtn = document.getElementById('claimBtn');
+    var currentAdmins = [];
+
+    function renderAdmins(data) {
+      var access = data.access || {};
+      if (!access.enabled) { adminsBlock.classList.add('hidden'); return; }
+      currentAdmins = data.admins || [];
+      adminsBlock.classList.remove('hidden');
+      adminsDisplay.textContent = currentAdmins.length ? currentAdmins.join(', ') : '(none — anyone can edit this ballot)';
+      adminsHelp.textContent = currentAdmins.length
+        ? 'Only these Google accounts (and the site\u2019s super-admins) can edit this ballot or see its analysis.'
+        : 'This ballot has no admins yet, so anyone with the link can edit it.' +
+          (signedIn_() ? ' Make yourself an admin to restrict it.' : ' Sign in at the top of the page to claim it.');
+      claimBtn.classList.toggle('hidden', !(signedIn_() && currentAdmins.indexOf(String(auth_.email).toLowerCase()) === -1));
+    }
+
+    document.getElementById('adminsEditBtn').addEventListener('click', function () {
+      adminsInput.value = currentAdmins.join(', ');
+      setStatus(adminsStatus, '', false);
+      adminsPanel.classList.remove('hidden');
+    });
+    document.getElementById('adminsCancelBtn').addEventListener('click', function () { adminsPanel.classList.add('hidden'); });
+
+    function saveAdmins(value, confirmed) {
+      setStatus(adminsStatus, 'Saving…', false);
+      callApi_('adminSaveAdmins', ballotId, value, !!confirmed).then(function (res) {
+        adminsPanel.classList.add('hidden');
+        setStatus(adminsStatus, 'Saved.', false);
+        renderAdmins({ access: { enabled: true }, admins: res.admins });
+      }, function (err) {
+        var msg = err.message || '';
+        if (/^lockout_confirm:/.test(msg)) {
+          if (window.confirm('Warning: ' + msg.replace(/^lockout_confirm:\s*/, '') + ' Save anyway?')) saveAdmins(value, true);
+          else setStatus(adminsStatus, 'Not saved.', false);
+          return;
+        }
+        setStatus(adminsStatus, 'Could not save: ' + adminErrorText_(err), true);
+      });
+    }
+    document.getElementById('adminsSaveBtn').addEventListener('click', function () { saveAdmins(adminsInput.value.trim(), false); });
+
+    claimBtn.addEventListener('click', function () {
+      claimBtn.disabled = true;
+      setStatus(adminsStatus, 'Saving…', false);
+      callApi_('adminClaimBallot', ballotId).then(function (res) {
+        claimBtn.disabled = false;
+        setStatus(adminsStatus, 'You are now an admin of this ballot.', false);
+        renderAdmins({ access: { enabled: true }, admins: res.admins });
+      }, function (err) {
+        claimBtn.disabled = false;
+        setStatus(adminsStatus, 'Could not save: ' + adminErrorText_(err), true);
+      });
+    });
   })();
 
   // ======================================================================
@@ -1668,7 +1907,7 @@
         analyzeRoot.appendChild(feedbackSection(data.comments || []));
         analyzeRoot.classList.remove('hidden');
       }, function (err) {
-        analyzeStatus.textContent = 'Could not load analysis: ' + err.message;
+        analyzeStatus.textContent = 'Could not load analysis: ' + adminErrorText_(err);
       });
     };
   })();
@@ -1981,8 +2220,24 @@
     backBtn.addEventListener('click', function () { showStep(stepName); });
     editAgainBtn.addEventListener('click', function () { loadBallot(currentName); });
 
+    // ---- Optional sign-in on the name step (rcballot-dx3.2). Typing a name always works.
+    var ballotSigninBar = document.getElementById('ballotSigninBar');
+    function afterSignIn() {
+      // Name prefill from the GIS profile (display-only); the typed name is still what is saved.
+      if (!nameInput.value.trim() && auth_.name) nameInput.value = auth_.name;
+      callApi_('recordSignin', ballotId).catch(function () {});
+    }
+    function renderBallotSignIn() {
+      renderSignIn_(ballotSigninBar, 'Optional — sign in to keep your vote with your Google account:');
+    }
+    authListeners_.push(function (kind) {
+      renderBallotSignIn();
+      if (kind === 'in') afterSignIn();
+    });
+
     window.initBallotView_ = function (id) {
       document.getElementById('view-ballot').classList.remove('hidden');
+      renderBallotSignIn();
       if (!id) {
         showStep(stepNoBallot);
         return;
@@ -1994,6 +2249,7 @@
         }
         applyBranding(config);
         nameInput.value = loadSavedName();
+        if (signedIn_()) afterSignIn();
         showStep(stepName);
       }, function () { showStep(stepNoBallot); });
     };
@@ -2002,6 +2258,16 @@
   // ======================================================================
   // ROUTER — cmd/action/id read from the URL once, at the top of this file.
   // ======================================================================
+  if (cmd !== 'ballot') {
+    // Admin views (rcballot-dx3.3): one sign-in bar; any change reloads so every view re-asks
+    // the server what this caller may see.
+    renderSignIn_(document.getElementById('adminSigninBar'), 'Ballot admins: sign in with Google.');
+    authListeners_.push(function (kind) {
+      if (kind === 'error') { renderSignIn_(document.getElementById('adminSigninBar'), 'Ballot admins: sign in with Google.'); return; }
+      if (kind === 'out') { window.location.reload(); return; }
+      callApi_('recordSignin', '').catch(function () {}).then(function () { window.location.reload(); });
+    });
+  }
   if (cmd === 'ballot') {
     initBallotView_(ballotId);
   } else if (action === 'edit' || action === 'create') {

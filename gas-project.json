@@ -9,14 +9,20 @@
     "",
     "envs.<target>.scriptId / .sheetId are read by gas-deploy (>= v1.4.0).",
     "envs.<target>.static and staticHosts are read by this project's tools/static-pages.js, which",
-    "composes gas-static's config from them; gas-deploy ignores them."
+    "composes gas-static's config from them; gas-deploy ignores them.",
+    "",
+    "envs.<target>.dispatch (rcballot-dx3) = NUUC-Dispatch sign-in for that env's static page:",
+    "url (Dispatch /exec), clientId (Google OAuth web client ID), aud (assertion audience). Stamped",
+    "into the page as STATIC_DISPATCH_ by tools/static-pages.js. Absent (prod) or any empty field =",
+    "sign-in off. None is a secret; the matching HMAC key is a Script Property on each side."
   ],
 
   "envs": {
     "sit": {
       "scriptId": "1tGLrQlOPDiHAbGj8t2TbZhqdCSjp1l7z5n3qajwX85b8Z-vx7SKQoj3I",
       "sheetId": "1RCQlZ8FH5fdmh3ias5iIrttnD_IVLvctrMGvUNVdWeA",
-      "static": { "host": "f3", "dest": "ballot/sit" }
+      "static": { "host": "f3", "dest": "ballot/sit" },
+      "dispatch": { "url": "", "clientId": "", "aud": "rcballot-test" }
     },
     "prod": {
       "scriptId": "1NJRGvSY8SJw6dOU4d6CvWrIUNCNR-m1WsOddoAuOZ6q5PtWKFUDJNzyh",
@@ -26,7 +32,8 @@
     "nuuc": {
       "scriptId": "1t8dC-Buza2quFmE12AyDluOqUsoKl9zS6QDVBWLcrnboJs7G__8qFS87",
       "sheetId": "1lyuR9KotUjSX3UlwLNX4Z11d6erya5OOfOUpvJV2BaA",
-      "static": { "host": "nuuc", "dest": "pub/ballot" }
+      "static": { "host": "nuuc", "dest": "pub/ballot" },
+      "dispatch": { "url": "", "clientId": "", "aud": "rcballot" }
     }
   },
 

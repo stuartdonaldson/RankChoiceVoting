@@ -151,7 +151,7 @@ function submitBallotRanking(id, name, orderedCandidates, comment) {
 
 /**
  * RPC (rcballot-dx3.2): logs a verified sign-in in the spreadsheet-level Signins tab. The page
- * calls it once per load while signed in. Identity comes only from the request's verified
+ * calls it after every fresh sign-in, and on each ballot-page load while signed in. Identity comes only from the request's verified
  * assertion (Identity.js) — never from an argument.
  *
  * @param {string=} id ballot the sign-in happened on ('' on admin pages)

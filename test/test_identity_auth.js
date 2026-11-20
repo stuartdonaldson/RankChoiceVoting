@@ -414,6 +414,27 @@ test('request log scrubbing redacts the envelope and an admins list', () => {
   assert.equal(out.profile, '[redacted]');
 });
 
+// ---------------------------------------------------------------- static build (placeholders)
+test('prod build stamps no sign-in; sit/nuuc stamp their Dispatch audience', () => {
+  const { stampSource_ } = require('gas-static/lib/stamp.js');
+  const staticPages = require('../tools/static-pages.js');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'static-pages', 'src', 'index.html'), 'utf8');
+  const token = 'var STATIC_DISPATCH_ = null;';
+  assert.ok(src.includes(token), 'placeholder present in source');
+  // The page loads GIS only from script (withGis_), never via a static <script src> tag.
+  assert.ok(!/<script[^>]+gsi\/client/.test(src));
+  const stampFor = (env) => stampSource_(src, { [token]: `var STATIC_DISPATCH_ = ${JSON.stringify(staticPages.dispatchFor_(env))};` });
+  assert.ok(stampFor('prod').includes('var STATIC_DISPATCH_ = null;'));
+  assert.equal(staticPages.dispatchFor_('prod'), null);
+  assert.equal(staticPages.dispatchFor_('sit').aud, 'rcballot-test');
+  assert.equal(staticPages.dispatchFor_('nuuc').aud, 'rcballot');
+  // The page treats any empty field as sign-in off: the sign-in bars start hidden and
+  // renderSignIn_ returns before showing them unless DISPATCH_ has url, clientId and aud.
+  assert.ok(/var DISPATCH_ = \(STATIC_DISPATCH_ && STATIC_DISPATCH_\.url && STATIC_DISPATCH_\.clientId && STATIC_DISPATCH_\.aud\)/.test(src));
+  assert.ok(/id="ballotSigninBar" class="signin-bar hidden"/.test(src));
+  assert.ok(/id="adminSigninBar" class="signin-bar hidden"/.test(src));
+});
+
 let failed = 0;
 tests.forEach(([name, fn]) => {
   try { fn(); } catch (err) { failed++; console.error('FAIL ' + name + '\n  ' + (err && err.stack || err)); }
