@@ -85,7 +85,8 @@ function scrubForLog_(value, depth) {
   if (Array.isArray(value)) return value.slice(0, 30).map(function(v) { return scrubForLog_(v, depth + 1); });
   var out = {};
   Object.keys(value).forEach(function(k) {
-    if (/secret|token|password/i.test(k)) out[k] = '[redacted]';
+    // assertion/credential/profile: the signed-in envelope (rcballot-dx3.2) — never logged.
+    if (/secret|token|password|assertion|credential|profile/i.test(k)) out[k] = '[redacted]';
     else if (k === 'properties' && value[k] && typeof value[k] === 'object') out[k] = Object.keys(value[k]);
     else out[k] = scrubForLog_(value[k], depth + 1);
   });

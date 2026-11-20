@@ -112,7 +112,8 @@ function getBallotConfig(id) {
  * @return {Object}
  */
 function getBallotForName(id, name) {
-  var result = getBallotForRespondent_(id, name);
+  // Signed in (rcballot-dx3.2): resume by verified Google-Sub (Identity.js), else by name.
+  var result = getBallotForRespondent_(id, name, rcvRequestIdentity_());
   if (!result) throw new Error('No ballot found for id "' + id + '".');
   return result;
 }
@@ -142,5 +143,20 @@ function addBallotTopic(id, phrase, details) {
  * @return {{ok:boolean}}
  */
 function submitBallotRanking(id, name, orderedCandidates, comment) {
-  return submitBallotResponse_(id, name, orderedCandidates, comment);
+  var who = rcvRequestIdentity_();
+  var result = submitBallotResponse_(id, name, orderedCandidates, comment, who);
+  if (who) rcvRecordSignin_(id); // Signins.Ballots gains this ballot (rcballot-dx3.2)
+  return result;
+}
+
+/**
+ * RPC (rcballot-dx3.2): logs a verified sign-in in the spreadsheet-level Signins tab. The page
+ * calls it once per load while signed in. Identity comes only from the request's verified
+ * assertion (Identity.js) — never from an argument.
+ *
+ * @param {string=} id ballot the sign-in happened on ('' on admin pages)
+ * @return {{signedIn:boolean}}
+ */
+function recordSignin(id) {
+  return { signedIn: rcvRecordSignin_(id || '') };
 }

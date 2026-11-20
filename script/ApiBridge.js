@@ -24,6 +24,7 @@ var _API_WHITELIST_ = {
   getBallotForName: getBallotForName,
   addBallotTopic: addBallotTopic,
   submitBallotRanking: submitBallotRanking,
+  recordSignin: recordSignin,
   // Admin list/create (webAdmin.js)
   getAdminListData_: getAdminListData_,
   createBallotForAdmin_: createBallotForAdmin_,
@@ -46,6 +47,9 @@ var _API_WHITELIST_ = {
   adminLinkOrphanColumn: adminLinkOrphanColumn,
   adminDiscardOrphanColumn: adminDiscardOrphanColumn,
   adminClearResponses: adminClearResponses,
+  // Ballot admins (rcballot-dx3.3, webAdmin.js)
+  adminSaveAdmins: adminSaveAdmins,
+  adminClaimBallot: adminClaimBallot,
   // Admin analysis (webAdmin.js)
   getAdminAnalysisData_: getAdminAnalysisData_
 };
@@ -59,6 +63,16 @@ var _API_WHITELIST_ = {
  * the raw JSON string regardless of the declared Content-Type. Response shape mirrors
  * google.script.run: {result: ...} on success, {error: "message"} on failure — see
  * static-pages/src/index.html's callApi_.
+ *
+ * AUTH ENVELOPE (rcballot-dx3.2/.3): the body may also carry `assertion` (the NUUC-Dispatch
+ * signed assertion) and `profile` ({name, picture} from the GIS credential — display-only,
+ * UNVERIFIED). They ride beside name/args, never as RPC arguments, so no RPC signature changes.
+ * rcvBeginRequest_ (Identity.js) verifies the assertion ONCE per request; RPCs read the result
+ * via rcvRequestIdentity_(). A rejected assertion makes the caller anonymous and the response
+ * carries `auth: {status:'rejected', reason}` so the page can sign out; an accepted one carries
+ * `auth: {status:'ok', email}`. On a deployment without sign-in both fields are ignored and no
+ * `auth` is returned. Admin authorization itself is enforced inside each admin RPC
+ * (rcvRequireBallotAdmin_), not here, so every route to those functions is covered.
  *
  * @param {Object} e doPost event.
  * @return {TextOutput}
@@ -76,13 +90,21 @@ function handleApiPost_(e) {
     return jsonOutput_({ error: 'unknown_rpc: ' + payload.name });
   }
 
+  var auth = null;
   try {
+    auth = rcvBeginRequest_(payload);
     var result = fn.apply(null, payload.args || []);
-    return jsonOutput_({ result: result });
+    var out = { result: result };
+    if (auth) out.auth = auth;
+    return jsonOutput_(out);
   } catch (err) {
     var firstArg = (payload.args || [])[0];
     GasLogger.logError('handleApiPost_.error', err, { name: payload.name, id: typeof firstArg === 'string' ? firstArg : undefined });
-    return jsonOutput_({ error: String(err && err.message ? err.message : err) });
+    var failed = { error: String(err && err.message ? err.message : err) };
+    if (auth) failed.auth = auth;
+    return jsonOutput_(failed);
+  } finally {
+    rcvEndRequest_();
   }
 }
 

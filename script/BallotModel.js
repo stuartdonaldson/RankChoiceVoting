@@ -75,6 +75,12 @@ var _BALLOT_CONFIG_ROWS = ['Title', 'Description', 'Instructions', 'Footer', 'Co
 var _BALLOT_LEGACY_CONFIG_KEYS_ = { 'Admin-Only-Notes': ['Info'] };
 // Fixed Responses columns before the candidate columns begin (col 5 / E).
 var _BALLOT_RESPONSE_FIXED_COLS = ['Date', 'Name', 'Weight', 'Comment'];
+// Signed-in voter identity (rcballot-dx3.2). OPTIONAL Responses columns: never required (a ballot
+// without them is healthy and no repair adds them), added by ensureColumns on the first signed-in
+// submit (that is the self-heal for existing ballots), and never rank columns. Email and Google-Sub
+// come only from a verified NUUC-Dispatch assertion; Picture is the GIS profile picture URL, which
+// is display-only and UNVERIFIED (client-decoded). Never log any of them.
+var _BALLOT_RESPONSE_IDENTITY_COLS = ['Email', 'Picture', 'Google-Sub'];
 var _BALLOT_LOCK_TIMEOUT_MS = 30000;
 var _ballotLockDepth_ = 0; // nesting depth of _withBallotLock_ in this execution (GAS runs one request per isolate)
 // Bold + light-blue background applied to every section marker/header row so the
@@ -802,11 +808,23 @@ function _latestResponseByRespondent_(rows) {
   var latestByLowerName = {};
   var order = [];
   rows.forEach(function (r) {
-    var key = r.name.toLowerCase();
+    var key = _respondentKey_(r);
     if (!latestByLowerName.hasOwnProperty(key)) order.push(key);
     latestByLowerName[key] = r;
   });
   return order.map(function (key) { return latestByLowerName[key]; });
+}
+
+/**
+ * One respondent's identity for dedup (rcballot-dx3.2): a signed-in row is keyed by its verified
+ * Google-Sub, so two different signed-in voters sharing a name both count and a voter who renamed
+ * themselves counts once; an anonymous row keeps the case-insensitive name key.
+ *
+ * @param {{name:string, sub:(string|undefined)}} r
+ * @return {string}
+ */
+function _respondentKey_(r) {
+  return r.sub ? 'sub:' + r.sub : 'name:' + String(r.name).toLowerCase();
 }
 
 /**
@@ -851,11 +869,35 @@ function _staleRespondents_(latestRows) {
  * @return {number} 1-based row, or -1 if not found.
  */
 function _findBallotResponseRowForName_(rows, name) {
-  var target = String(name).trim().toLowerCase();
-  for (var i = rows.length - 1; i >= 0; i--) {
-    if (rows[i].name.toLowerCase() === target) return rows[i].row;
+  var hit = _findBallotResponse_(rows, name, '');
+  return hit ? hit.row : -1;
+}
+
+/**
+ * The response row a respondent resumes/overwrites (rcballot-dx3.2). Signed in (sub given): their
+ * last row carrying that verified Google-Sub, else their last ANONYMOUS row with the typed name (a
+ * voter who first voted without signing in adopts that row). Anonymous: the last row with the name
+ * that carries no Google-Sub — a signed-in voter's row is never resumed or overwritten by typing
+ * their name. With no Google-Sub column anywhere (every prod ballot) this is the old name match.
+ *
+ * @param {Array<{row:number, name:string, sub:(string|undefined)}>} rows view rows
+ * @param {string} name typed name
+ * @param {string=} sub verified Google subject, '' when anonymous
+ * @return {?Object} the row object, or null
+ */
+function _findBallotResponse_(rows, name, sub) {
+  var i;
+  if (sub) {
+    for (i = rows.length - 1; i >= 0; i--) {
+      if (rows[i].sub === sub) return rows[i];
+    }
   }
-  return -1;
+  var target = String(name || '').trim().toLowerCase();
+  if (!target) return null;
+  for (i = rows.length - 1; i >= 0; i--) {
+    if (!rows[i].sub && rows[i].name.toLowerCase() === target) return rows[i];
+  }
+  return null;
 }
 
 /**
@@ -942,10 +984,11 @@ function _nextTableCol_(grid, snap, sectionKey) {
  * @param {string} name
  * @return {Object|null} null if the ballot id does not exist.
  */
-function getBallotForRespondent_(id, name) {
+function getBallotForRespondent_(id, name, identity) {
   name = String(name || '').trim();
+  var sub = identity && identity.sub ? String(identity.sub) : '';
 
-  if (!name) {
+  if (!name && !sub) {
     // No respondent name means nothing below depends on the Responses section (no
     // ranking to look up), so a cache hit lets this return without ever opening the
     // spreadsheet — see BallotCache.js. This is the common landing-page-load path.
@@ -970,12 +1013,9 @@ function getBallotForRespondent_(id, name) {
     // silently not load. Repaired on the next admin edit-page load or write (rcballot-8i5.7).
     _logBallotEvent_('ballot.parse.responsesMissingName', { sheet: sheet.getName() });
   }
-  var rows = view.rows;
-  var target = name.toLowerCase();
-  var existing = null;
-  for (var i = rows.length - 1; i >= 0; i--) {
-    if (rows[i].name.toLowerCase() === target) { existing = rows[i]; break; }
-  }
+  // Signed in: resume by verified Google-Sub, so a renamed typed name still finds the vote
+  // (rcballot-dx3.2); see _findBallotResponse_ for the anonymous rule.
+  var existing = _findBallotResponse_(view.rows, name, sub);
   if (!existing) return result;
 
   // Ranks by candidate NAME (rcballot-8i5.3), so a hand-sorted or hand-trimmed Candidates
@@ -988,6 +1028,7 @@ function getBallotForRespondent_(id, name) {
 
   result.candidates = withRank.map(function (r) { return r.candidate; });
   result.comment = existing.comment;
+  result.savedName = existing.name;
   return result;
 }
 
@@ -1080,9 +1121,13 @@ function addBallotCandidateForId_(id, phrase, details) {
  * @param {string} name
  * @param {Array<string>} orderedCandidates preference order, most preferred first.
  * @param {string=} comment
+ * @param {?{email:string, sub:string, picture:(string|undefined)}=} identity verified signed-in
+ *   voter (rcballot-dx3.2): email/sub from the assertion, picture display-only. When present the
+ *   row is found by Google-Sub and Email/Picture/Google-Sub are written (columns ensured — the
+ *   self-heal for existing ballots). Absent: anonymous, exactly as before.
  * @return {{ok:boolean}}
  */
-function submitBallotResponse_(id, name, orderedCandidates, comment) {
+function submitBallotResponse_(id, name, orderedCandidates, comment, identity) {
   name = String(name || '').trim();
   if (!name) throw new Error('Name is required.');
   if (!orderedCandidates || !orderedCandidates.length) throw new Error('Ranking cannot be empty.');
@@ -1106,16 +1151,22 @@ function submitBallotResponse_(id, name, orderedCandidates, comment) {
         rankByCandidate[String(c).trim()] = idx + 1;
       });
 
-      var row = _findBallotResponseRowForName_(view.rows, name);
-      var weight = 1;
-      if (row !== -1) {
-        view.rows.forEach(function (r) { if (r.row === row) weight = r.weight; });
-      }
+      var sub = identity && identity.sub ? String(identity.sub) : '';
+      var hit = _findBallotResponse_(view.rows, name, sub);
+      var row = hit ? hit.row : -1;
+      var weight = hit ? hit.weight : 1;
       var cells = { Date: new Date(), Name: name, Weight: weight, Comment: String(comment || '').trim() };
       var names = _snapCandidates_(snap).map(function (c) { return c.name; });
       names.forEach(function (n) { cells[n] = rankByCandidate.hasOwnProperty(n) ? rankByCandidate[n] : ''; });
 
-      var ops = [{ section: 'responses', ensureColumns: names }];
+      var ensure = names;
+      if (sub) {
+        cells.Email = String(identity.email || '');
+        cells.Picture = String(identity.picture || '');
+        cells['Google-Sub'] = sub;
+        ensure = _BALLOT_RESPONSE_IDENTITY_COLS.concat(names);
+      }
+      var ops = [{ section: 'responses', ensureColumns: ensure }];
       if (row === -1) ops.push({ section: 'responses', append: [cells] });
       else ops.push({ section: 'responses', update: [{ row: row, cells: cells }] });
       return _applyBallotOps_(sheet, snap, ops);
@@ -1356,7 +1407,7 @@ var _BALLOT_SECTIONS_ = {
   config: { marker: _BALLOT_CONFIG_MARKER, kind: 'kv' },
   results: { marker: _BALLOT_RESULTS_MARKER, kind: 'output', firstCol: 2 },
   candidates: { marker: _BALLOT_CANDIDATES_MARKER, kind: 'table', firstCol: _BALLOT_CANDIDATES_FIRST_COL, key: 'Name', columns: _BALLOT_CANDIDATES_HEADER },
-  responses: { marker: _BALLOT_RESPONSES_MARKER, kind: 'table', firstCol: 1, key: 'Name', columns: _BALLOT_RESPONSE_FIXED_COLS, extraColumns: 'candidates' }
+  responses: { marker: _BALLOT_RESPONSES_MARKER, kind: 'table', firstCol: 1, key: 'Name', columns: _BALLOT_RESPONSE_FIXED_COLS, optionalColumns: _BALLOT_RESPONSE_IDENTITY_COLS, extraColumns: 'candidates' }
 };
 
 /** @return {*} grid cell at 1-based (row, col), '' when absent. */
@@ -1495,7 +1546,7 @@ function _parseBallotTable_(grid, section, sectionKey, lastCol, problems) {
   var def = _BALLOT_SECTIONS_[sectionKey];
   var table = { headerRow: null, col: {}, labels: [], missing: [], rows: [], rowsUsed: section.markerRow };
   var fixedByKey = {};
-  def.columns.forEach(function (label) { fixedByKey[_labelKey_(label)] = label; });
+  def.columns.concat(def.optionalColumns || []).forEach(function (label) { fixedByKey[_labelKey_(label)] = label; });
 
   if (section.headerRow <= section.endRow) {
     table.headerRow = section.headerRow;
@@ -1577,7 +1628,7 @@ function _snapRankColumns_(snap) {
   var out = {};
   if (!t) return out;
   var fixed = {};
-  _BALLOT_SECTIONS_.responses.columns.forEach(function (l) { fixed[l] = true; });
+  _BALLOT_SECTIONS_.responses.columns.concat(_BALLOT_RESPONSE_IDENTITY_COLS).forEach(function (l) { fixed[l] = true; });
   t.labels.forEach(function (l) {
     if (!fixed[l]) out[_labelKey_(l)] = { label: l, col: t.col[l] };
   });
@@ -1678,6 +1729,9 @@ function _snapResponses_(snap) {
       name: r.key,
       weight: _parseBallotWeight_(r.cells.Weight),
       comment: String(r.cells.Comment || ''),
+      email: String(r.cells.Email || '').trim(),
+      picture: String(r.cells.Picture || '').trim(),
+      sub: String(r.cells['Google-Sub'] || '').trim(),
       ranks: ranks,
       orphanRanks: orphanRanks
     };
@@ -1709,6 +1763,7 @@ function _ballotViewFromSnapshot_(snap) {
     rows: _snapResponses_(snap).map(function (r) {
       return {
         row: r.row, date: r.date, name: r.name, weight: r.weight, comment: r.comment,
+        email: r.email, picture: r.picture, sub: r.sub,
         ranks: names.map(function (n) { return r.ranks[n]; }),
         ranksByName: r.ranks
       };
@@ -2218,7 +2273,7 @@ function _validateBallotOps_(st, ops) {
     if (!known[section]) known[section] = _ballotColsByKey_(frame);
     var k = known[section];
     var fixed = {};
-    (def.columns || []).forEach(function (l) { fixed[_labelKey_(l)] = true; });
+    (def.columns || []).concat(def.optionalColumns || []).forEach(function (l) { fixed[_labelKey_(l)] = true; });
     function checkCells(cells) {
       Object.keys(cells).forEach(function (l) {
         if (!k.hasOwnProperty(_labelKey_(l))) throw new Error('Unknown column "' + l + '" in ballot section ' + section + '.');
@@ -2431,7 +2486,7 @@ function _isReservedCandidateName_(name) {
   var key = _labelKey_(name);
   var bare = key.charAt(0) === '[' && key.charAt(key.length - 1) === ']' ? key.slice(1, -1).trim() : key;
   if (_BALLOT_RESERVED_NAMES_.indexOf(bare) !== -1) return true;
-  return _BALLOT_RESPONSE_FIXED_COLS.some(function (l) { return _labelKey_(l) === key; });
+  return _BALLOT_RESPONSE_FIXED_COLS.concat(_BALLOT_RESPONSE_IDENTITY_COLS).some(function (l) { return _labelKey_(l) === key; });
 }
 
 /**

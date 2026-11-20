@@ -235,18 +235,29 @@ function _renderCreateForm_(error, prefillId) {
 function getAdminListData_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var ids = listBallotIds_(ss);
+  // rcballot-dx3.3: the list shows every ballot, but a claimed ballot's admin-only fields
+  // (notes, respondent names) go only to its admins / super-admins. Edit and Analysis enforce
+  // the rule server-side on their own RPCs.
+  var enabled = rcvRequestEnabled_();
+  var who = rcvRequestIdentity_();
+  var supers = enabled && who ? rcvSuperAdmins_() : [];
+  var isSuper = !!who && supers.indexOf(who.email) !== -1;
   return ids.map(function (id) {
     // One snapshot read per ballot card serves every field (rcballot-8i5.3); no write.
     var view = _readBallotView_(findBallotSheet_(ss, id));
     var latest = _latestResponseByRespondent_(view.rows);
+    var admins = enabled ? rcvParseEmailList_(view.config.Admins) : [];
+    var allowed = !admins.length || isSuper || (!!who && admins.indexOf(who.email) !== -1);
     return {
       id: id,
       title: view.config.Title || id,
       candidateCount: view.names.length,
       responseCount: view.rows.length,
       uniqueRespondentCount: latest.length,
-      adminNotes: String(view.config['Admin-Only-Notes'] || '').trim(),
-      staleRespondents: _staleRespondents_(latest)
+      adminNotes: allowed ? String(view.config['Admin-Only-Notes'] || '').trim() : '',
+      staleRespondents: allowed ? _staleRespondents_(latest) : [],
+      claimed: admins.length > 0,
+      canAdmin: allowed
     };
   });
 }
@@ -261,6 +272,7 @@ function getAdminListData_() {
  *   invalid/duplicate id, same as createNewBallot_.
  */
 function createBallotForAdmin_(id) {
+  rcvRequireBallotAdmin_(id); // rcballot-dx3.3: server-side admin rule (Identity.js)
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   createNewBallot_(ss, id);
   return { ok: true, id: id };
@@ -275,6 +287,7 @@ function createBallotForAdmin_(id) {
  * @return {Object} {rcv, rcvFinishOrder, condorcet, finishOrders, sheetName, comments} or {error}.
  */
 function getAdminAnalysisData_(id) {
+  rcvRequireBallotAdmin_(id); // rcballot-dx3.3: server-side admin rule (Identity.js)
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = findBallotSheet_(ss, id);
   if (!sheet) return { error: 'no_ballot' };
@@ -331,6 +344,7 @@ function _feedbackComments_(rows) {
  * @return {Object} or {error:'no_ballot'} if the id doesn't match a ballot sheet.
  */
 function getAdminEditData(id) {
+  var access = rcvRequireBallotAdmin_(id); // rcballot-dx3.3: server-side admin rule (Identity.js)
   // Admin edit-page load is one of the two places sheet repairs run (the other is the
   // write paths — rcballot-8i5.7/.3): a healthy sheet costs one read and no lock, and that
   // same snapshot serves the page (a repair also rebuilds the cache). Orphan rank columns
@@ -380,6 +394,11 @@ function getAdminEditData(id) {
     descriptionLinkText: config['Description-Link-Text'] || '',
     descriptionLinkUrl: config['Description-Link-URL'] || '',
     adminOnlyNotes: config['Admin-Only-Notes'] || '',
+    // rcballot-dx3.3: only reaches a caller the admin rule allowed. enabled=false (PROD, or no
+    // assertion key) means sign-in is off here and the page shows no admin controls.
+    admins: access.admins,
+    access: { enabled: access.enabled, claimed: access.claimed, signedInEmail: access.email,
+      isSuperAdmin: access.isSuperAdmin, isBallotAdmin: access.isBallotAdmin },
     candidates: candidateRows,
     layoutError: layoutError,
     orphanColumns: view.orphans.filter(function (o) { return _orphanHasRanks_(rep.snap, o.label); })
@@ -397,6 +416,12 @@ function getAdminEditData(id) {
  * @return {{ok:boolean}}
  */
 function _adminWriteConfig_(id, updates) {
+  rcvRequireBallotAdmin_(id); // rcballot-dx3.3: every adminSave* goes through here
+  return _adminWriteConfigUnchecked_(id, updates);
+}
+
+/** _adminWriteConfig_ minus the admin check — callers must have checked already. */
+function _adminWriteConfigUnchecked_(id, updates) {
   return _withBallotLock_(function () {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
@@ -405,6 +430,50 @@ function _adminWriteConfig_(id, updates) {
     refreshBallotCache_(id, sheet, _ballotViewFromSnapshot_(snap)); // keep the cache (BallotCache.js) in sync with this write
     return { ok: true };
   });
+}
+
+/**
+ * RPC (rcballot-dx3.3): replaces ballot id's Admins list. Same admin rule as every other save.
+ * Refuses on a deployment without sign-in. When the new list is non-empty, leaves out the caller,
+ * and the caller is not a super-admin, the save would lock them out: it throws
+ * 'lockout_confirm: …' unless confirmLockout is true (the page asks first). A blank list makes
+ * the ballot unclaimed (open to anyone) again.
+ *
+ * @param {string} id
+ * @param {string} value comma-separated emails
+ * @param {boolean=} confirmLockout
+ * @return {{ok:boolean, admins:Array<string>}}
+ */
+function adminSaveAdmins(id, value, confirmLockout) {
+  var access = rcvRequireBallotAdmin_(id);
+  if (!access.enabled) throw new Error('Sign-in is not enabled on this deployment, so ballot admins cannot be set.');
+  var admins = rcvParseEmailList_(value);
+  var bad = admins.filter(function (e) { return !rcvLooksLikeEmail_(e); });
+  if (bad.length) throw new Error('Every admin entry must be an email address (' + bad.length + ' is not).');
+  if (admins.length && !access.isSuperAdmin && admins.indexOf(access.email) === -1 && confirmLockout !== true) {
+    throw new Error('lockout_confirm: this list does not include you' + (access.email ? '' : ' (you are not signed in)') +
+      ', so you will no longer be able to edit this ballot.');
+  }
+  rcvWriteBallotAdmins_(id, admins);
+  return { ok: true, admins: admins };
+}
+
+/**
+ * RPC (rcballot-dx3.3) "Make me an admin": adds the signed-in caller's verified email to ballot
+ * id's Admins. Allowed wherever the caller may already administer the ballot — on an unclaimed
+ * ballot, that is anyone signed in.
+ *
+ * @param {string} id
+ * @return {{ok:boolean, admins:Array<string>}}
+ */
+function adminClaimBallot(id) {
+  var access = rcvRequireBallotAdmin_(id);
+  if (!access.enabled) throw new Error('Sign-in is not enabled on this deployment.');
+  if (!access.email) throw new Error('Sign in with Google first.');
+  var admins = access.admins.slice();
+  if (admins.indexOf(access.email) === -1) admins.push(access.email);
+  rcvWriteBallotAdmins_(id, admins);
+  return { ok: true, admins: admins };
 }
 
 /** RPC: saves the Title field's pencil-icon editor. @return {{ok:boolean}} */
@@ -478,6 +547,7 @@ function adminSaveAddSettings(id, acceptNew, addInstructions) {
  * @return {{ok:boolean, name:string, details:string, linkText:string, linkUrl:string}}
  */
 function adminSaveCandidate(id, index, name, details, linkText, linkUrl) {
+  rcvRequireBallotAdmin_(id); // rcballot-dx3.3: server-side admin rule (Identity.js)
   name = String(name || '').trim();
   details = String(details || '');
   linkText = String(linkText || '');
@@ -513,6 +583,7 @@ function adminSaveCandidate(id, index, name, details, linkText, linkUrl) {
  * @return {{ok:boolean, name:string}}
  */
 function adminDeleteCandidate(id, name) {
+  rcvRequireBallotAdmin_(id); // rcballot-dx3.3: server-side admin rule (Identity.js)
   name = String(name || '').trim();
   return _withBallotLock_(function () {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -539,6 +610,7 @@ function adminDeleteCandidate(id, name) {
  * @return {{ok:boolean, order:Array<string>}} the candidate names in their new order.
  */
 function adminReorderCandidates(id, order) {
+  rcvRequireBallotAdmin_(id); // rcballot-dx3.3: server-side admin rule (Identity.js)
   return _withBallotLock_(function () {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
@@ -609,6 +681,7 @@ function _orphanHasRanks_(snap, label) {
  * @return {{ok:boolean, label:string, candidate:string}}
  */
 function adminLinkOrphanColumn(id, label, candidateName) {
+  rcvRequireBallotAdmin_(id); // rcballot-dx3.3: server-side admin rule (Identity.js)
   label = String(label || '').trim();
   candidateName = String(candidateName || '').trim();
   return _withBallotLock_(function () {
@@ -656,6 +729,7 @@ function adminLinkOrphanColumn(id, label, candidateName) {
  * @return {{ok:boolean, label:string, votes:number}} votes = how many responses had a rank in it.
  */
 function adminDiscardOrphanColumn(id, label) {
+  rcvRequireBallotAdmin_(id); // rcballot-dx3.3: server-side admin rule (Identity.js)
   label = String(label || '').trim();
   return _withBallotLock_(function () {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -689,6 +763,7 @@ function adminDiscardOrphanColumn(id, label) {
  * @return {{ok:boolean, backupSheet:string, responsesCleared:number, orphansDropped:number}}
  */
 function adminClearResponses(id, confirmId) {
+  rcvRequireBallotAdmin_(id); // rcballot-dx3.3: server-side admin rule (Identity.js)
   return _withBallotLock_(function () {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
@@ -728,6 +803,7 @@ function adminClearResponses(id, confirmId) {
  * @return {{candidate:string}}
  */
 function adminAddCandidate(id, name, details, linkText, linkUrl) {
+  rcvRequireBallotAdmin_(id); // rcballot-dx3.3: server-side admin rule (Identity.js)
   return addBallotCandidateForAdmin_(id, name, details, linkText, linkUrl);
 }
 

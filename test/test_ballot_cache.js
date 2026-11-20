@@ -34,7 +34,7 @@ function loadApp() {
   const sandbox = Object.assign({ module: { exports: {} } }, createFakeGasGlobals(ss));
   vm.createContext(sandbox);
 
-  const files = ['BallotCache.js', 'BallotModel.js', 'onOpen.js', 'webAdmin.js', 'webBallot.js', 'Triggers.js', 'processRCV.js', 'processCondorcet.js'];
+  const files = ['BallotCache.js', 'BallotModel.js', 'onOpen.js', 'libIdentity.js', 'Identity.js', 'webAdmin.js', 'webBallot.js', 'Triggers.js', 'processRCV.js', 'processCondorcet.js'];
   files.forEach(function (file) {
     sandbox.module = { exports: {} }; // discarded — this test reads functions off `sandbox` itself
     const src = fs.readFileSync(path.join(__dirname, '..', 'script', file), 'utf8');

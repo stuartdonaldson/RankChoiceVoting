@@ -2280,7 +2280,9 @@ function loadBallotModelWithAdmin() {
   const m = loadBallotModel();
   const saved = m.sandbox.module;
   m.sandbox.module = { exports: {} };
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'script', 'webAdmin.js'), 'utf8'), m.sandbox, { filename: 'webAdmin.js' });
+  ['libIdentity.js', 'Identity.js', 'webAdmin.js'].forEach(function (file) {
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'script', file), 'utf8'), m.sandbox, { filename: file });
+  });
   m.sandbox.module = saved;
   return m;
 }

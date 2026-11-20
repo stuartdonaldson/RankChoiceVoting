@@ -77,7 +77,7 @@ function redactAdminPayloadForLog_(body) {
   var out = {};
   Object.keys(body).forEach(function (k) { out[k] = body[k]; });
   if (Array.isArray(out.rows)) { out.rowCount = out.rows.length; delete out.rows; }
-  if (out.name === 'adminSaveContact' && Array.isArray(out.args)) {
+  if ((out.name === 'adminSaveContact' || out.name === 'adminSaveAdmins') && Array.isArray(out.args)) {
     out.args = out.args.slice();
     if (out.args[1] !== undefined) out.args[1] = '[redacted]'; // free text: may hold several addresses
   }
