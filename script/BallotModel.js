@@ -103,6 +103,27 @@ function listBallotIds_(ss) {
     .map(function (name) { return name.substring(BALLOT_SHEET_PREFIX.length); });
 }
 
+// Clear-all-responses backups (rcballot-cck.5). Deliberately NOT prefixed "Ballot-": the ballot
+// listing and findBallotSheet_ match on that prefix, so a backup can never be listed, opened,
+// voted on or analysed as a live ballot.
+var BALLOT_BACKUP_PREFIX = 'Backup-';
+
+/**
+ * @param {Spreadsheet} ss
+ * @param {string} id ballot id
+ * @param {Date} when
+ * @return {string} unused sheet name "Backup-<id>-<yyyyMMdd-HHmm>" (script timezone), with a
+ *   "-2", "-3"... suffix when that minute's name is taken. Never starts with "Ballot-".
+ */
+function _backupSheetName_(ss, id, when) {
+  function p2(n) { return (n < 10 ? '0' : '') + n; }
+  var stamp = when.getFullYear() + p2(when.getMonth() + 1) + p2(when.getDate()) + '-' + p2(when.getHours()) + p2(when.getMinutes());
+  var base = BALLOT_BACKUP_PREFIX + String(id || '').trim() + '-' + stamp;
+  var name = base;
+  for (var n = 2; ss.getSheetByName(name); n++) name = base + '-' + n;
+  return name;
+}
+
 /**
  * Returns the sheet for a ballot id, or null if it does not exist.
  *
@@ -2043,6 +2064,10 @@ function _withBallotWrite_(sheet, fn) {
  *   {section:'candidates'|'responses', update:[{row, cells:{<label>:v}}]}
  *   {section:'candidates'|'responses', ensureColumns:[label]}        header cells for absent labels
  *   {section:'candidates'|'responses', renameColumn:{from, to}}      header cell found by OLD label
+ *   {section:'candidates'|'responses', deleteColumn:label}           remove a column's cells (header
+ *                                                                    through last used row), shifting
+ *                                                                    the cells to its right left; rows of
+ *                                                                    other sections are never touched
  *   {section:'candidates'|'responses', deleteRows:[row]}             remove data rows
  *
  * Rules:
@@ -2059,7 +2084,8 @@ function _withBallotWrite_(sheet, fn) {
  *     cleared — so no stale output survives in any column.
  *   - ensureColumns appends header cells right of every labelled column and any content in
  *     the section (_nextTableCol_); a label already present (any case) is left alone.
- *   - renameColumn of a label not in the header is a no-op.
+ *   - renameColumn / deleteColumn of a label not in the header is a no-op; deleteColumn of a
+ *     fixed label refuses (reason fixedLabel).
  *   - Cell writes are buffered and flushed as ONE setValues per contiguous row block over the
  *     block's min..max dirty column; untouched cells inside the block are rewritten with the
  *     snapshot's values, so orphan/extra cells are preserved (as values — a formula there
@@ -2095,7 +2121,7 @@ function _applyBallotOps_(sheet, snap, ops) {
 var _BALLOT_OP_VERBS_ = {
   kv: ['update', 'append'],
   output: ['replaceAll'],
-  table: ['update', 'append', 'ensureColumns', 'renameColumn', 'deleteRows']
+  table: ['update', 'append', 'ensureColumns', 'renameColumn', 'deleteColumn', 'deleteRows']
 };
 
 /** @return {string} the op's single verb key. */
@@ -2176,6 +2202,14 @@ function _validateBallotOps_(st, ops) {
     else if (verb === 'update') op.update.forEach(function (u) { checkRow(u.row); checkCells(u.cells); });
     else if (verb === 'deleteRows') op.deleteRows.forEach(checkRow);
     else if (verb === 'ensureColumns') op.ensureColumns.forEach(function (l) { k[_labelKey_(l)] = true; });
+    else if (verb === 'deleteColumn') {
+      var dk = _labelKey_(op.deleteColumn);
+      if (!dk) throw new Error('deleteColumn needs a label.');
+      if (fixed[dk]) {
+        _refuseBallotWrite_(st.sheet, section, 'fixedLabel', { label: op.deleteColumn }, 'a fixed ' + def.marker + ' column cannot be deleted.');
+      }
+      delete k[dk];
+    }
     else if (verb === 'renameColumn') {
       var from = _labelKey_(op.renameColumn.from);
       var to = _labelKey_(op.renameColumn.to);
@@ -2316,6 +2350,16 @@ function _applyBallotOp_(st, op) {
   } else if (verb === 'renameColumn') {
     var c = _ballotColsByKey_(frame)[_labelKey_(op.renameColumn.from)];
     if (c) _putBallotCell_(st, frame.headerRow, c, String(op.renameColumn.to).trim());
+  } else if (verb === 'deleteColumn') {
+    var dc = _ballotColsByKey_(frame)[_labelKey_(op.deleteColumn)];
+    if (dc) {
+      var width = st.grid.reduce(function (m, line) { return Math.max(m, line.length); }, 1);
+      for (var dr = frame.headerRow; dr <= frame.rowsUsed; dr++) {
+        for (var cc = dc; cc <= width; cc++) {
+          _putBallotCell_(st, dr, cc, cc < width ? _gridCell_(st.grid, dr, cc + 1) : '');
+        }
+      }
+    }
   } else if (verb === 'replaceAll') {
     _replaceBallotResults_(st, op.replaceAll);
   }
@@ -2400,6 +2444,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getBallotSheetName_: getBallotSheetName_,
     listBallotIds_: listBallotIds_,
     findBallotSheet_: findBallotSheet_,
+    _backupSheetName_: _backupSheetName_,
     createBallotSheet_: createBallotSheet_,
     getOrCreateBallotSheet_: getOrCreateBallotSheet_,
     createNewBallot_: createNewBallot_,

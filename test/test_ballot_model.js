@@ -2434,7 +2434,124 @@ function testAdminLinkOrphanColumn() {
   assert.deepEqual(sandbox.getAdminEditData('Link').orphanColumns, []);
 }
 
+/** rcballot-cck.4: orphan and candidate vote counts reach getAdminEditData. */
+function testAdminEditDataVoteCounts() {
+  const { SM, ss, sandbox } = loadBallotModelWithAdmin();
+  const sheet = buildOrderedBallot(ss, 'Cnt', ['results', 'candidates', 'responses']);
+  sandbox._getWebAppUrl_ = () => 'http://x/exec';
+  let d = sandbox.getAdminEditData('Cnt');
+  assert.deepEqual(d.candidates.map((c) => [c.name, c.votes]), [['Alice', 2], ['Bob', 2]]);
+  sandbox.adminDeleteCandidate('Cnt', 'Alice');
+  d = sandbox.getAdminEditData('Cnt');
+  assert.deepEqual(d.orphanColumns.map((o) => [o.label, o.votes]), [['Alice', 2]]);
+  assert.deepEqual(d.candidates.map((c) => [c.name, c.votes]), [['Bob', 2]]);
+  // A blank rank does not count.
+  const header = SM._readBallotLayout_(sheet).sections.responses.headerRow;
+  sheet.getRange(header + 1, 5).setValue('');
+  assert.deepEqual(sandbox.getAdminEditData('Cnt').orphanColumns.map((o) => o.votes), [1]);
+}
+
+/** deleteColumn op: removes one Responses column within the section only, shifting cells right of it left. */
+function testApplyBallotOpsDeleteColumn() {
+  const { SM, ss } = loadBallotModel();
+  // Candidates above Responses so a sheet-wide column delete would damage it.
+  const sheet = buildOrderedBallot(ss, 'DelCol', ['results', 'candidates', 'responses']);
+  const header = SM._readBallotLayout_(sheet).sections.responses.headerRow;
+  sheet.getRange(header, 7).setValue('Carol');
+  sheet.getRange(header + 1, 7).setValue(7);
+  const candidates = sectionSnapshot(sheet, 'candidates');
+  const results = sectionSnapshot(sheet, 'results');
+  let snap = SM._readBallot_(sheet);
+  assert.throws(() => SM._applyBallotOps_(sheet, snap, [{ section: 'responses', deleteColumn: 'Name' }]), /fixed Responses column cannot be deleted|damaged/);
+  const c = countCalls(sheet, () => SM._applyBallotOps_(sheet, snap, [{ section: 'responses', deleteColumn: ' alice ' }]));
+  assert.equal(c.writes, 1, 'one block write');
+  assert.deepEqual(sheet.getRange(header, 5, 1, 3).getValues()[0], ['Bob', 'Carol', '']);
+  assert.deepEqual(sheet.getRange(header + 1, 5, 1, 3).getValues()[0], [2, 7, '']);
+  assert.deepEqual(sectionSnapshot(sheet, 'candidates'), candidates);
+  assert.deepEqual(sectionSnapshot(sheet, 'results'), results);
+  // Unknown label: no-op, no writes.
+  snap = SM._readBallot_(sheet);
+  assert.equal(countCalls(sheet, () => SM._applyBallotOps_(sheet, snap, [{ section: 'responses', deleteColumn: 'Zed' }])).writes, 0);
+}
+
+/** rcballot-cck.4: discard deletes the orphan column and its votes only; refuses non-orphans. */
+function testAdminDiscardOrphanColumn() {
+  const { SM, ss, sandbox } = loadBallotModelWithAdmin();
+  const sheet = buildOrderedBallot(ss, 'Disc', ['results', 'candidates', 'responses']);
+  sandbox.adminDeleteCandidate('Disc', 'Alice');
+  const r0 = countCalls(sheet, () => {
+    assert.throws(() => sandbox.adminDiscardOrphanColumn('Disc', 'Bob'), /^Error: Orphan column not found\.$/);
+    assert.throws(() => sandbox.adminDiscardOrphanColumn('Disc', 'Date'), /^Error: Orphan column not found\.$/);
+  });
+  assert.equal(r0.writes, 0);
+  const res = sandbox.adminDiscardOrphanColumn('Disc', 'alice');
+  assert.deepEqual(res, { ok: true, label: 'Alice', votes: 2 });
+  assert.deepEqual(SM._snapOrphanColumns_(SM._readBallot_(sheet)), []);
+  assert.deepEqual(SM.readBallotCandidates_(sheet), ['Bob']);
+  assert.deepEqual(ranksByName(SM, sheet), [{ Bob: 2 }, { Bob: 1 }]);
+  assert.equal(SM.readBallotResponseRows_(sheet).length, 2, 'voters kept');
+  sandbox._getWebAppUrl_ = () => 'http://x/exec';
+  assert.deepEqual(sandbox.getAdminEditData('Disc').orphanColumns, []);
+}
+
+/** rcballot-cck.5: clear backs up first, then empties Responses; config/candidates intact; orphans dropped. */
+function testAdminClearResponses() {
+  const { SM, ss, sandbox } = loadBallotModelWithAdmin();
+  const sheet = buildOrderedBallot(ss, 'Clr', ['results', 'candidates', 'responses']);
+  sandbox.adminDeleteCandidate('Clr', 'Alice'); // leaves an orphan with votes
+  const candidates = sectionSnapshot(sheet, 'candidates');
+  const config = SM.readBallotConfig_(sheet);
+  const before = sheet.getDataRange().getValues();
+
+  assert.throws(() => sandbox.adminClearResponses('Clr', 'clr'), /^Error: Confirmation does not match the ballot id\.$/);
+  assert.throws(() => sandbox.adminClearResponses('Clr', ''), /Confirmation does not match/);
+  assert.equal(ss.getSheets().length, 1, 'refusal makes no backup');
+
+  const res = sandbox.adminClearResponses('Clr', 'Clr');
+  assert.match(res.backupSheet, /^Backup-Clr-\d{8}-\d{4}$/);
+  assert.equal(res.responsesCleared, 2);
+  assert.equal(res.orphansDropped, 1);
+  // Backup holds the pre-clear sheet; live ballot is still the only listed ballot.
+  const backup = ss.getSheetByName(res.backupSheet);
+  assert.deepEqual(backup.getDataRange().getValues(), before);
+  assert.deepEqual(SM.listBallotIds_(ss), ['Clr']);
+  assert.equal(SM.findBallotSheet_(ss, res.backupSheet.replace(/^Ballot-/, '')), null);
+  // Live sheet: zero responses, header kept, orphan gone, candidates/config intact.
+  const snap = SM._readBallot_(sheet);
+  assert.equal(SM._snapResponses_(snap).length, 0);
+  assert.deepEqual(SM._snapOrphanColumns_(snap), []);
+  assert.ok(snap.tables.responses.headerRow);
+  assert.deepEqual(sectionSnapshot(sheet, 'candidates'), candidates);
+  assert.deepEqual(SM.readBallotConfig_(sheet), config);
+  assert.deepEqual(SM.readBallotResponseRows_(sheet), []);
+  // A new vote is accepted and a previous voter starts fresh.
+  SM.submitBallotResponse_('Clr', 'V1', ['Bob'], '');
+  assert.deepEqual(ranksByName(SM, sheet), [{ Bob: 1 }]);
+
+  // Same-minute second backup gets a distinct name.
+  const again = sandbox.adminClearResponses('Clr', 'Clr');
+  assert.notEqual(again.backupSheet, res.backupSheet);
+  assert.deepEqual(SM.listBallotIds_(ss), ['Clr']);
+}
+
+/** Backup names never start with "Ballot-", so listing and lookup cannot mistake them for a ballot. */
+function testBackupSheetNameExcludedFromBallots() {
+  const { SM, ss } = loadBallotModel();
+  SM.createNewBallot_(ss, 'Alpha');
+  const name = SM._backupSheetName_(ss, 'Alpha', new Date(2026, 10, 19, 9, 5));
+  assert.equal(name, 'Backup-Alpha-20261119-0905');
+  ss.insertSheet(name);
+  assert.equal(SM._backupSheetName_(ss, 'Alpha', new Date(2026, 10, 19, 9, 5)), name + '-2');
+  assert.deepEqual(SM.listBallotIds_(ss), ['Alpha']);
+  assert.equal(SM.findBallotSheet_(ss, name), null);
+}
+
 function run() {
+  testAdminEditDataVoteCounts();
+  testApplyBallotOpsDeleteColumn();
+  testAdminDiscardOrphanColumn();
+  testAdminClearResponses();
+  testBackupSheetNameExcludedFromBallots();
   testRenameKeepsVotesWithCandidate();
   testSaveBallotCandidatesSwapAndDuplicates();
   testAddBallotCandidateOneRowAppendDuplicatesAndAtomicity();

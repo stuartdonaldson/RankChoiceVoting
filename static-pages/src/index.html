@@ -408,7 +408,7 @@
       <div class="field-status" id="candidateListStatus"></div>
       <div id="orphanBlock" class="hidden">
         <p class="subsection-header">Unlinked vote columns</p>
-        <p class="field-help">These Responses columns match no candidate (for example after a delete or a hand rename) and are not counted. Link one to a candidate that has no column of its own to count its votes for that candidate.</p>
+        <p class="field-help">These are votes cast for a choice that no longer exists on this ballot. That happens when a choice was deleted after people had voted, or when a column was renamed directly in the spreadsheet. These votes are <b>not counted</b>. Each voter's rankings of the other choices still count normally. <b>Link</b> a column to a current choice to bring its votes back (for example, if the choice was deleted by mistake, or was re-added under a new name). <b>Discard</b> it if the choice was removed on purpose; the column and its votes are then permanently deleted.</p>
         <ul id="orphanList"></ul>
         <div class="field-status" id="orphanStatus"></div>
       </div>
@@ -542,6 +542,17 @@
             <div class="field-status" id="adminOnlyNotesStatus"></div>
           </div>
         </div>
+      </div>
+
+      <div class="field-block danger-zone" id="dangerZone">
+        <p class="subsection-header">Danger zone</p>
+        <p class="field-help">Clear all responses removes every vote from this ballot, so it starts fresh (anyone who voted can vote again). The choices and settings are kept. A backup copy of the current sheet is saved first, in a sheet named like <code>Backup-&lt;id&gt;-yyyyMMdd-HHmm</code>.</p>
+        <label for="clearConfirmInput">Type the ballot id to confirm</label>
+        <input type="text" id="clearConfirmInput" autocomplete="off">
+        <div class="field-panel-actions">
+          <button type="button" class="secondary" id="clearResponsesBtn" disabled>Clear all responses</button>
+        </div>
+        <div class="field-status" id="clearStatus"></div>
       </div>
 
       <p style="margin-top:24px;"><a id="backLinkBottom" href="?cmd=admin">&larr; Back to ballot list</a></p>
@@ -927,7 +938,7 @@
         var li = document.createElement('li');
         var label = document.createElement('span');
         label.className = 'topic-text';
-        label.textContent = o.label + ' ';
+        label.textContent = o.label + ' (' + o.votes + ' vote' + (o.votes === 1 ? '' : 's') + ') ';
         var select = document.createElement('select');
         fieldData.candidates.forEach(function (c) {
           var opt = document.createElement('option');
@@ -946,18 +957,67 @@
           callApi_('adminLinkOrphanColumn', ballotId, o.label, select.value).then(function () {
             fieldData.orphanColumns = fieldData.orphanColumns.filter(function (x) { return x !== o; });
             renderOrphans();
+            // Linking moves votes onto a candidate: refresh its count for the delete confirm.
+            callApi_('getAdminEditData', ballotId).then(function (data) {
+              if (data && !data.error) data.candidates.forEach(function (n) {
+                fieldData.candidates.forEach(function (c) { if (c.name === n.name) c.votes = n.votes; });
+              });
+            }, function () {});
             setStatus(orphanStatus, '', false);
           }, function (err) {
             btn.disabled = false;
             setStatus(orphanStatus, 'Could not link: ' + err.message, true);
           });
         });
+        var discardBtn = document.createElement('button');
+        discardBtn.type = 'button';
+        discardBtn.className = 'secondary';
+        discardBtn.textContent = 'Discard';
+        discardBtn.addEventListener('click', function () {
+          if (!window.confirm('Permanently discard the "' + o.label + '" column and its ' + o.votes + ' vote' + (o.votes === 1 ? '' : 's') + '? Other rankings by those voters are kept. This cannot be undone.')) return;
+          discardBtn.disabled = true;
+          btn.disabled = true;
+          setStatus(orphanStatus, 'Discarding…', false);
+          callApi_('adminDiscardOrphanColumn', ballotId, o.label).then(function () {
+            fieldData.orphanColumns = fieldData.orphanColumns.filter(function (x) { return x !== o; });
+            renderOrphans();
+            setStatus(orphanStatus, '', false);
+          }, function (err) {
+            discardBtn.disabled = false;
+            btn.disabled = false;
+            setStatus(orphanStatus, 'Could not discard: ' + err.message, true);
+          });
+        });
         li.appendChild(label);
         li.appendChild(select);
         li.appendChild(btn);
+        li.appendChild(discardBtn);
         orphanList.appendChild(li);
       });
     }
+
+    var clearConfirmInput = document.getElementById('clearConfirmInput');
+    var clearResponsesBtn = document.getElementById('clearResponsesBtn');
+    var clearStatus = document.getElementById('clearStatus');
+    clearConfirmInput.addEventListener('input', function () {
+      clearResponsesBtn.disabled = clearConfirmInput.value.trim() !== ballotId;
+    });
+    clearResponsesBtn.addEventListener('click', function () {
+      if (clearConfirmInput.value.trim() !== ballotId) return;
+      if (!window.confirm('Delete ALL responses on "' + ballotId + '"? A backup sheet is made first.')) return;
+      clearResponsesBtn.disabled = true;
+      setStatus(clearStatus, 'Clearing…', false);
+      callApi_('adminClearResponses', ballotId, clearConfirmInput.value.trim()).then(function (r) {
+        clearConfirmInput.value = '';
+        fieldData.orphanColumns = [];
+        renderOrphans();
+        fieldData.candidates.forEach(function (c) { c.votes = 0; });
+        setStatus(clearStatus, 'Cleared ' + r.responsesCleared + ' response' + (r.responsesCleared === 1 ? '' : 's') + '. Backup saved as sheet "' + r.backupSheet + '".', false);
+      }, function (err) {
+        clearResponsesBtn.disabled = clearConfirmInput.value.trim() !== ballotId;
+        setStatus(clearStatus, 'Could not clear: ' + err.message, true);
+      });
+    });
 
     function renderCandidates(candidates) {
       candidateList.innerHTML = '';
@@ -1043,7 +1103,9 @@
       delBtn.textContent = '🗑️';
       delBtn.setAttribute('aria-label', 'Delete ' + candidate.name);
       delBtn.addEventListener('click', function () {
-        if (!window.confirm('Delete "' + candidate.name + '"? Its votes are kept in an unlinked column and no longer counted.')) return;
+        var votes = candidate.votes || 0;
+        var voteNote = votes > 0 ? ' It has ' + votes + ' vote' + (votes === 1 ? '' : 's') + '.' : '';
+        if (!window.confirm('Delete "' + candidate.name + '"?' + voteNote + ' Its votes are kept in an unlinked column and no longer counted.')) return;
         setStatus(candidateListStatus, 'Deleting…', false);
         callApi_('adminDeleteCandidate', ballotId, candidate.name).then(function () {
           fieldData.candidates = fieldData.candidates.filter(function (c) { return c !== candidate; });

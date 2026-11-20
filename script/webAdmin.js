@@ -327,7 +327,12 @@ function getAdminEditData(id) {
   }
 
   var config = view.config;
-  var candidateRows = view.candidates;
+  // Per-candidate vote count (responses with a rank in the candidate's column) so the delete
+  // confirm can say how many votes go unlinked (rcballot-cck.4).
+  var responses = _snapResponses_(rep.snap);
+  var candidateRows = view.candidates.map(function (c) {
+    return { name: c.name, details: c.details, linkText: c.linkText, linkUrl: c.linkUrl, votes: _countNonBlank_(responses, 'ranks', c.name) };
+  });
 
   var baseUrl = _getWebAppUrl_();
   return {
@@ -346,7 +351,7 @@ function getAdminEditData(id) {
     candidates: candidateRows,
     layoutError: layoutError,
     orphanColumns: view.orphans.filter(function (o) { return _orphanHasRanks_(rep.snap, o.label); })
-      .map(function (o) { return { label: o.label, col: o.col }; }),
+      .map(function (o) { return { label: o.label, col: o.col, votes: _countNonBlank_(responses, 'orphanRanks', o.label) }; }),
     ballotUrl: baseUrl + '?cmd=ballot&id=' + encodeURIComponent(id),
     adminListUrl: baseUrl + '?cmd=admin',
     appVersion: (typeof APP_VERSION !== 'undefined' && APP_VERSION) || '',
@@ -519,6 +524,14 @@ function adminReorderCandidates(id, order) {
   });
 }
 
+/** @return {number} responses whose `field` map (ranks / orphanRanks) has a non-blank value under key. */
+function _countNonBlank_(responses, field, key) {
+  return responses.filter(function (r) {
+    var v = r[field][key];
+    return v !== '' && v !== null && v !== undefined;
+  }).length;
+}
+
 /** @return {boolean} true when any response has a non-blank rank under the candidate's column. */
 function _columnHasRanks_(snap, candidateName) {
   return _snapResponses_(snap).some(function (r) {
@@ -583,6 +596,77 @@ function adminLinkOrphanColumn(id, label, candidateName) {
     });
     refreshBallotCache_(id, sheet, _ballotViewFromSnapshot_(after));
     return { ok: true, label: label, candidate: linked };
+  });
+}
+
+/**
+ * RPC: discards an unlinked (orphan) Responses column (rcballot-cck.4): deletes the column
+ * from the sheet, with the votes in it. Each voter's other rankings are untouched. Refused
+ * when the label is not currently an orphan (a candidate's own column is never deletable here).
+ *
+ * @param {string} id
+ * @param {string} label orphan column header, as listed in getAdminEditData's orphanColumns.
+ * @return {{ok:boolean, label:string, votes:number}} votes = how many responses had a rank in it.
+ */
+function adminDiscardOrphanColumn(id, label) {
+  label = String(label || '').trim();
+  return _withBallotLock_(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = findBallotSheet_(ss, id);
+    if (!sheet) throw new Error('No ballot found for id "' + id + '".');
+    var votes = 0;
+    var discarded = '';
+    var after = _withBallotWrite_(sheet, function (snap) {
+      var orphan = null;
+      _snapOrphanColumns_(snap).forEach(function (o) { if (!orphan && o.label.toLowerCase() === label.toLowerCase()) orphan = o; });
+      if (!orphan) throw new Error('Orphan column not found.');
+      votes = _countNonBlank_(_snapResponses_(snap), 'orphanRanks', orphan.label);
+      discarded = orphan.label;
+      return _applyBallotOps_(sheet, snap, [{ section: 'responses', deleteColumn: orphan.label }]);
+    });
+    refreshBallotCache_(id, sheet, _ballotViewFromSnapshot_(after));
+    _logBallotEvent_('ballot.orphan.discarded', { sheet: sheet.getName(), label: discarded, votes: votes });
+    return { ok: true, label: discarded, votes: votes };
+  });
+}
+
+/**
+ * RPC: clears every response on a ballot (rcballot-cck.5). Under the ballot lock: copies the
+ * whole sheet to a "Backup-<id>-<yyyyMMdd-HHmm>" sheet (not listed as a ballot — see
+ * BALLOT_BACKUP_PREFIX), then deletes all Responses data rows (marker + header stay) and
+ * drops orphan columns. Config and Candidates are kept. The typed confirmation must equal the
+ * ballot id exactly; it is re-checked here, not only in the page.
+ *
+ * @param {string} id
+ * @param {string} confirmId what the admin typed; must equal id.
+ * @return {{ok:boolean, backupSheet:string, responsesCleared:number, orphansDropped:number}}
+ */
+function adminClearResponses(id, confirmId) {
+  return _withBallotLock_(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = findBallotSheet_(ss, id);
+    if (!sheet) throw new Error('No ballot found for id "' + id + '".');
+    if (String(confirmId || '').trim() !== String(id)) throw new Error('Confirmation does not match the ballot id.');
+    var cleared = 0;
+    var dropped = 0;
+    var backupName = '';
+    var after = _withBallotWrite_(sheet, function (snap) {
+      var t = snap.tables.responses;
+      if (!t || t.headerRow === null) throw new Error('This ballot has no Responses section to clear.');
+      // Backup first; if the copy fails nothing has been cleared.
+      backupName = _backupSheetName_(ss, id, new Date());
+      sheet.copyTo(ss).setName(backupName);
+      var rows = [];
+      for (var r = t.headerRow + 1; r <= t.rowsUsed; r++) rows.push(r);
+      cleared = _snapResponses_(snap).length;
+      var ops = [];
+      if (rows.length) ops.push({ section: 'responses', deleteRows: rows });
+      _snapOrphanColumns_(snap).forEach(function (o) { ops.push({ section: 'responses', deleteColumn: o.label }); dropped++; });
+      return ops.length ? _applyBallotOps_(sheet, snap, ops) : snap;
+    });
+    refreshBallotCache_(id, sheet, _ballotViewFromSnapshot_(after));
+    _logBallotEvent_('ballot.responses.cleared', { sheet: sheet.getName(), backupSheet: backupName, responses: cleared, orphanColumns: dropped });
+    return { ok: true, backupSheet: backupName, responsesCleared: cleared, orphansDropped: dropped };
   });
 }
 

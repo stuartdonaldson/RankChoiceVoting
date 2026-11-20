@@ -144,6 +144,15 @@ class FakeSheet {
     return this.insertRowsAfter(beforeRow - 1, howMany); // counted there
   }
 
+  /** Copies the sheet into `spreadsheet` as "Copy of <name>" (cells only), like Sheet.copyTo. */
+  copyTo(spreadsheet) {
+    const copy = spreadsheet.insertSheet('Copy of ' + this._name);
+    for (const [key, value] of this._cells.entries()) copy._cells.set(key, value);
+    copy._lastRow = this._lastRow;
+    copy._lastCol = this._lastCol;
+    return copy;
+  }
+
   /** Removes rows [startRow, startRow+howMany-1] and shifts rows below up. */
   deleteRows(startRow, howMany) {
     this._writeCalls += 1;

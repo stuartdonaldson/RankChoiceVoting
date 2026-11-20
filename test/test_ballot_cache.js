@@ -427,7 +427,7 @@ function testOrphanColumnShownOnEditPageAndExcludedFromAnalysis() {
 
   const edit = app.getAdminEditData('Orphan');
   assert.deepEqual(edit.candidates.map(function (c) { return c.name; }), ['Bob', 'Carol']);
-  assert.deepEqual(JSON.parse(JSON.stringify(edit.orphanColumns)), [{ label: 'Alice', col: 5 }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(edit.orphanColumns)), [{ label: 'Alice', col: 5, votes: 3 }]);
 
   const results = app.getAdminAnalysisData_('Orphan');
   assert.equal(results.error, undefined, results.error);
