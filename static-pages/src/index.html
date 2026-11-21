@@ -257,6 +257,9 @@
   #topicList .handle { cursor: grab; touch-action: none; }
   .rich { white-space: pre-wrap; overflow-wrap: anywhere; }
   .rich a { overflow-wrap: anywhere; }
+  /* Prose paragraphs (rcballot-6yq): half a line between paragraphs; 0.75em fallback for browsers without lh. */
+  .rich-para { display: block; }
+  .rich-para + .rich-para, .rich-para + ul.rich-list, ul.rich-list + .rich-para { margin-top: 0.75em; margin-top: 0.5lh; }
   ul.rich-list { margin: 4px 0; padding-left: 22px; white-space: normal; }
   ul.rich-list li { white-space: pre-wrap; margin-bottom: 2px; }
   .rich-inert-link { color: var(--link); text-decoration: underline; }
@@ -1068,7 +1071,9 @@
   }
 
   /** {blocks:[{type:'para',inline}|{type:'list',items:[inline]}], errors:[{line,message}]}. */
-  function parseRichBlocks_(text) {
+  // lineParas (rcballot-6yq): every non-blank line is its own paragraph and blank lines only
+  // separate — used for prose blocks (Description, Instructions) so paragraphs get a half-line gap.
+  function parseRichBlocks_(text, lineParas) {
     var src = String(text == null ? '' : text).replace(/\r\n?/g, '\n');
     var blocks = [];
     var errors = [];
@@ -1079,6 +1084,12 @@
       if (m) {
         if (!cur || cur.type !== 'list') { cur = { type: 'list', items: [] }; blocks.push(cur); }
         cur.items.push(richParseInline_(m[1], idx + 1, errors));
+      } else if (lineParas) {
+        if (!ln.trim()) { cur = null; return; }
+        cur = { type: 'para', inline: [] };
+        blocks.push(cur);
+        richPushInline_(cur.inline, richParseInline_(ln, idx + 1, errors));
+        cur = null;
       } else {
         if (!cur || cur.type !== 'para') { cur = { type: 'para', inline: [] }; blocks.push(cur); }
         else richPushInline_(cur.inline, [{ type: 'text', value: '\n' }]);
@@ -1133,10 +1144,17 @@
    * Replaces el's content with formatted admin text: line breaks (CSS pre-wrap), bold, italic,
    * links, bullet lists. inertLinks: style links without making them clickable (admin item rows).
    */
-  function setRich_(el, text, inertLinks) {
+  function setRich_(el, text, inertLinks, paragraphs) {
     var mode = inertLinks ? 'inert' : 'full';
     el.textContent = '';
-    parseRichBlocks_(text).blocks.forEach(function (b) {
+    parseRichBlocks_(text, paragraphs).blocks.forEach(function (b) {
+      if (b.type === 'para' && paragraphs) {
+        var para = document.createElement('span');
+        para.className = 'rich-para';
+        richAppendInline_(para, b.inline, mode);
+        el.appendChild(para);
+        return;
+      }
       if (b.type === 'para') { richAppendInline_(el, b.inline, mode); return; }
       var ul = document.createElement('ul');
       ul.className = 'rich-list';
@@ -1175,17 +1193,24 @@
    * setRich_ plus the optional Description link on its own line at the end: label = linkText,
    * falling back to the URL; only http(s) URLs render (anything else is ignored). DOM-built.
    */
-  function setRichWithLink_(el, text, linkText, linkUrl) {
-    setRich_(el, text);
+  function setRichWithLink_(el, text, linkText, linkUrl, paragraphs) {
+    setRich_(el, text, false, paragraphs);
     var url = safeHttpUrl_(linkUrl);
     if (!url) return;
-    if (el.textContent !== '' || el.children.length) el.appendChild(document.createTextNode('\n'));
+    var host = el;
+    if (paragraphs) {
+      host = document.createElement('span');
+      host.className = 'rich-para';
+      el.appendChild(host);
+    } else if (el.textContent !== '' || el.children.length) {
+      el.appendChild(document.createTextNode('\n'));
+    }
     var a = document.createElement('a');
     a.href = url;
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
     a.textContent = String(linkText == null ? '' : linkText).trim() || url;
-    el.appendChild(a);
+    host.appendChild(a);
   }
 
   /** Text before the first blank line (a line holding only whitespace), trimmed; '' for none. */
@@ -1885,7 +1910,7 @@
     // The Description display carries the optional Description link at its end, so a Description
     // save re-renders with the saved link, and a link save re-renders with the saved Description.
     function renderDescriptionDisplay() {
-      setRichWithLink_(descriptionDisplay, fieldData.description, fieldData.descriptionLinkText, fieldData.descriptionLinkUrl);
+      setRichWithLink_(descriptionDisplay, fieldData.description, fieldData.descriptionLinkText, fieldData.descriptionLinkUrl, true);
     }
     wireSimpleField('description', 'adminSaveDescription', function (el, v) {
       fieldData.description = v;
@@ -1935,10 +1960,10 @@
         setStatus(descriptionLinkStatus, 'Could not save: ' + err.message, true);
       });
     });
-    wireSimpleField('instructions', 'adminSaveInstructions', setRich_);
+    wireSimpleField('instructions', 'adminSaveInstructions', function (el, v) { setRich_(el, v, false, true); });
     wireSimpleField('footer', 'adminSaveFooter', setRich_);
     wireSimpleField('contact', 'adminSaveContact', setRich_);
-    wireSimpleField('feedbackPrompt', 'adminSaveFeedbackPrompt', function (el, v) { setRich_(el, v || fieldData.defaultFeedbackPrompt || ''); });
+    wireSimpleField('feedbackPrompt', 'adminSaveFeedbackPrompt', function (el, v) { setRich_(el, v || fieldData.defaultFeedbackPrompt || '', false, true); });
 
     // Details Preview toggle (Show-Details-Preview): same pencil/panel pattern as the other fields.
     var detailsPreviewDisplay = document.getElementById('detailsPreviewDisplay');
@@ -1988,10 +2013,10 @@
         titleDisplay.textContent = data.title;
         renderDescriptionDisplay();
         renderDescriptionLinkDisplay();
-        setRich_(instructionsDisplay, data.instructions);
+        setRich_(instructionsDisplay, data.instructions, false, true);
         setRich_(footerDisplay, data.footer);
         setRich_(contactDisplay, data.contact);
-        setRich_(document.getElementById('feedbackPromptDisplay'), data.feedbackPrompt || data.defaultFeedbackPrompt);
+        setRich_(document.getElementById('feedbackPromptDisplay'), data.feedbackPrompt || data.defaultFeedbackPrompt, false, true);
         renderDetailsPreviewDisplay();
         adminOnlyNotesDisplay.textContent = data.adminOnlyNotes;
         renderAddSettingsDisplay();
@@ -2292,8 +2317,8 @@
       [stepNoBallot, stepName, stepRank, stepDone].forEach(function (s) { s.classList.add('hidden'); });
       el.classList.remove('hidden');
       // The Description link belongs to the Description only, not the rank-step Instructions.
-      if (el === stepRank) setRich_(pageDescription, ballotInstructions);
-      else setRichWithLink_(pageDescription, ballotDescription, ballotDescriptionLinkText, ballotDescriptionLinkUrl);
+      if (el === stepRank) setRich_(pageDescription, ballotInstructions, false, true);
+      else setRichWithLink_(pageDescription, ballotDescription, ballotDescriptionLinkText, ballotDescriptionLinkUrl, true);
     }
 
     function setStatus(el, msg, isError) {
@@ -2444,13 +2469,14 @@
       ballotInstructions = config.instructions || '';
       setRich_(pageFooter, config.footer || '');
       setRich_(pageContact, config.contact ? 'Contact: ' + config.contact : '');
-      feedbackPromptLabel.textContent = config.feedbackPrompt || "Any feedback you'd like to add?";
+      // Rendered like the editor preview (rcballot-sqi formatting was showing raw markers here).
+      setRich_(feedbackPromptLabel, config.feedbackPrompt || "Any feedback you'd like to add?", false, true);
       showDetailsPreview = !!config.showDetailsPreview;
       setAppVersionFooter_(config.appVersion, config.appDeployTarget);
       itemDetailsByName = config.itemDetails || {};
       acceptNew = !!config.acceptNew;
       addSection.style.display = acceptNew ? 'block' : 'none';
-      setRich_(addInstructionsText, config.addInstructions || '');
+      setRich_(addInstructionsText, config.addInstructions || '', false, true);
       addInstructionsText.style.display = config.addInstructions ? 'block' : 'none';
     }
 

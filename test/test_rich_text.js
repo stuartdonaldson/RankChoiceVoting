@@ -241,6 +241,25 @@ function testInertLinksForAdminRows() {
   assert.equal(shape(el.children[el.children.length - 1]), '<ul><li><strong>b</strong></li></ul>');
 }
 
+/** rcballot-6yq: prose paragraphs — one block per non-blank line, blank lines collapse. */
+function testLineParagraphs() {
+  const el = fakeNode('p');
+  setRich_(el, 'One **bold**\nTwo\n\n\nThree\n- a\n- b\nFour', false, true);
+  assert.deepEqual(el.children.map((c) => c.tag), ['span', 'span', 'span', 'ul', 'span']);
+  assert.ok(el.children.filter((c) => c.tag === 'span').every((c) => c.className === 'rich-para'));
+  assert.equal(shape(el.children[0]), '<span>One <strong>bold</strong></span>');
+  assert.equal(shape(el.children[2]), '<span>Three</span>');
+  // Without the flag nothing changes (item details, footer, contact).
+  assert.equal(render('One\nTwo\n\nThree'), 'One\nTwo\n\nThree');
+  // Description link becomes its own paragraph in prose mode.
+  const d = fakeNode('p');
+  setRichWithLink_(d, 'Intro', 'Doc', 'https://x.com', true);
+  assert.deepEqual(d.children.map(shape), ['<span>Intro</span>', '<span><a https://x.com>Doc</a></span>']);
+  // Validation line numbers are unaffected.
+  assert.ok(/^Line 3:/.test(validateRichText_('a\n\n**b')[0]));
+}
+
+testLineParagraphs();
 testInertLinksForAdminRows();
 testBoldItalicNesting();
 testLiteralAsterisksAreNotFormattingOrErrors();
