@@ -212,6 +212,7 @@
   .subsection-header .optional-tag { font-weight: normal; font-size: 0.8em; color: var(--text-secondary); margin-left: 6px; }
   .field-block { margin: 18px 0; }
   .field-row { display: flex; align-items: flex-start; gap: 4px; justify-content: space-between; }
+  .field-row[hidden], .topic-row[hidden], .topic-info-link[hidden] { display: none; } /* rcballot-b1n: hidden while its editor is open (display: flex/grid would override [hidden]) */
   /* The display text is the first child of every .field-row (h1#titleDisplay, p#footerDisplay,
      etc.) — flex:1 1 auto plus min-width:0 lets it actually shrink/wrap inside the row instead
      of pushing past the pencil button. */
@@ -369,7 +370,7 @@
         <div class="field-panel hidden" id="descriptionPanel">
           <p class="field-help">Shown on the landing page, before a respondent enters their name. Include any "how to start" guidance here too — there's no separate fixed instruction text below it anymore. Line breaks are kept and bare http(s):// links become clickable. Use the toolbar for **bold**, *italic*, [links](https://…) and - bullets; Save checks the formatting first.</p>
           <label for="descriptionInput">Description</label>
-          <textarea id="descriptionInput" data-rich rows="3"></textarea>
+          <textarea id="descriptionInput" data-rich rows="5"></textarea>
           <div class="field-panel-actions">
             <button type="button" id="descriptionSaveBtn">Save</button>
             <button type="button" class="secondary" id="descriptionCancelBtn">Cancel</button>
@@ -415,7 +416,7 @@
         <div class="field-panel hidden" id="instructionsPanel">
           <p class="field-help">Shown above the ranking list on the ballot page — replaces the landing description above once a respondent starts ranking. Include the drag/reorder guidance here too — there's no separate fixed instruction text below it anymore. Line breaks are kept and bare http(s):// links become clickable. Use the toolbar for **bold**, *italic*, [links](https://…) and - bullets; Save checks the formatting first.</p>
           <label for="instructionsInput">Ballot Instructions</label>
-          <textarea id="instructionsInput" data-rich rows="3"></textarea>
+          <textarea id="instructionsInput" data-rich rows="5"></textarea>
           <div class="field-panel-actions">
             <button type="button" id="instructionsSaveBtn">Save</button>
             <button type="button" class="secondary" id="instructionsCancelBtn">Cancel</button>
@@ -460,7 +461,7 @@
           <label for="newCandidateNameInput">Name</label>
           <input type="text" id="newCandidateNameInput">
           <label for="newCandidateDetailsInput">Details (optional)</label>
-          <textarea id="newCandidateDetailsInput" data-rich rows="4" placeholder="First paragraph = summary shown under the name when Details Preview is on. Leave a blank line, then add longer text that appears only when the item is expanded."></textarea>
+          <textarea id="newCandidateDetailsInput" data-rich rows="6" placeholder="First paragraph = summary shown under the name when Details Preview is on. Leave a blank line, then add longer text that appears only when the item is expanded."></textarea>
           <p class="field-help">Candidate Details: the first paragraph (text before the first blank line) is the summary shown under the name when Details Preview is on; later paragraphs (after a blank line) appear only when the item is expanded. Line breaks are kept and bare http(s):// links become clickable. Use the toolbar for **bold**, *italic*, [links](https://…) and - bullets; Save checks the formatting first.</p>
           <label for="newCandidateLinkTextInput">Link Text (optional)</label>
           <input type="text" id="newCandidateLinkTextInput">
@@ -486,7 +487,7 @@
           <p class="field-help">Controls whether respondents can add their own candidate from the ballot page, and what instructions they see above the "+ Add New" button. Line breaks are kept and bare http(s):// links become clickable. Use the toolbar for **bold**, *italic*, [links](https://…) and - bullets; Save checks the formatting first.</p>
           <label><input type="checkbox" id="acceptNewInput"> Accept new candidates from respondents</label>
           <label for="addInstructionsInput">Instructions to Add</label>
-          <textarea id="addInstructionsInput" data-rich rows="2"></textarea>
+          <textarea id="addInstructionsInput" data-rich rows="3"></textarea>
           <div class="field-panel-actions">
             <button type="button" id="addSettingsSaveBtn">Save</button>
             <button type="button" class="secondary" id="addSettingsCancelBtn">Cancel</button>
@@ -510,7 +511,7 @@
         <div class="field-panel hidden" id="feedbackPromptPanel">
           <p class="field-help">The question shown above the always-visible feedback box on the ballot page, just above Submit. Leave it blank to use the default, "Any feedback you'd like to add?".</p>
           <label for="feedbackPromptInput">Feedback Prompt</label>
-          <textarea id="feedbackPromptInput" data-rich rows="2"></textarea>
+          <textarea id="feedbackPromptInput" data-rich rows="3"></textarea>
           <div class="field-panel-actions">
             <button type="button" id="feedbackPromptSaveBtn">Save</button>
             <button type="button" class="secondary" id="feedbackPromptCancelBtn">Cancel</button>
@@ -537,7 +538,7 @@
         <div class="field-panel hidden" id="footerPanel">
           <p class="field-help">Shown at the bottom of the ballot page. Line breaks are kept and bare http(s):// links become clickable. Use the toolbar for **bold**, *italic*, [links](https://…) and - bullets; Save checks the formatting first.</p>
           <label for="footerInput">Footer</label>
-          <textarea id="footerInput" data-rich rows="2"></textarea>
+          <textarea id="footerInput" data-rich rows="3"></textarea>
           <div class="field-panel-actions">
             <button type="button" id="footerSaveBtn">Save</button>
             <button type="button" class="secondary" id="footerCancelBtn">Cancel</button>
@@ -555,7 +556,7 @@
         <div class="field-panel hidden" id="contactPanel">
           <p class="field-help">Shown at the bottom of the ballot page, below the footer, as "Contact: ...". Line breaks are kept and bare http(s):// links become clickable. Use the toolbar for **bold**, *italic*, [links](https://…) and - bullets; Save checks the formatting first.</p>
           <label for="contactInput">Contact</label>
-          <textarea id="contactInput" data-rich rows="2"></textarea>
+          <textarea id="contactInput" data-rich rows="3"></textarea>
           <div class="field-panel-actions">
             <button type="button" id="contactSaveBtn">Save</button>
             <button type="button" class="secondary" id="contactCancelBtn">Cancel</button>
@@ -574,7 +575,7 @@
           <div class="field-panel hidden" id="adminOnlyNotesPanel">
             <p class="field-help">Never shown to respondents — shown as a "More info" disclosure in the ballot list.</p>
             <label for="adminOnlyNotesInput">Admin-Only Notes</label>
-            <textarea id="adminOnlyNotesInput" rows="3"></textarea>
+            <textarea id="adminOnlyNotesInput" rows="5"></textarea>
             <div class="field-panel-actions">
               <button type="button" id="adminOnlyNotesSaveBtn">Save</button>
               <button type="button" class="secondary" id="adminOnlyNotesCancelBtn">Cancel</button>
@@ -1450,6 +1451,37 @@
       ta.parentNode.insertBefore(bar, ta);
     }
     document.querySelectorAll('textarea[data-rich]').forEach(attachRichToolbar_);
+
+    // rcballot-b1n: an open editor takes the place of the text it edits. A field block's
+    // .field-row (display + pencil) hides while its .field-panel is open and returns on
+    // Save/Cancel; on open the panel scrolls into view and its first input is focused. One
+    // observer covers every pencil handler, which all just toggle the panel's 'hidden' class.
+    function revealEditor_(panel) {
+      requestAnimationFrame(function () {
+        var r = panel.getBoundingClientRect();
+        if (r.top < 0 || r.bottom > window.innerHeight) panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        var first = panel.querySelector('textarea:not([disabled]), input:not([disabled]):not([type="hidden"])');
+        if (first) { try { first.focus({ preventScroll: true }); } catch (err) { first.focus(); } }
+      });
+    }
+    var editorObserver = new MutationObserver(function (records) {
+      records.forEach(function (rec) {
+        var panel = rec.target;
+        var open = !panel.classList.contains('hidden');
+        var wasOpen = rec.oldValue != null && !/(^|\s)hidden(\s|$)/.test(rec.oldValue);
+        if (open === wasOpen) return;
+        var block = panel.parentElement;
+        if (block && block.classList.contains('field-block')) {
+          var row = block.querySelector(':scope > .field-row');
+          if (row) row.hidden = open;
+        }
+        if (open) revealEditor_(panel);
+      });
+    });
+    function watchEditorPanel_(panel) {
+      editorObserver.observe(panel, { attributes: true, attributeFilter: ['class'], attributeOldValue: true });
+    }
+    document.querySelectorAll('#view-edit .field-panel').forEach(watchEditorPanel_);
     document.querySelectorAll('textarea.single-line').forEach(function (el) {
       el.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
       el.addEventListener('input', function () {
@@ -1718,7 +1750,7 @@
       panel.innerHTML =
         '<p class="field-help">What respondents drag-order to rank. Edit this candidate’s name, details, and link below.</p>' +
         '<label>Name</label><input type="text" class="cand-name-input">' +
-        '<label>Details (optional)</label><textarea rows="4" data-rich class="cand-details-input" placeholder="First paragraph = summary shown under the name when Details Preview is on. Leave a blank line, then add longer text that appears only when the item is expanded."></textarea>' +
+        '<label>Details (optional)</label><textarea rows="6" data-rich class="cand-details-input" placeholder="First paragraph = summary shown under the name when Details Preview is on. Leave a blank line, then add longer text that appears only when the item is expanded."></textarea>' +
         '<p class="field-help">Candidate Details: the first paragraph (text before the first blank line) is the summary shown under the name when Details Preview is on; later paragraphs (after a blank line) appear only when the item is expanded. Line breaks are kept and bare http(s):// links become clickable. Use the toolbar for **bold**, *italic*, [links](https://…) and - bullets; Save checks the formatting first.</p>' +
         '<label>Link Text (optional)</label><input type="text" class="cand-link-text-input">' +
         '<label>Link URL (optional)</label><input type="url" class="cand-link-url-input" placeholder="https://…">' +
@@ -1728,6 +1760,7 @@
         '</div>' +
         '<div class="field-status cand-status"></div>';
       attachRichToolbar_(panel.querySelector('.cand-details-input'));
+      watchEditorPanel_(panel);
 
       li.appendChild(row);
       li.appendChild(details);
