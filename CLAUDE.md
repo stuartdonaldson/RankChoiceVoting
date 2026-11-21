@@ -59,6 +59,7 @@ This project is **pnpm-only** (`only-allow pnpm`). Never use `npm` or `npx`.
 pnpm install
 pnpm test            # deterministic node suites — must pass outright
 pnpm run test:live-sit   # live smoke tests against the SIT deployment
+pnpm run usage [--hours N|--days N] [--env sit|prod|nuuc]   # who used the app, doing what, when (Axiom)
 ```
 
 ## Deploying
