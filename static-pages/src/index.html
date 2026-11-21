@@ -886,6 +886,9 @@
     return entry;
   }
   function shellSetOpen_(entry, open) {
+    // Opening one panel closes any other not containing it, so state hidden by a layout change
+    // (a popover opened wide, then the header narrowed) never lingers.
+    if (open) shellOpenPanels_().forEach(function (other) { if (other !== entry && !other.panel.contains(entry.toggle)) shellSetOpen_(other, false); });
     entry.toggle.setAttribute('aria-expanded', String(open));
     entry.panel.classList.toggle('is-open', open);
   }
@@ -994,7 +997,7 @@
     container.textContent = '';
     if (!signedIn_() && intro) {
       var p = document.createElement('span');
-      p.textContent = intro.replace(/:\s*$/, '.') + ' Sign in is at the top of the page.';
+      p.textContent = intro.replace(/:\s*$/, '.') + ' Sign in is at the top of the page (in the menu on small screens).';
       container.appendChild(p);
     }
     if (signInError_) {

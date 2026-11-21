@@ -110,7 +110,8 @@ html[data-theme="northlake"] {
   --radius-badge: 9999px;
 }
 
-/* --- §3.2 / §13 dark scheme. The app tokens above follow automatically. --- */
+/* --- §3.2 / §13 dark scheme, screen only (print stays light). The app tokens follow. --- */
+@media screen {
 html[data-theme="northlake"][data-scheme="dark"] {
   color-scheme: dark;
   --nl-primary: #72b7ef;
@@ -138,6 +139,7 @@ html[data-theme="northlake"][data-scheme="dark"] {
   --nl-error-text: #ffb4ab;
   --nl-error-bg: #4a2220;
   --dragging-shadow: rgba(0, 0, 0, 0.5);
+}
 }
 
 /* --- Base typography (§3.3) --- */
@@ -279,7 +281,6 @@ html[data-theme="northlake"] .app-tool-panel.app-account-signin {
 }
 
 /* Theme choice: native radios, so arrow keys move between the three options. */
-html[data-theme="northlake"] .app-theme fieldset { min-width: 12rem; }
 /* float keeps the legend inside the panel instead of notched into its border. */
 html[data-theme="northlake"] .app-theme legend {
   float: left;
