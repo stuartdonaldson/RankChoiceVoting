@@ -1,433 +1,619 @@
-# **Northlake Digital Design System**
-
-Draft v0.1
-
-Option A — Lake & Evergreen · November 2026
-
-This specification translates Option A from the visual design review into practical standards for Northlake web applications. It covers colors, typography, layouts, components, icons, and accessibility.
-
-**The existing Northlake logo is a fixed asset and must not be redesigned.** The UI should complement it without reproducing or reinterpreting its flame.
-
-## **Color system**
-
-Primary interactive blue
-
-Primary actions, active navigation, links
-
-\#1663A5
-
-Brand lake blue
-
-Accents and decorative highlights
-
-\#1E88E5
-
-Leaf green
-
-Brand accents and supporting graphics
-
-\#7CB342
-
-Sunset orange
-
-Highlights and warm accents
-
-\#FB8C00
-
-Golden yellow
-
-Decorative highlights
-
-\#FDD835
-
-Charcoal
-
-Headings and prominent text
-
-\#212121
-
-Canvas
-
-Application background
-
-\#F4F7F6
-
-White
-
-Cards, panels and content surfaces
-
-\#FFFFFF
-
-The brand colors originate from the existing draft. The darker interactive blue and neutral UI surfaces are Option A proposals, not yet approved standards.
-
-## **Visual component examples**
-
-**Action Items**
-
-Northlake application
-
-\+ New item
-
-View all
-
-Review volunteer schedule
-
-Review
-
-Update equipment inventory
-
-In progress
-
-Confirm room setup
-
-Open
-
-Illustrative UI treatment. Production components should use the semantic design tokens specified below.
-
 # Northlake Digital Design System
 
-**Implementation Specification — Draft 0.1**
+**Web Application Design Specification — Draft 0.3**
 
 **Visual direction:** Option A — Lake & Evergreen\
-**Status:** Proposed standard, subject to Communications Committee review\
-**Scope:** Northlake-developed web applications and related digital tools
+**Status:** Proposed standard, pending Communications Committee review\
+**Updated:** November 21, 2026\
+**Applies to:** Northlake-developed web applications and related digital interfaces
 
-## 1. Purpose
+---
 
-Establish a consistent, recognizable, accessible UI design language for applications developed or maintained on behalf of Northlake Unitarian Universalist Church.
+## 1. Purpose and Design Principles
 
-The system should communicate Northlake's existing identity while remaining practical for forms, dashboards, administrative tools, volunteer applications, and public-facing interfaces.
+Establish a consistent, recognizable, accessible design language for web applications developed or maintained on behalf of Northlake Unitarian Universalist Church.
 
-**Design principles:**
+Applications should feel like part of the same Northlake family without unnecessarily restricting their functionality or requiring a particular technology stack.
 
-- Welcoming, clear, calm, and inclusive.
-- Consistent with Northlake's existing brand identity.
-- Functionality and readability before decoration.
-- Accessible and responsive.
-- Reusable and easy to maintain across applications.
+### Design principles
 
-## 2. Brand Identity
+1. **Recognizably Northlake.** Preserve the church's established logo, colors, and visual identity.
+2. **Welcoming and approachable.** Use clear language, open layouts, and restrained styling.
+3. **Clarity before decoration.** Prioritize usability and readability.
+4. **Consistent.** Use common conventions across applications.
+5. **Accessible.** Support users with varied visual, motor, and cognitive abilities.
+6. **Adaptable.** Support light and dark themes and responsive layouts.
+7. **Maintainable.** Centralize visual definitions and reuse components.
 
-Northlake's existing logos and flame artwork are authoritative.
+### Scope
 
-This section has two separate concerns. **Logo variant selection** (§2.1) decides which approved asset to place. **Surrounding UI** (§2.3) decides how the container around it is styled. Choosing a variant never permits changing the logo itself.
+This specification defines how common UI elements should look and behave **when present**. It does not require applications to implement functionality they do not need.
 
-### 2.1 Logo variant selection
+Application-specific requirements determine features, authentication, workflows, data access, and authorization.
 
-1. **Default:** use an approved transparent-background Northlake logo for application headers and branding.
-2. **White-background variants:** use only on pure white (`#FFFFFF`) surfaces, where the background blends seamlessly. Never place one on the canvas (`--nl-background`) or on any other nonwhite surface.
-3. **Dark backgrounds:** use an approved variant designed for dark backgrounds, such as the white-on-transparent version.
+---
 
-| Context | Approved asset | Background |
-| ------- | -------------- | ---------- |
-| Wide header (default) | `Northlake-logo-1024x3031 transparent.png` (horizontal lockup, 1024×303) | Transparent |
-| Compact header, mark only | `Logo-color-flame-transparent.png` (182×234) | Transparent |
-| Dark surface | `Northlake-white-on-transparent.png` | Transparent |
-| Pure white surface only | `NorthlakeLogoOriginalSquare.png` (250×250) | **Opaque white** |
+## 2. Brand Identity and Logo Usage
 
-`NorthlakeLogoOriginalSquare.png` has a baked-in white background. It shows as a white box on the canvas color, so it is not a default.
+### 2.1 Authoritative logo assets
 
-### 2.2 Logo preservation
+Northlake's existing logo is a fixed organizational identity asset.
 
-- Use approved, unmodified Northlake logo assets.
+**Authoritative source:**
+
+[Northlake Logos and Images — Communications Drive](https://drive.google.com/drive/u/0/folders/1gF2pF8IIT3Y0mZUWtIY2tDRLUuOE-Z_A)
+
+Preferred asset for application branding:
+
+`Northlake-logo-1024x3031 transparent.png`
+
+Other existing assets include:
+
+- `NorthlakeLogoOriginalSquare.png`
+- `Northlake-white-on-transparent.png`
+- Existing horizontal, square, and banner variants.
+
+### 2.2 Logo requirements
+
+- Use approved, unmodified Northlake artwork.
+- Prefer transparent-background logos for application headers.
 - Do not redraw, recolor, simplify, or reinterpret the flame.
-- Preserve original proportions and transparent backgrounds.
-- Never stretch, crop, or overlay other graphic elements on logos.
-- Keep sufficient clear space around the logo.
-- Do not create new flame-themed icons to replace standard application icons.
+- Preserve aspect ratio and appropriate clear space.
+- Never stretch, crop, distort, or apply decorative effects.
+- Do not overlay text or other icons.
+- Avoid backgrounds that compromise logo readability.
 
-### 2.3 Surrounding UI and deployment
+### 2.3 Theme-specific logo usage
 
-- Include the logo in the application's static assets. Do not load it from Google Drive at runtime, because Drive URLs require authentication.
-- Size the logo by height and keep its aspect ratio (`width: auto`, `object-fit: contain`).
-- Render the logo as an `<img>` with alt text naming the organization, not as a CSS background.
+**Light theme:** Use an approved transparent-background logo on a light surface.
 
-```html
+**Dark theme:** Use an existing approved transparent variant that remains legible against the selected dark background.
+
+The existing white-on-transparent variant is a candidate, subject to visual verification.
+
+If no existing variant is readable, provide a deliberate contrasting logo surface instead of modifying the artwork.
+
+### 2.4 Logo behavior
+
+The logo should normally identify Northlake and, when clickable, navigate to the application's home page.
+
+**Do not use the logo itself as a menu trigger.**
+
+Navigation and identity controls should have their own clearly identifiable controls.
+
+### 2.5 Deployment
+
+Include approved logo files as application static assets rather than loading them directly from authenticated Google Drive URLs.
+
+```
 <img
-  src="assets/northlake-logo-transparent.png"
+  src="/assets/northlake-logo-transparent.png"
   alt="Northlake Unitarian Universalist Church"
   class="northlake-logo"
->
+/>
 ```
 
-```css
+```
 .northlake-logo {
   display: block;
-  width: auto;
   height: 56px;
+  width: auto;
   max-width: 100%;
   object-fit: contain;
 }
 ```
 
-The paths assume the chosen transparent asset has been copied into the application under that filename.
+Applications may adjust logo height to suit the header while preserving proportions.
 
-**Authoritative asset location:**
+---
 
-[https://drive.google.com/drive/u/0/folders/1gF2pF8IIT3Y0mZUWtIY2tDRLUuOE-Z_A](https://drive.google.com/drive/u/0/folders/1gF2pF8IIT3Y0mZUWtIY2tDRLUuOE-Z_A)
+## 3. Color System
 
-## 3. Design Tokens
+### 3.1 Brand colors
 
-Applications should use semantic CSS custom properties rather than hardcoding colors throughout their components.
+| Brand color   | Hex       |
+| ------------- | --------- |
+| Flame Red     | `#E53935` |
+| Sunset Orange | `#FB8C00` |
+| Golden Yellow | `#FDD835` |
+| Leaf Green    | `#7CB342` |
+| Lake Blue     | `#1E88E5` |
+| Charcoal      | `#212121` |
 
-### 3.1 Brand and UI colors
+These are drawn from the existing draft Northlake design language.
 
-| Token                | Hex       | Purpose                                   |
-| -------------------- | --------- | ----------------------------------------- |
-| `--nl-primary`       | `#1663A5` | Primary actions, active navigation, links |
-| `--nl-primary-hover` | `#104E81` | Primary hover state                       |
-| `--nl-primary-soft`  | `#E9F3FB` | Selected items, subtle highlights         |
-| `--nl-brand-blue`    | `#1E88E5` | Brand accent                              |
-| `--nl-brand-green`   | `#7CB342` | Brand accent                              |
-| `--nl-brand-orange`  | `#FB8C00` | Brand accent                              |
-| `--nl-brand-yellow`  | `#FDD835` | Brand accent                              |
-| `--nl-brand-red`     | `#E53935` | Brand accent                              |
-| `--nl-text`          | `#24313B` | Primary text                              |
-| `--nl-text-muted`    | `#63717A` | Secondary text                            |
-| `--nl-heading`       | `#212121` | Headings                                  |
-| `--nl-background`    | `#F4F7F6` | Page background                           |
-| `--nl-surface`       | `#FFFFFF` | Cards, dialogs, forms                     |
-| `--nl-border`        | `#DCE4E5` | Borders and separators                    |
+Brand colors are not automatically suitable for functional UI elements. Interactive and semantic colors must meet accessibility requirements.
 
-The stronger blue (`#1663A5`) is the primary interactive color. The original brighter lake blue remains a brand accent rather than the default button background.
+### 3.2 Semantic UI colors
 
-### 3.2 Semantic states
+| Semantic token          | Light theme | Dark theme |
+| ----------------------- | ----------- | ---------- |
+| Primary action          | `#1663A5`   | `#72B7EF`  |
+| Primary hover           | `#104E81`   | `#9ACCF4`  |
+| Text on primary         | `#FFFFFF`   | `#10232F`  |
+| Primary soft background | `#E9F3FB`   | `#183B53`  |
+| Primary soft text       | `#1663A5`   | `#B9DFFF`  |
+| Page background         | `#F4F7F6`   | `#17232B`  |
+| Card / panel            | `#FFFFFF`   | `#22323D`  |
+| Subtle surface          | `#EDF2F2`   | `#2B3D49`  |
+| Primary text            | `#24313B`   | `#EAF1F5`  |
+| Secondary text          | `#63717A`   | `#B5C6D0`  |
+| Headings                | `#212121`   | `#F5F8FA`  |
+| Borders                 | `#DCE4E5`   | `#405361`  |
 
-State colors must represent meaning, independently of brand colors.
+These are proposed UI values. Validate contrast in actual components before finalizing them.
 
-| State                     | Visual treatment                  |
-| ------------------------- | --------------------------------- |
-| Success / Completed       | Green                             |
-| Warning / Needs attention | Amber                             |
-| Error / Destructive       | Red                               |
-| Information / Review      | Blue                              |
-| Neutral / Unknown         | Gray                              |
-| In progress               | Amber or blue with explicit label |
+### 3.3 Usage
 
-Do not use the same status vocabulary inconsistently between applications. For example, *Open* should not be confused with *Completed* simply because both could be represented in green.
+- Use primary blue for major interactive elements.
+- Use green, orange, and yellow selectively as supporting accents.
+- Prefer neutral backgrounds for forms and data-heavy interfaces.
+- Reserve semantic red for errors and destructive actions.
+- Do not communicate state through color alone.
+- Use semantic tokens rather than hardcoded colors.
 
-Use both text and iconography, not color alone, to convey state.
+### 3.4 Status meanings
 
-Final semantic colors must pass contrast testing before production use.
+| Meaning                   | Color family  |
+| ------------------------- | ------------- |
+| Success / Completed       | Green         |
+| Warning / Needs attention | Amber         |
+| Error / Failed            | Red           |
+| Information / Review      | Blue          |
+| Neutral / Unknown         | Gray          |
+| In progress               | Blue or amber |
 
-### 3.3 Typography
+Status indicators must include descriptive text and, where useful, icons.
 
-| Usage                 | Font                  | Suggested size |
-| --------------------- | --------------------- | -------------- |
-| Page title            | Georgia, serif        | 30–36px        |
-| Section heading       | Georgia, serif        | 24–28px        |
-| Card heading          | Open Sans, sans-serif | 18–20px        |
-| Body text             | Open Sans, sans-serif | 16px           |
-| Labels and buttons    | Open Sans, sans-serif | 14–16px        |
-| Secondary information | Open Sans, sans-serif | 14px           |
+Application-specific workflow states should be mapped consistently. For example, *Open* does not necessarily mean *Success*.
 
-Guidelines:
+---
 
-- Default to a sans-serif for all interactive controls and data-heavy screens.
-- Use Georgia selectively for primary headings and editorial content.
-- Use normal sentence case, not all capitals, for most headings and labels.
-- Maintain readable line spacing of approximately 1.5 for body text.
-- Use system font fallbacks if the preferred fonts are unavailable.
-- Avoid decorative typography in administrative interfaces.
+## 4. Light and Dark Theme Support
 
-### 3.4 Spacing and geometry
+### 4.1 Theme selection
 
-Use a consistent 4px spacing scale:
+Applications should support:
+
+- **System** — Follow browser or operating-system preference.
+- **Light** — Always use the light theme.
+- **Dark** — Always use the dark theme.
+
+System is the recommended default.
+
+An explicit user preference overrides the system setting.
+
+Where practical, persist that choice using application settings or browser storage.
+
+### 4.2 Theme behavior
+
+- Apply theme changes without reloading where practical.
+- Do not reset form inputs or application state.
+- Theme all components, including dialogs, charts, tables, and notifications.
+- Avoid a visible flash of the incorrect theme on startup.
+- Respect reduced-motion preferences.
+- Set the appropriate CSS `color-scheme`.
+
+### 4.3 Theme-dependent styling
+
+Use shared semantic tokens for both themes.
+
+Do not assume that:
+
+- Backgrounds are white.
+- Text is always dark.
+- Primary buttons always use white text.
+- Borders use the same color in both themes.
+
+### 4.4 Logo behavior
+
+Applications may select different approved logo variants for light and dark themes.
+
+The logo's artwork must never be recolored or modified programmatically.
+
+---
+
+## 5. Typography
+
+### Font families
+
+**Primary interface font:** Open Sans, with Arial and system sans-serif fallbacks.
+
+**Display font:** Georgia or an approved equivalent serif.
+
+Use sans-serif for navigation, controls, tables, forms, and most application content.
+
+Use serif typography selectively for prominent page headings and editorial content.
+
+### Type scale
+
+| Element            | Suggested size |
+| ------------------ | -------------- |
+| Page title         | 30–36px        |
+| Section heading    | 24–28px        |
+| Card heading       | 18–20px        |
+| Body               | 16px           |
+| Buttons and labels | 14–16px        |
+| Secondary text     | 14px           |
+
+Use approximately 1.5 line height for body text.
+
+Prefer sentence case over all-capital labels.
+
+---
+
+## 6. Spacing and Geometry
+
+Use a consistent 4px-based spacing scale:
 
 `4, 8, 12, 16, 24, 32, 48, 64px`
 
-Recommended geometry:
+### Corner radii
 
-| Element                  | Radius        |
-| ------------------------ | ------------- |
-| Buttons and input fields | 8px           |
-| Cards and panels         | 12px          |
-| Dialogs                  | 16px          |
-| Pills / status labels    | Fully rounded |
+| Component          | Radius        |
+| ------------------ | ------------- |
+| Buttons and inputs | 8px           |
+| Cards              | 12px          |
+| Dialogs            | 16px          |
+| Pills and badges   | Fully rounded |
 
-Use subtle borders and restrained shadows. Avoid heavy gradients, glossy effects, or excessive decoration.
+Use subtle borders and restrained shadows.
 
-Prefer white content surfaces over a light neutral page background.
+Avoid heavy gradients, glossy effects, or unnecessary decorative elements.
 
-## 4. Application Layout
+---
 
-### Header
+## 7. Application Layout and Navigation
 
-- Display an approved Northlake logo and the application name.
-- Provide clearly labeled navigation.
-- Highlight the active section with primary blue.
-- Keep branding consistent across applications.
-- Collapse navigation appropriately on small screens.
+### 7.1 General page structure
 
-### Main content
+Applications should generally provide:
 
-- Recommended maximum width: 1200px for ordinary application pages.
-- Allow wider layouts for complex tables and dashboards.
-- Use consistent horizontal page padding.
-- Provide a clear page heading.
-- Place primary actions in predictable locations.
-- Group related content into sections or cards.
+- A recognizable application header.
+- Clear application branding.
+- Predictable navigation.
+- A clearly identified main content region.
+- Consistent placement of primary actions.
+- Related content grouped logically.
+- A minimal footer where appropriate.
 
-### Footer
+Typical content width should be approximately 1200px or less, except where wider layouts benefit complex dashboards or tables.
 
-Keep application footers minimal. Include appropriate organizational identification, support information, and accessibility or privacy links where relevant.
+### 7.2 Header layout — Wide screens
 
-## 5. UI Components
+Preferred arrangement:
 
-### Buttons
+**Left:** Approved Northlake logo and application name.
 
-**Primary:** Solid `--nl-primary` background with white text.
+**Middle or left navigation area:** Primary application navigation, where appropriate.
 
-**Secondary:** White background, primary-color border, and primary-color text.
+**Right:** Optional help, identity, and account controls.
 
-**Tertiary:** Text-only control with an appropriate hover and focus treatment.
+Avoid displaying controls that the application does not support.
 
-**Destructive:** Explicit red styling and a confirmation step where the consequence warrants one.
+### 7.3 Header layout — Narrow screens
 
-Requirements:
+When the available width is insufficient for separate navigation and identity controls:
 
-- Minimum 44×44px interactive target where practical.
-- Visible keyboard focus indicator.
-- Hover, active, disabled, and loading states.
-- Use action-oriented labels such as “Save changes,” not vague labels such as “OK.”
+1. Preserve a recognizable Northlake logo and application identity.
+2. Collapse navigation into a clearly labeled menu control, typically using a three-bar icon.
+3. Prefer placing the menu button in the upper-right corner, opposite the logo.
+4. Applications with established left-side navigation may use an upper-left menu.
+5. Combine application navigation and identity controls within the menu where useful.
+6. Keep identity actions visually separated from ordinary navigation links.
+7. Collapse controls according to available space rather than a mandatory device-width breakpoint.
 
-### Forms
+Do not allow header controls to wrap awkwardly, overlap, or become clipped.
 
-- Place visible labels above or beside inputs.
-- Do not use placeholders as the only field labels.
-- Use consistent 8px input corner radii.
-- Show required fields clearly.
-- Display validation errors near the affected field.
-- Preserve entered values after validation errors.
-- Present successful saves or submissions with clear feedback.
+### 7.4 Mobile menu organization
 
-### Cards
+When account controls share a mobile navigation menu, use this general order:
 
-Cards should have:
+1. Application navigation.
+2. Optional help or supporting actions.
+3. Account identity and personal preferences, when supported.
+4. Sign in or Sign out, when applicable.
 
-- White background.
-- Light neutral border.
-- Approximately 12px border radius.
-- Consistent internal spacing of 16–24px.
-- Clear heading and content hierarchy.
+A divider or similar visual separation should distinguish account controls from application navigation.
 
-Use cards to group related information, not as a default wrapper for every individual field.
+### 7.5 Menu accessibility
 
-### Tables and lists
+Responsive menus must:
 
-- Prefer clear horizontal separators.
-- Right-align numeric values.
+- Have an accessible label, such as “Open navigation menu.”
+- Indicate their expanded or collapsed state.
+- Support keyboard and touch operation.
+- Support Escape to close where applicable.
+- Manage keyboard focus appropriately.
+- Avoid trapping focus incorrectly.
+- Keep essential functionality discoverable.
+
+Do not attach hidden navigation to the Northlake logo.
+
+---
+
+## 8. User Identity and Account Navigation
+
+### 8.1 Purpose
+
+Establish consistent placement and presentation of identity and account controls **when an application supports them**.
+
+This section does not prescribe whether users must authenticate.
+
+### 8.2 Authentication models
+
+Northlake applications may:
+
+- Operate entirely without user authentication.
+- Provide public functionality with optional sign-in.
+- Require authentication for selected features.
+- Require authentication for all functionality.
+
+The application determines its authentication model and access requirements.
+
+The design system does not impose one.
+
+### 8.3 Signed-out presentation
+
+When authentication is available, provide a clearly labeled **Sign in** control.
+
+On wide screens, prefer the upper-right header.
+
+On narrow screens, Sign in may appear within the collapsed navigation menu.
+
+Applications should not imply that sign-in is required when anonymous access is supported.
+
+### 8.4 Signed-in presentation
+
+When authenticated, display an identifiable account control.
+
+It may contain:
+
+- Display name.
+- Initials.
+- Avatar.
+- Appropriate account icon.
+
+Selecting the control should reveal supported account actions.
+
+Typical actions include:
+
+- Account or profile information.
+- Personal preferences.
+- Sign out.
+
+Only show capabilities actually supported by the application.
+
+### 8.5 Account menu conventions
+
+- Use **Sign out** as the explicit label for ending the application session.
+- Do not rely on an unlabeled exit icon.
+- Display the actual authenticated identity where identity information is shown.
+- Do not assume users have `northlakeuu.org` email addresses.
+- Keep personal preferences separate from application administration.
+- Only offer role switching if supported by the application.
+
+### 8.6 Application-specific decisions
+
+The design specification does not determine:
+
+- Whether authentication is required.
+- Which features anonymous users may access.
+- When sign-in is requested.
+- Which identity providers are supported.
+- Whether accounts have profiles or roles.
+- How authentication affects application state.
+- Session duration or authorization rules.
+
+These belong to the application's functional and security requirements.
+
+### 8.7 Responsive identity behavior
+
+When account information cannot fit comfortably within the header:
+
+- Move it into the responsive navigation menu.
+- Preserve a clear Sign in or Sign out label.
+- Group account information separately from application functions.
+- Avoid shrinking text or compressing controls excessively.
+
+On desktop, the account control should generally remain in the upper-right header.
+
+### 8.8 Accessibility
+
+- Account menu controls require accessible names.
+- Keyboard users must be able to open, navigate, and close menus.
+- Menu focus behavior must be predictable.
+- Icons must not be the sole indication of account state.
+- Identity controls must remain usable in both themes.
+
+---
+
+## 9. Standard UI Components
+
+### 9.1 Buttons
+
+**Primary:** Filled using the theme's primary action color.
+
+**Secondary:** Neutral background with primary-colored text and border.
+
+**Tertiary:** Minimal text-oriented styling.
+
+**Destructive:** Explicit destructive styling, with confirmation when appropriate.
+
+Support default, hover, focus, active, disabled, and loading states.
+
+### 9.2 Forms
+
+- Provide visible labels.
+- Clearly identify required fields.
+- Show errors near the relevant input.
+- Preserve entered data after validation failures.
+- Use consistent spacing and geometry.
+- Provide clear submission feedback.
+- Support keyboard navigation and assistive technology.
+
+### 9.3 Cards
+
+Use:
+
+- Theme-aware surface color.
+- Subtle border.
+- 12px corner radius.
+- Consistent 16–24px padding.
+- Clear content hierarchy.
+
+Avoid unnecessary nesting.
+
+### 9.4 Tables
+
 - Maintain readable row spacing.
-- Support sorting and filtering where useful.
-- Handle narrow screens with appropriate reflow or horizontal scrolling.
-- Never communicate important information through a colored cell alone.
+- Right-align numeric data.
+- Use subtle separators.
+- Support responsive layouts.
+- Provide sorting and filtering where useful.
+- Show meaningful empty states.
+- Use labels as well as colors for status.
 
-### Alerts and status indicators
+### 9.5 Notifications and dialogs
 
-Use consistent styling for information, success, warning, and error messages.
+- Use semantic state styling.
+- Provide actionable messages.
+- Support keyboard interaction.
+- Manage focus correctly.
+- Confirm destructive actions when appropriate.
 
-Each alert should contain enough text to explain what happened and, where relevant, what the user should do.
+### 9.6 Optional components
 
-## 6. Iconography
+Search, notifications, account management, theme controls, and other common features should use consistent styling when implemented.
 
-**Recommended library: Lucide**, using SVG icons.
+The design system does **not** require every application to provide these features.
 
-Conventions:
+---
 
-- Default size: 20px.
-- Compact controls: 16px.
-- Prominent actions: 24px.
-- Consistent outline style and stroke weight.
-- Use the same icon for the same action across applications.
-- Pair unfamiliar icons with visible labels.
-- Provide accessible names for icon-only buttons.
+## 10. Iconography
 
-Examples:
+### Recommended icon library
 
-| Action   | Recommended icon |
-| -------- | ---------------- |
-| Home     | `house`          |
-| Calendar | `calendar-days`  |
-| People   | `users`          |
-| Settings | `settings`       |
-| Edit     | `pencil`         |
-| Delete   | `trash-2`        |
-| Search   | `search`         |
-| Save     | `save`           |
-| Review   | `eye`            |
-| Complete | `check-circle`   |
-| Help     | `circle-help`    |
+**Lucide SVG icons**
 
-The icon library is a technical recommendation, not an existing approved Northlake standard.
+Use a consistent outline style and stroke weight.
 
-## 7. Imagery
+### Size conventions
 
-Use real photographs of Northlake activities and the community when suitable and authorized.
+| Usage     | Size |
+| --------- | ---- |
+| Compact   | 16px |
+| Standard  | 20px |
+| Prominent | 24px |
 
-Preferred subjects:
+### Suggested mappings
 
-- Community gatherings and participation.
+| Concept         | Icon                |
+| --------------- | ------------------- |
+| Home            | `house`             |
+| Calendar        | `calendar-days`     |
+| People          | `users`             |
+| Settings        | `settings`          |
+| Edit            | `pencil`            |
+| Delete          | `trash-2`           |
+| Search          | `search`            |
+| Save            | `save`              |
+| Review          | `eye`               |
+| Completed       | `circle-check`      |
+| Help            | `circle-help`       |
+| Warning         | `triangle-alert`    |
+| Sign in         | `log-in`            |
+| Sign out        | `log-out`           |
+| Account         | `circle-user-round` |
+| Navigation menu | `menu`              |
+| Light theme     | `sun`               |
+| Dark theme      | `moon`              |
+| System theme    | `monitor`           |
+
+Use visible text labels for unfamiliar icons.
+
+Do not introduce invented Northlake flame icons for ordinary application functions.
+
+---
+
+## 11. Imagery
+
+Preferred imagery should reflect:
+
+- Northlake gatherings and community.
 - Worship and reflection.
-- Pacific Northwest landscapes and nature.
-- Genuine volunteer and program activities.
+- Volunteer activities.
+- Pacific Northwest landscapes.
+- Nature and natural light.
 
-Avoid generic corporate imagery that does not reflect Northlake.
+Guidelines:
 
-Use consistent image treatment:
+- Prefer authentic imagery.
+- Avoid unnecessary filters.
+- Preserve natural image proportions.
+- Use consistent cropping and placement.
+- Provide meaningful alternative text.
+- Optimize image performance.
+- Respect copyright and privacy requirements.
 
-- Natural colors.
-- Appropriate cropping.
-- Rounded corners when displayed in cards.
-- Meaningful alternative text.
-- Optimized image sizes for web delivery.
+Follow Northlake's media privacy policies, particularly regarding identifiable minors.
 
-Follow Northlake media privacy and copyright requirements, including permissions for identifiable minors.
+---
 
-Do not use decorative flame artwork invented by individual applications.
+## 12. Accessibility
 
-## 8. Accessibility and Responsiveness
+Applications should target **WCAG 2.2 Level AA**.
 
-Target WCAG 2.2 Level AA.
+Requirements include:
 
-Requirements:
-
-- Minimum 4.5:1 contrast for normal text.
-- Minimum 3:1 contrast for large text and relevant non-text UI indicators.
-- Fully keyboard-operable controls.
+- At least 4.5:1 contrast for normal text.
+- At least 3:1 contrast for large text and applicable non-text indicators.
+- Keyboard-operable controls.
 - Visible focus indicators.
-- Accessible form labels and error descriptions.
-- Respect reduced-motion preferences.
-- Support text resizing up to 200% without loss of functionality.
-- Ensure responsive layouts work at 320px CSS viewport width without unnecessary horizontal scrolling.
-- Use semantic HTML and appropriate accessible names.
-- Do not rely solely on hover for essential information.
+- Accessible names and labels.
+- Meaningful semantic HTML.
+- Support for 200% text resizing.
+- Responsive reflow.
+- Appropriate pointer target sizes.
+- Reduced-motion support.
+- No essential information communicated only through color.
 
-Check the proposed colors in actual component contexts. Brand colors are not automatically valid as accessible text or status colors.
+Both light and dark themes must be tested independently.
 
-## 9. CSS Reference Implementation
+Navigation and identity menus must also meet these requirements.
 
-Use these tokens as the starting point for a shared stylesheet or theme configuration.
+---
+
+## 13. CSS Design Token Reference
 
 ```
-:root {
-  /* Core UI */
-  --nl-primary: #1663a5;
-  --nl-primary-hover: #104e81;
-  --nl-primary-soft: #e9f3fb;
+/* Northlake Digital Design System — Draft 0.3 */
 
-  /* Brand */
-  --nl-brand-blue: #1e88e5;
-  --nl-brand-green: #7cb342;
+:root {
+  color-scheme: light;
+
+  /* Brand colors */
+  --nl-brand-red: #e53935;
   --nl-brand-orange: #fb8c00;
   --nl-brand-yellow: #fdd835;
-  --nl-brand-red: #e53935;
+  --nl-brand-green: #7cb342;
+  --nl-brand-blue: #1e88e5;
+  --nl-brand-charcoal: #212121;
 
-  /* Surfaces and text */
+  /* Light theme */
+  --nl-primary: #1663a5;
+  --nl-primary-hover: #104e81;
+  --nl-on-primary: #ffffff;
+  --nl-primary-soft: #e9f3fb;
+  --nl-primary-soft-text: #1663a5;
+
+  --nl-background: #f4f7f6;
+  --nl-surface: #ffffff;
+  --nl-surface-subtle: #edf2f2;
+
   --nl-text: #24313b;
   --nl-text-muted: #63717a;
   --nl-heading: #212121;
-  --nl-background: #f4f7f6;
-  --nl-surface: #ffffff;
   --nl-border: #dce4e5;
 
   /* Typography */
@@ -446,9 +632,31 @@ Use these tokens as the starting point for a shared stylesheet or theme configur
   --nl-space-4: 16px;
   --nl-space-6: 24px;
   --nl-space-8: 32px;
+  --nl-space-12: 48px;
+  --nl-space-16: 64px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --nl-primary: #72b7ef;
+  --nl-primary-hover: #9accf4;
+  --nl-on-primary: #10232f;
+  --nl-primary-soft: #183b53;
+  --nl-primary-soft-text: #b9dfff;
+
+  --nl-background: #17232b;
+  --nl-surface: #22323d;
+  --nl-surface-subtle: #2b3d49;
+
+  --nl-text: #eaf1f5;
+  --nl-text-muted: #b5c6d0;
+  --nl-heading: #f5f8fa;
+  --nl-border: #405361;
 }
 
 body {
+  margin: 0;
   background: var(--nl-background);
   color: var(--nl-text);
   font: 16px/1.5 var(--nl-font-body);
@@ -460,99 +668,335 @@ h1, h2 {
   font-weight: 400;
 }
 
+h3, h4, h5, h6 {
+  color: var(--nl-heading);
+  font-family: var(--nl-font-body);
+}
+
+a {
+  color: var(--nl-primary);
+}
+
+.nl-logo {
+  display: block;
+  height: 56px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+}
+
 .nl-button-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 16px;
+
   background: var(--nl-primary);
-  color: #fff;
+  color: var(--nl-on-primary);
   border: 1px solid var(--nl-primary);
   border-radius: var(--nl-radius-control);
-  padding: 10px 16px;
+
   font: 600 1rem var(--nl-font-body);
   cursor: pointer;
 }
 
-.nl-button-primary:hover {
+.nl-button-primary:hover:not(:disabled) {
   background: var(--nl-primary-hover);
+  border-color: var(--nl-primary-hover);
+}
+
+.nl-button-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.nl-button-secondary {
+  min-height: 44px;
+  padding: 10px 16px;
+
+  background: var(--nl-surface);
+  color: var(--nl-primary);
+  border: 1px solid var(--nl-primary);
+  border-radius: var(--nl-radius-control);
+
+  font: 600 1rem var(--nl-font-body);
+  cursor: pointer;
 }
 
 .nl-card {
   background: var(--nl-surface);
+  color: var(--nl-text);
   border: 1px solid var(--nl-border);
   border-radius: var(--nl-radius-card);
   padding: var(--nl-space-6);
 }
 
-:where(button, a, input, select, textarea):focus-visible {
+.nl-input {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+
+  background: var(--nl-surface);
+  color: var(--nl-text);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-control);
+
+  font: inherit;
+}
+
+:where(
+  button,
+  a,
+  input,
+  select,
+  textarea
+):focus-visible {
   outline: 3px solid var(--nl-primary);
   outline-offset: 3px;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 ```
 
-Production teams should implement disabled, loading, hover, focus, validation, and semantic status variants as part of their component library.
+The stylesheet establishes the base tokens and common styles. It is not a complete component library.
 
-## 10. Integration Guidelines
-
-This specification is framework-independent. It may be used with React, Vue, plain HTML/CSS/JavaScript, or a WordPress theme.
-
-Implementation recommendations:
-
-1. Centralize tokens in one stylesheet or theme configuration.
-2. Use reusable UI components where practical.
-3. Avoid hardcoded styling scattered across application pages.
-4. Keep original Northlake logos as version-controlled static assets.
-5. Retain existing application behavior and workflows while updating styling.
-6. Do not replace accessible native controls with custom controls unless there is a clear usability need.
-7. Use responsive layouts from the beginning.
-8. Verify that visual changes do not introduce regressions.
-
-Do not introduce a new UI framework solely to apply this design language.
-
-## 11. Acceptance Criteria
-
-A Northlake application conforms to this draft when:
-
-- It uses an approved, unmodified Northlake logo, selected per §2.1.
-- The logo's background blends with its container: no visible box or edge around the logo on any surface it appears on.
-- Its primary UI styling follows Option A.
-- Colors are implemented through centralized design tokens.
-- Typography follows the recommended hierarchy.
-- Buttons, forms, navigation, and cards use consistent components.
-- Icons follow a consistent SVG icon library.
-- Semantic states are used consistently.
-- Core workflows meet WCAG 2.2 AA requirements.
-- Layouts remain usable on mobile and desktop.
-- Existing application functionality is preserved.
-- Screens are reviewed for consistency with the reference design.
-
-## 12. Status and Governance
-
-This document is an **implementation proposal**, not an adopted Northlake branding policy.
-
-The Communications Committee should review and approve the visual identity choices, including colors, typography, and approved logo variants.
-
-The application development team should maintain the technical design system, accessibility requirements, and reusable UI components.
-
-Any future changes to the Northlake brand identity should be made through the Communications review process rather than independently by application developers.
-
-**Reference materials**
-
-- Draft NUUC Design Language 0.0.1: [https://docs.google.com/document/d/1KLNcfLGZ3m9-C_lRddMeaHHOEg9Yi0gdT-fy9Tm7gLo/edit](https://docs.google.com/document/d/1KLNcfLGZ3m9-C_lRddMeaHHOEg9Yi0gdT-fy9Tm7gLo/edit)
-- Northlake Logos and Images: [https://drive.google.com/drive/u/0/folders/1gF2pF8IIT3Y0mZUWtIY2tDRLUuOE-Z_A](https://drive.google.com/drive/u/0/folders/1gF2pF8IIT3Y0mZUWtIY2tDRLUuOE-Z_A)
-- Northlake website: [https://northlakeuu.org/](https://northlakeuu.org/)
+Applications must implement and validate additional component states, semantic status treatments, and responsive menu behavior.
 
 ---
 
-**End of Draft 0.1**
+## 14. Theme Selection Reference
 
-## **Recommended implementation approach**
+Applications may implement theme selection using their existing state-management mechanism.
 
-For an existing web app, I would use this specification in two passes.
+```
+const STORAGE_KEY = "northlake-theme";
 
-**First pass — Visual consistency:** Introduce design tokens, apply the original logo, standardize typography, buttons, cards, navigation, and icons. Preserve the existing user workflows.
+const media = window.matchMedia(
+  "(prefers-color-scheme: dark)"
+);
 
-**Second pass — Accessibility and refinement:** Audit contrast, keyboard behavior, responsive layouts, status semantics, and inconsistent controls. Correct anything that fails accessibility or creates usability problems.
+function getPreference() {
+  try {
+    const value = localStorage.getItem(STORAGE_KEY);
+    if (["system", "light", "dark"].includes(value)) {
+      return value;
+    }
+  } catch {
+    // Storage may be unavailable.
+  }
 
-This avoids unnecessarily rebuilding applications just to standardize their appearance.
+  return "system";
+}
 
-Because this is still a draft, I would ask Communications to approve the palette and typography before directing developers to treat those choices as mandatory.
+function applyTheme(preference) {
+  const theme = preference === "system"
+    ? (media.matches ? "dark" : "light")
+    : preference;
+
+  document.documentElement.dataset.theme = theme;
+}
+
+function setTheme(preference) {
+  if (!["system", "light", "dark"].includes(preference)) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(STORAGE_KEY, preference);
+  } catch {
+    // Continue without persistence.
+  }
+
+  applyTheme(preference);
+}
+
+applyTheme(getPreference());
+
+media.addEventListener("change", () => {
+  if (getPreference() === "system") {
+    applyTheme("system");
+  }
+});
+```
+
+Applications should apply the stored theme as early as practical to avoid a flash of the incorrect theme.
+
+---
+
+## 15. Application Integration
+
+### Existing applications
+
+Adopt the design system incrementally.
+
+**Phase 1 — Foundation**
+
+- Install approved transparent logo assets.
+- Introduce semantic color tokens.
+- Add theme support.
+- Standardize typography and spacing.
+
+**Phase 2 — Shared visual conventions**
+
+- Update headers and navigation.
+- Standardize responsive menus.
+- Apply consistent identity-control placement when applicable.
+- Update buttons, forms, cards, and dialogs.
+- Standardize iconography.
+
+**Phase 3 — Validation**
+
+- Review both themes.
+- Verify desktop and mobile layouts.
+- Test keyboard accessibility.
+- Check contrast and other accessibility requirements.
+- Verify existing functionality remains intact.
+
+### New applications
+
+Use this specification from initial development.
+
+Reuse existing Northlake components where practical instead of independently redefining their appearance or behavior.
+
+### Exceptions
+
+Applications may depart from conventions when justified by their requirements.
+
+Examples include:
+
+- Specialized AV control interfaces.
+- Complex data dashboards.
+- Highly constrained displays.
+- Workflows with unusual navigation requirements.
+
+Document significant exceptions.
+
+Do not compromise accessibility or modify the established Northlake logo.
+
+---
+
+## 16. Acceptance Criteria
+
+### Brand identity
+
+- Uses approved, unmodified Northlake logo assets.
+- Uses transparent-background artwork where appropriate.
+- Logo is readable in both themes.
+- Logo is not used as a hidden menu trigger.
+
+### Colors and typography
+
+- Uses centralized semantic design tokens.
+- Uses consistent typography and spacing.
+- Supports light and dark styling.
+- Avoids hardcoded colors that break theme support.
+
+### Theme support
+
+- Light theme functions correctly.
+- Dark theme functions correctly.
+- System preference is supported.
+- Explicit preferences are preserved when practical.
+- All applicable components respond consistently.
+
+### Navigation
+
+- Application branding appears consistently.
+- Navigation is discoverable.
+- Narrow headers collapse gracefully.
+- Menu controls are clearly labeled.
+- Responsive menus support keyboard and touch interaction.
+
+### Identity controls, where applicable
+
+- Sign-in and account controls use consistent placement.
+- Mobile account controls remain accessible when collapsed.
+- Signed-in identity is accurately represented.
+- Sign out is clearly labeled.
+- Anonymous functionality remains available where the application permits it.
+- No unsupported account features are displayed.
+
+### Accessibility
+
+- WCAG 2.2 AA requirements are met.
+- Contrast is verified in both themes.
+- Keyboard navigation works.
+- Focus indicators are visible.
+- Mobile layouts remain usable.
+- Status indicators do not rely only on color.
+
+### Functional integrity
+
+- Existing workflows remain intact.
+- Styling changes do not alter authorization behavior.
+- Existing application state is preserved appropriately.
+- No unnecessary UI framework migration is required.
+
+---
+
+## 17. Governance and Maintenance
+
+This document is an implementation proposal, not an adopted Northlake branding policy.
+
+### Communications Committee
+
+Responsible for reviewing and approving:
+
+- Brand identity and logo usage.
+- Visual direction.
+- Brand colors and typography.
+- Major changes to visual identity.
+
+### Application development teams
+
+Responsible for:
+
+- Implementing approved visual standards.
+- Maintaining reusable UI components.
+- Ensuring accessibility.
+- Applying responsive behavior.
+- Maintaining theme compatibility.
+- Documenting application-specific exceptions.
+
+### Change control
+
+Updates to the design system should be versioned.
+
+Brand identity changes require appropriate Communications review.
+
+Technical implementation improvements that preserve the approved visual language may be managed by application development teams.
+
+---
+
+## 18. References
+
+- [Draft NUUC Design Language 0.0.1](https://docs.google.com/document/d/1KLNcfLGZ3m9-C_lRddMeaHHOEg9Yi0gdT-fy9Tm7gLo/edit)
+- [Northlake Logos and Images](https://drive.google.com/drive/u/0/folders/1gF2pF8IIT3Y0mZUWtIY2tDRLUuOE-Z_A)
+- [Northlake website](https://northlakeuu.org/)
+
+---
+
+## Revision History
+
+| Version | Changes                                                                                                                                                                                                                             |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0.1     | Initial Option A — Lake & Evergreen specification                                                                                                                                                                                   |
+| 0.2     | Added transparent logo preference and light/dark theme support                                                                                                                                                                      |
+| 0.3     | Added responsive navigation and identity conventions, mobile menu behavior, and explicit support for anonymous application use; clarified that the design system standardizes presentation without requiring optional functionality |
+
+**End of Draft 0.3**
+
+The principal change in v0.3 is the separation of **UI conventions from functional requirements**. Developers now have clear guidance for desktop and mobile headers, account menus, and anonymous access without being forced into a particular authentication or navigation model.
 
 
