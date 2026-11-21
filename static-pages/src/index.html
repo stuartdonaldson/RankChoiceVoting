@@ -228,6 +228,40 @@
   table.results-table td.center { text-align: center; }
 </style>
 <!-- STATIC_THEME_CSS_ -->
+<script>
+  // Light/dark preference (docs/nuuc-ui-design.md §4, §14), for a theme module that opts in by
+  // declaring --app-shell: 1 on <html> (themes/northlake.css). Every other module leaves this a
+  // no-op, so its page never gets data-scheme. A parser-inserted script waits for the stylesheet
+  // linked above, so the opt-in is readable here, and it runs before first paint: no flash of
+  // the wrong scheme. data-theme already names the design language, hence data-scheme.
+  (function () {
+    var root = document.documentElement;
+    if (getComputedStyle(root).getPropertyValue('--app-shell').trim() !== '1') return;
+    var KEY = 'northlake-theme';
+    var PREFS = ['system', 'light', 'dark'];
+    var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    // Held in memory as well, so an explicit choice survives a system change when storage is blocked.
+    var current = 'system';
+    try { var stored = localStorage.getItem(KEY); if (PREFS.indexOf(stored) >= 0) current = stored; } catch (e) {}
+    function get() { return current; }
+    function apply(pref) {
+      root.setAttribute('data-scheme-pref', pref);
+      root.setAttribute('data-scheme', pref === 'system' ? (media && media.matches ? 'dark' : 'light') : pref);
+    }
+    function set(pref) {
+      if (PREFS.indexOf(pref) < 0) return;
+      current = pref;
+      try { localStorage.setItem(KEY, pref); } catch (e) {}
+      apply(pref);
+    }
+    apply(current);
+    if (media) {
+      var onChange = function () { if (get() === 'system') apply('system'); };
+      if (media.addEventListener) media.addEventListener('change', onChange); else if (media.addListener) media.addListener(onChange);
+    }
+    window.appScheme_ = { get: get, set: set };
+  })();
+</script>
 </head>
 <body>
   <!-- Theme-neutral brand header; display, logo and styling come from the theme module. -->
@@ -236,6 +270,33 @@
     <!-- On the ballot view applyBranding mirrors the ballot title here (aria-hidden: h1#pageTitle
          stays the accessible heading); a theme that shows the header hides that h1 visually. -->
     <span class="app-brand-name" id="appBrandName">Ranked-choice ballots</span>
+    <!-- Header tools (docs/nuuc-ui-design.md §7-§8): theme preference and, on Dispatch-enabled
+         builds, the identity control. Inert unless the theme module opts in with --app-shell: 1
+         (window.appScheme_ is then defined by the <head> script and initAppShell_ wires these);
+         the theme module also decides when they collapse behind the Menu button. -->
+    <div class="app-tools">
+      <button type="button" class="app-menu-toggle" id="appMenuToggle" aria-expanded="false" aria-controls="appMenu" aria-label="Menu">
+        <svg class="icon icon-open" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        <svg class="icon icon-close" aria-hidden="true" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="app-menu" id="appMenu">
+        <div class="app-tool app-theme">
+          <button type="button" class="app-tool-toggle" id="appThemeToggle" aria-expanded="false" aria-controls="appThemePanel" aria-label="Theme">
+            <svg class="icon icon-system" aria-hidden="true" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            <svg class="icon icon-light" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+            <svg class="icon icon-dark" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+          </button>
+          <fieldset class="app-tool-panel" id="appThemePanel">
+            <legend>Theme</legend>
+            <label><input type="radio" name="appTheme" value="system"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></svg>System</label>
+            <label><input type="radio" name="appTheme" value="light"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>Light</label>
+            <label><input type="radio" name="appTheme" value="dark"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>Dark</label>
+          </fieldset>
+        </div>
+        <!-- Identity control: filled by renderAccount_ (via renderSignIn_) on Dispatch-enabled builds. -->
+        <div class="app-tool app-account hidden" id="appAccount"></div>
+      </div>
+    </div>
   </header>
   <!-- Admin-view sign-in (rcballot-dx3.3): filled by renderSignIn_ on Dispatch-enabled builds only. -->
   <div id="adminSigninBar" class="signin-bar hidden"></div>
@@ -762,6 +823,7 @@
   /** Renders the sign-in control into container (no-op on builds without sign-in). */
   function renderSignIn_(container, intro) {
     if (!DISPATCH_) return;
+    if (APP_SHELL_) { renderShellSignIn_(container, intro); return; }
     container.textContent = '';
     container.classList.remove('hidden');
     if (signedIn_()) {
@@ -795,6 +857,153 @@
       er.textContent = signInError_;
       container.appendChild(er);
     }
+  }
+
+  // ---- Header tools (docs/nuuc-ui-design.md §7-§8; rcballot-71a). Only on a theme module that
+  // opted in, which the <head> script reports by defining window.appScheme_; elsewhere the header
+  // markup stays hidden and none of this runs. Presentation only: which features need sign-in,
+  // and every auth step, stay in renderSignIn_'s callers, onGoogleCredential_ and signOut_.
+  var APP_SHELL_ = !!window.appScheme_;
+  var shellPanels_ = [];
+
+  var SHELL_ICONS_ = {
+    user: '<path d="M18 20a6 6 0 0 0-12 0"/><circle cx="12" cy="10" r="4"/><circle cx="12" cy="12" r="10"/>',
+    logOut: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>'
+  };
+  /** A decorative Lucide icon from the static SHELL_ICONS_ table (never user data). */
+  function shellIcon_(name) {
+    var span = document.createElement('span');
+    span.innerHTML = '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24">' + SHELL_ICONS_[name] + '</svg>';
+    return span.firstChild;
+  }
+
+  /** A toggle button disclosing panel: aria-expanded plus the .is-open class the theme styles. */
+  function shellDisclosure_(toggle, panel) {
+    shellPanels_ = shellPanels_.filter(function (e) { return document.contains(e.toggle); });
+    var entry = { toggle: toggle, panel: panel };
+    shellPanels_.push(entry);
+    toggle.addEventListener('click', function () { shellSetOpen_(entry, toggle.getAttribute('aria-expanded') !== 'true'); });
+    return entry;
+  }
+  function shellSetOpen_(entry, open) {
+    entry.toggle.setAttribute('aria-expanded', String(open));
+    entry.panel.classList.toggle('is-open', open);
+  }
+  function shellOpenPanels_() {
+    return shellPanels_.filter(function (e) { return document.contains(e.toggle) && e.toggle.getAttribute('aria-expanded') === 'true'; });
+  }
+  /** Closes every open panel the event target is outside of (click or focus moving away). */
+  function shellCloseOutside_(e) {
+    shellOpenPanels_().forEach(function (entry) {
+      if (!entry.toggle.contains(e.target) && !entry.panel.contains(e.target)) shellSetOpen_(entry, false);
+    });
+  }
+
+  function initAppShell_() {
+    if (!APP_SHELL_) return;
+    shellDisclosure_(document.getElementById('appMenuToggle'), document.getElementById('appMenu'));
+    shellDisclosure_(document.getElementById('appThemeToggle'), document.getElementById('appThemePanel'));
+    document.addEventListener('click', shellCloseOutside_);
+    document.addEventListener('focusin', shellCloseOutside_);
+    // Escape closes what is open (non-modal: no focus trap) and returns focus to the toggle the
+    // user can see — only one of the Menu button and the in-menu toggles is shown at a time.
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      var open = shellOpenPanels_();
+      if (!open.length) return;
+      var visible = open.filter(function (entry) { return entry.toggle.getClientRects().length > 0; });
+      open.forEach(function (entry) { shellSetOpen_(entry, false); });
+      if (visible.length) visible[visible.length - 1].toggle.focus();
+    });
+
+    var themeToggle = document.getElementById('appThemeToggle');
+    var radios = document.querySelectorAll('input[name="appTheme"]');
+    function syncTheme() {
+      var pref = window.appScheme_.get();
+      Array.prototype.forEach.call(radios, function (r) { r.checked = r.value === pref; });
+      themeToggle.setAttribute('aria-label', 'Theme: ' + pref.charAt(0).toUpperCase() + pref.slice(1));
+    }
+    Array.prototype.forEach.call(radios, function (r) {
+      r.addEventListener('change', function () { if (r.checked) { window.appScheme_.set(r.value); syncTheme(); } });
+    });
+    syncTheme();
+  }
+  initAppShell_();
+
+  /** The header identity control: account button + panel when signed in, Google's button when not. */
+  function renderAccount_() {
+    var slot = document.getElementById('appAccount');
+    slot.textContent = '';
+    slot.classList.remove('hidden');
+    var panel = document.createElement('div');
+    panel.className = 'app-tool-panel';
+    panel.id = 'appAccountPanel';
+    if (signedIn_()) {
+      var who = auth_.name || auth_.email;
+      var toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'app-tool-toggle app-account-toggle';
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-controls', panel.id);
+      toggle.setAttribute('aria-label', 'Account: ' + who);
+      if (/^https:\/\//.test(auth_.picture)) {
+        var img = document.createElement('img');
+        img.className = 'avatar';
+        img.alt = '';
+        img.referrerPolicy = 'no-referrer';
+        img.src = auth_.picture;
+        toggle.appendChild(img);
+      } else {
+        toggle.appendChild(shellIcon_('user'));
+      }
+      var name = document.createElement('span');
+      name.className = 'app-account-name';
+      name.textContent = who;
+      toggle.appendChild(name);
+
+      var id = document.createElement('p');
+      id.className = 'app-account-id';
+      id.appendChild(document.createTextNode('Signed in as'));
+      var email = document.createElement('strong');
+      email.textContent = auth_.email;
+      id.appendChild(email);
+      panel.appendChild(id);
+      var out = document.createElement('button');
+      out.type = 'button';
+      out.className = 'secondary app-signout';
+      out.appendChild(shellIcon_('logOut'));
+      out.appendChild(document.createTextNode('Sign out'));
+      out.addEventListener('click', function () { signOut_(); });
+      panel.appendChild(out);
+      slot.appendChild(toggle);
+      slot.appendChild(panel);
+      shellDisclosure_(toggle, panel);
+    } else {
+      // No toggle: signed out, Google's own labelled "Sign in" button sits in the header.
+      panel.classList.add('app-account-signin');
+      var btn = document.createElement('div');
+      panel.appendChild(btn);
+      slot.appendChild(panel);
+      withGis_(function () { google.accounts.id.renderButton(btn, { type: 'standard', shape: 'pill', text: 'signin', size: 'large', width: 200 }); });
+    }
+  }
+
+  /** renderSignIn_ under the header tools: identity in the header; container keeps the hint and errors. */
+  function renderShellSignIn_(container, intro) {
+    renderAccount_();
+    container.textContent = '';
+    if (!signedIn_() && intro) {
+      var p = document.createElement('span');
+      p.textContent = intro.replace(/:\s*$/, '.') + ' Sign in is at the top of the page.';
+      container.appendChild(p);
+    }
+    if (signInError_) {
+      var er = document.createElement('div');
+      er.className = 'signin-error';
+      er.textContent = signInError_;
+      container.appendChild(er);
+    }
+    container.classList.toggle('hidden', !container.firstChild);
   }
   loadAuth_();
 

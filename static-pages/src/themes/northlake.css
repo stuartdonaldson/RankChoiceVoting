@@ -1,34 +1,69 @@
-/* Northlake Digital Design System, Option A "Lake & Evergreen" (docs/nuuc-ui-design.md, draft 0.1).
+/* Northlake Digital Design System, Option A "Lake & Evergreen" (docs/nuuc-ui-design.md, draft 0.3).
    Loaded only by the envs tools/static-pages.js's THEME map assigns to 'northlake'.
 
-   Two layers:
-     1. The spec's own --nl-* tokens (§3.1, §9), verbatim, plus semantic state colors (§3.2).
+   Layers:
+     1. The spec's --nl-* tokens (§3, §13), light by default and dark under data-scheme="dark",
+        plus semantic state tokens (§3.4) for both schemes.
      2. A mapping of those tokens onto the app tokens index.html's rules consume, followed by
-        component rules the token swap alone cannot express (white cards on canvas, outlined
-        secondary buttons, brand header, focus ring).
+        component rules the token swap alone cannot express (cards, outlined secondary buttons,
+        the header and its tools, focus ring).
    Every rule is scoped to html[data-theme="northlake"] so it outranks index.html's base rules
    regardless of load order, and cannot leak into another env's page.
 
-   State colors were chosen to pass WCAG 2.2 AA (4.5:1) as text on their own tinted background
-   and on white; the spec leaves final state colors to contrast testing (§3.2). */
+   --app-shell: 1 opts this page into index.html's header tools: the <head> script then resolves
+   the System/Light/Dark preference (§4, §14) into html[data-scheme] before first paint, and the
+   page wires the theme and identity controls (§7, §8). A module without it gets neither.
+
+   Contrast: every text pair below is >= 4.5:1 and every control boundary >= 3:1 in both schemes
+   (WCAG 2.2 AA; table on bead rcballot-71a). Spec caveat: light --nl-text-muted on
+   --nl-surface-subtle is 4.45:1, so muted text is never set on the subtle surface. */
 
 html[data-theme="northlake"] {
-  /* --- §3.1 / §9 spec tokens --- */
+  --app-shell: 1;
+  color-scheme: light;
+
+  /* --- §3.1 brand colors --- */
+  --nl-brand-red: #e53935;
+  --nl-brand-orange: #fb8c00;
+  --nl-brand-yellow: #fdd835;
+  --nl-brand-green: #7cb342;
+  --nl-brand-blue: #1e88e5;
+  --nl-brand-charcoal: #212121;
+
+  /* --- §3.2 / §13 semantic UI colors, light --- */
   --nl-primary: #1663a5;
   --nl-primary-hover: #104e81;
   --nl-primary-active: #0c3d66;
+  --nl-on-primary: #ffffff;
   --nl-primary-soft: #e9f3fb;
-  --nl-brand-blue: #1e88e5;
-  --nl-brand-green: #7cb342;
-  --nl-brand-orange: #fb8c00;
-  --nl-brand-yellow: #fdd835;
-  --nl-brand-red: #e53935;
+  --nl-primary-soft-text: #1663a5;
+  --nl-background: #f4f7f6;
+  --nl-surface: #ffffff;
+  --nl-surface-subtle: #edf2f2;
   --nl-text: #24313b;
   --nl-text-muted: #63717a;
   --nl-heading: #212121;
-  --nl-background: #f4f7f6;
-  --nl-surface: #ffffff;
   --nl-border: #dce4e5;
+  /* Not in the spec: a field/control boundary that reaches 3:1 on the surface (--nl-border is
+     decorative at 1.2:1), and the disabled-control pair. */
+  --nl-border-strong: #869398;
+  --nl-disabled-bg: #d5dde0;
+  --nl-disabled-text: #4a565e;
+  --nl-shadow-card: 0 1px 2px rgba(36, 49, 59, 0.06);
+  --nl-shadow-popover: 0 8px 24px rgba(36, 49, 59, 0.16);
+
+  /* --- §3.4 status meanings (text on its own tint, and on the surface) --- */
+  --nl-success-text: #2e6b1f;
+  --nl-success-bg: #edf6e6;
+  --nl-warning-text: #8a4b00;
+  --nl-warning-bg: #fff4e0;
+  --nl-warning-border: #fb8c00;
+  --nl-error-text: #b3261e;
+  --nl-error-bg: #fdecea;
+  --nl-info-text: var(--nl-primary-soft-text);
+  --nl-info-bg: var(--nl-primary-soft);
+
+  /* --- §5, §6 typography, geometry, spacing --- */
   --nl-font-body: "Open Sans", Arial, system-ui, sans-serif;
   --nl-font-display: Georgia, "Times New Roman", serif;
   --nl-radius-control: 8px;
@@ -40,18 +75,6 @@ html[data-theme="northlake"] {
   --nl-space-4: 16px;
   --nl-space-6: 24px;
   --nl-space-8: 32px;
-  --nl-shadow-card: 0 1px 2px rgba(36, 49, 59, 0.06);
-
-  /* --- §3.2 semantic states (meaning, not brand) --- */
-  --nl-success-text: #2e6b1f;
-  --nl-success-bg: #edf6e6;
-  --nl-warning-text: #8a4b00;
-  --nl-warning-bg: #fff4e0;
-  --nl-warning-border: #fb8c00;
-  --nl-error-text: #b3261e;
-  --nl-error-bg: #fdecea;
-  --nl-info-text: #1663a5;
-  --nl-info-bg: #e9f3fb;
 
   /* --- app tokens (index.html :root) --- */
   --bg-page: var(--nl-background);
@@ -63,8 +86,8 @@ html[data-theme="northlake"] {
   --surface-secondary: var(--nl-surface);
   --link: var(--nl-primary);
   --accent: var(--nl-primary);
-  --accent-text: #ffffff;
-  --disabled-bg: #d5dde0;
+  --accent-text: var(--nl-on-primary);
+  --disabled-bg: var(--nl-disabled-bg);
   --success-bg: var(--nl-success-bg);
   --success-text: var(--nl-success-text);
   --info-bg: var(--nl-info-bg);
@@ -74,7 +97,7 @@ html[data-theme="northlake"] {
   --warning-border: var(--nl-warning-border);
   --warning-bg: var(--nl-warning-bg);
   --warning-badge-bg: var(--nl-warning-border);
-  --warning-badge-text: var(--nl-heading);
+  --warning-badge-text: var(--nl-brand-charcoal); /* on orange in both schemes: 6.8:1 */
   --dragging-shadow: rgba(22, 99, 165, 0.18);
   --font-display: var(--nl-font-display);
   --font-body: var(--nl-font-body);
@@ -85,6 +108,36 @@ html[data-theme="northlake"] {
   --radius-card: var(--nl-radius-card);
   --radius-button: var(--nl-radius-control);
   --radius-badge: 9999px;
+}
+
+/* --- §3.2 / §13 dark scheme. The app tokens above follow automatically. --- */
+html[data-theme="northlake"][data-scheme="dark"] {
+  color-scheme: dark;
+  --nl-primary: #72b7ef;
+  --nl-primary-hover: #9accf4;
+  --nl-primary-active: #c2e0f8;
+  --nl-on-primary: #10232f;
+  --nl-primary-soft: #183b53;
+  --nl-primary-soft-text: #b9dfff;
+  --nl-background: #17232b;
+  --nl-surface: #22323d;
+  --nl-surface-subtle: #2b3d49;
+  --nl-text: #eaf1f5;
+  --nl-text-muted: #b5c6d0;
+  --nl-heading: #f5f8fa;
+  --nl-border: #405361;
+  --nl-border-strong: #7f939f;
+  --nl-disabled-bg: #33444f;
+  --nl-disabled-text: #b5c6d0;
+  --nl-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --nl-shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --nl-success-text: #a5d68a;
+  --nl-success-bg: #1f3a27;
+  --nl-warning-text: #ffc46b;
+  --nl-warning-bg: #3d2e14;
+  --nl-error-text: #ffb4ab;
+  --nl-error-bg: #4a2220;
+  --dragging-shadow: rgba(0, 0, 0, 0.5);
 }
 
 /* --- Base typography (§3.3) --- */
@@ -106,9 +159,13 @@ html[data-theme="northlake"] :is(.section-divider, .field-name-tag) { text-trans
 html[data-theme="northlake"] .section-divider { font-size: 0.875rem; color: var(--nl-text-muted); }
 html[data-theme="northlake"] .field-name-tag { font-size: 0.8125rem; }
 
-/* --- Brand header (§2, §4) — transparent compact mark (§2.1) plus the application name, or the
-       ballot title on the ballot view (index.html applyBranding sets body[data-view="ballot"]) --- */
+/* --- Header (§2.4, §7.2): compact transparent flame mark (§2.3; it has no dark or white artwork,
+       so the same unmodified file serves both schemes) plus the application name, or the ballot
+       title on the ballot view (index.html applyBranding sets body[data-view="ballot"]); header
+       tools on the right. The header is the size container the narrow layout below queries. --- */
 html[data-theme="northlake"] .app-brand {
+  container: app-header / inline-size;
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--nl-space-3);
@@ -125,6 +182,7 @@ html[data-theme="northlake"] .app-brand-logo {
   object-fit: contain;
 }
 html[data-theme="northlake"] .app-brand-name {
+  flex: 1 1 auto;
   font: 600 1.125rem/1.3 var(--nl-font-body);
   color: var(--nl-heading);
   min-width: 0;
@@ -147,23 +205,189 @@ html[data-theme="northlake"] body[data-view="ballot"] #pageTitle {
   border: 0;
 }
 
+/* --- Header tools (§7.2, §8): theme control and identity control, right-aligned. On a wide header
+       each is a toggle with its own popover panel; below, a narrow header folds both into the
+       Menu panel (§7.3, §7.4). --- */
+html[data-theme="northlake"] .app-brand .icon {
+  display: block;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+html[data-theme="northlake"] .app-tools { flex: 0 0 auto; margin-left: auto; }
+html[data-theme="northlake"] .app-menu { display: flex; align-items: center; gap: var(--nl-space-2); }
+html[data-theme="northlake"] .app-tool { position: relative; }
+html[data-theme="northlake"] .app-brand :is(.app-menu-toggle, .app-tool-toggle) {
+  width: auto;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 10px;
+  gap: var(--nl-space-2);
+  background: transparent;
+  color: var(--nl-text);
+  border: 1px solid transparent;
+  border-radius: var(--nl-radius-control);
+  font: 600 0.9375rem var(--nl-font-body);
+}
+html[data-theme="northlake"] .app-brand :is(.app-menu-toggle, .app-tool-toggle):hover,
+html[data-theme="northlake"] .app-brand :is(.app-menu-toggle, .app-tool-toggle)[aria-expanded="true"] {
+  background: var(--nl-primary-soft);
+  color: var(--nl-primary-soft-text);
+  border-color: var(--nl-primary-soft);
+}
+html[data-theme="northlake"] .app-menu-toggle { display: none; }
+html[data-theme="northlake"] .app-menu-toggle .icon-close,
+html[data-theme="northlake"] .app-menu-toggle[aria-expanded="true"] .icon-open { display: none; }
+html[data-theme="northlake"] .app-menu-toggle[aria-expanded="true"] .icon-close { display: block; }
+/* The theme toggle shows the current preference's icon; its aria-label names it. */
+html[data-theme="northlake"] #appThemeToggle .icon { display: none; }
+html[data-theme="northlake"][data-scheme-pref="system"] #appThemeToggle .icon-system,
+html[data-theme="northlake"][data-scheme-pref="light"] #appThemeToggle .icon-light,
+html[data-theme="northlake"][data-scheme-pref="dark"] #appThemeToggle .icon-dark { display: block; }
+
+html[data-theme="northlake"] .app-tool-panel {
+  display: none;
+  position: absolute;
+  top: calc(100% + var(--nl-space-2));
+  right: 0;
+  z-index: 20;
+  min-width: 15rem;
+  margin: 0;
+  padding: var(--nl-space-3);
+  background: var(--nl-surface);
+  color: var(--nl-text);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-card);
+  box-shadow: var(--nl-shadow-popover);
+}
+html[data-theme="northlake"] .app-tool-panel.is-open { display: block; }
+/* Signed out there is no toggle: Google's labelled Sign in button sits in the header itself. */
+html[data-theme="northlake"] .app-tool-panel.app-account-signin {
+  display: block;
+  position: static;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+
+/* Theme choice: native radios, so arrow keys move between the three options. */
+html[data-theme="northlake"] .app-theme fieldset { min-width: 12rem; }
+/* float keeps the legend inside the panel instead of notched into its border. */
+html[data-theme="northlake"] .app-theme legend {
+  float: left;
+  width: 100%;
+  padding: 0 var(--nl-space-2) var(--nl-space-1);
+  font: 600 0.875rem/1.4 var(--nl-font-body);
+  color: var(--nl-text-muted);
+}
+html[data-theme="northlake"] .app-theme label {
+  clear: both;
+  display: flex;
+  align-items: center;
+  gap: var(--nl-space-2);
+  min-height: 44px;
+  margin: 0;
+  padding: 0 var(--nl-space-2);
+  border-radius: var(--nl-radius-control);
+  font-weight: 400;
+  cursor: pointer;
+}
+html[data-theme="northlake"] .app-theme label:hover { background: var(--nl-primary-soft); }
+html[data-theme="northlake"] .app-theme label:has(input:checked) {
+  background: var(--nl-primary-soft);
+  color: var(--nl-primary-soft-text);
+  font-weight: 600;
+}
+html[data-theme="northlake"] .app-theme input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--nl-primary);
+}
+
+/* Identity (§8.4, §8.5): avatar or account icon plus the display name; the panel names the
+   signed-in email and offers a labelled Sign out. */
+html[data-theme="northlake"] .app-account-toggle img.avatar { width: 32px; height: 32px; border-radius: 50%; }
+html[data-theme="northlake"] .app-account-name {
+  max-width: 11em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html[data-theme="northlake"] .app-account-id {
+  margin: 0 0 var(--nl-space-2);
+  font-size: 0.875rem;
+  color: var(--nl-text-muted);
+}
+html[data-theme="northlake"] .app-account-id strong {
+  display: block;
+  font-size: 1rem;
+  color: var(--nl-text);
+  overflow-wrap: anywhere;
+}
+html[data-theme="northlake"] button.app-signout { gap: var(--nl-space-2); margin-top: var(--nl-space-1); }
+
+/* Narrow header (§7.3, §8.7): by the header's own width, not a device breakpoint. Below it the
+   tools fold into one top-right Menu panel, preferences first, identity last behind a divider. */
+@container app-header (max-width: 519px) {
+  html[data-theme="northlake"] .app-brand-logo { height: 40px; }
+  html[data-theme="northlake"] body[data-view="ballot"] .app-brand-name { font-size: 1.375rem; }
+  html[data-theme="northlake"] .app-menu-toggle { display: inline-flex; }
+  html[data-theme="northlake"] .app-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + var(--nl-space-2));
+    right: 0;
+    z-index: 20;
+    width: min(20rem, 100%);
+    padding: var(--nl-space-3);
+    background: var(--nl-surface);
+    border: 1px solid var(--nl-border);
+    border-radius: var(--nl-radius-card);
+    box-shadow: var(--nl-shadow-popover);
+  }
+  html[data-theme="northlake"] .app-menu.is-open { display: block; }
+  html[data-theme="northlake"] .app-brand .app-tool-toggle { display: none; }
+  html[data-theme="northlake"] .app-menu .app-tool-panel {
+    display: block;
+    position: static;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+  }
+  html[data-theme="northlake"] .app-menu .app-account {
+    margin-top: var(--nl-space-3);
+    padding-top: var(--nl-space-3);
+    border-top: 1px solid var(--nl-border);
+  }
+}
+
 /* --- Form controls (§5 Forms): white fields, 8px radius --- */
 html[data-theme="northlake"] :is(input[type="text"], input[type="url"], textarea) {
   background: var(--nl-surface);
-  border-color: #869398; /* 3:1 against white for the field boundary (§8 non-text contrast) */
+  border-color: var(--nl-border-strong); /* >= 3:1 on the surface, both schemes (§12 non-text contrast) */
 }
 
 /* --- Buttons (§5 Buttons) --- */
 html[data-theme="northlake"] :is(button, a.btn) { font-family: inherit; font-weight: 600; border: 1px solid transparent; }
 /* Solid primary = every button the base rules paint with --accent. */
-html[data-theme="northlake"] :is(button, a.btn):not(.secondary, .pencil-btn, .info-toggle, .rich-btn, .topic-info-content, :disabled) {
+html[data-theme="northlake"] :is(button, a.btn):not(.secondary, .pencil-btn, .info-toggle, .rich-btn, .topic-info-content, .app-menu-toggle, .app-tool-toggle, :disabled) {
   border-color: var(--nl-primary);
 }
-html[data-theme="northlake"] :is(button, a.btn):not(.secondary, .pencil-btn, .info-toggle, .rich-btn, .topic-info-content, :disabled):hover {
+html[data-theme="northlake"] :is(button, a.btn):not(.secondary, .pencil-btn, .info-toggle, .rich-btn, .topic-info-content, .app-menu-toggle, .app-tool-toggle, :disabled):hover {
   background: var(--nl-primary-hover);
   border-color: var(--nl-primary-hover);
 }
-html[data-theme="northlake"] :is(button, a.btn):not(.secondary, .pencil-btn, .info-toggle, .rich-btn, .topic-info-content, :disabled):active {
+html[data-theme="northlake"] :is(button, a.btn):not(.secondary, .pencil-btn, .info-toggle, .rich-btn, .topic-info-content, .app-menu-toggle, .app-tool-toggle, :disabled):active {
   background: var(--nl-primary-active);
 }
 /* Secondary: white, primary border and text. */
@@ -173,7 +397,7 @@ html[data-theme="northlake"] :is(button.secondary, a.btn.secondary) {
   border-color: var(--nl-primary);
 }
 html[data-theme="northlake"] :is(button.secondary, a.btn.secondary):not(:disabled):hover { background: var(--nl-primary-soft); }
-html[data-theme="northlake"] button:disabled { background: var(--disabled-bg); color: #4a565e; border-color: var(--disabled-bg); }
+html[data-theme="northlake"] button:disabled { background: var(--disabled-bg); color: var(--nl-disabled-text); border-color: var(--disabled-bg); }
 /* Tertiary/icon controls: text-only with a soft hover. */
 html[data-theme="northlake"] :is(.pencil-btn, .info-toggle) { border-color: transparent; border-radius: var(--nl-radius-control); }
 html[data-theme="northlake"] :is(.pencil-btn, .info-toggle):hover { background: var(--nl-primary-soft); }
