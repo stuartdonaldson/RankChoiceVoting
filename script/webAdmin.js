@@ -391,6 +391,8 @@ function getAdminEditData(id) {
     addInstructions: config['Add-Instructions'] || '',
     feedbackPrompt: config['Feedback-Prompt'] || '',
     defaultFeedbackPrompt: _DEFAULT_FEEDBACK_PROMPT_,
+    thankYouMessage: config['Thank-You-Message'] || '',
+    defaultThankYouMessage: _DEFAULT_THANK_YOU_MESSAGE_,
     showDetailsPreview: _ballotFlag_(config, 'Show-Details-Preview'),
     descriptionLinkText: config['Description-Link-Text'] || '',
     descriptionLinkUrl: config['Description-Link-URL'] || '',
@@ -514,6 +516,9 @@ function adminSaveDescriptionLink(id, text, url) {
 
 /** RPC: saves the Feedback-Prompt (blank = built-in default). @return {{ok:boolean}} */
 function adminSaveFeedbackPrompt(id, value) { return _adminWriteConfig_(id, { 'Feedback-Prompt': String(value || '').trim() }); }
+
+/** RPC: saves the Thank-You-Message shown after Submit (blank = built-in default; rcballot-o3i). @return {{ok:boolean}} */
+function adminSaveThankYouMessage(id, value) { return _adminWriteConfig_(id, { 'Thank-You-Message': String(value || '').trim() }); }
 
 /** RPC: saves the Show-Details-Preview yes/no toggle. @return {{ok:boolean}} */
 function adminSaveShowDetailsPreview(id, on) { return _adminWriteConfig_(id, { 'Show-Details-Preview': on ? 'TRUE' : 'FALSE' }); }

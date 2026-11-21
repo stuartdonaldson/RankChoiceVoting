@@ -520,6 +520,26 @@
         </div>
       </div>
 
+      <p class="subsection-header">Thank You</p>
+
+      <div class="field-block">
+        <span class="field-name-tag">Thank You Message</span>
+        <div class="field-row">
+          <p class="rich" id="thankYouMessageDisplay"></p>
+          <button type="button" class="pencil-btn" id="thankYouMessageEditBtn" aria-label="Edit Thank You Message">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="thankYouMessagePanel">
+          <p class="field-help">Shown after a voter submits, below "Thanks, &lt;name&gt;! Your ranking has been saved." and above the Re-rank button. The Description is not repeated there. Leave it blank to use the default, "Want to change anything? Click Re-rank to update your rankings, or come back later and enter the same name."</p>
+          <label for="thankYouMessageInput">Thank You Message</label>
+          <textarea id="thankYouMessageInput" data-rich rows="3"></textarea>
+          <div class="field-panel-actions">
+            <button type="button" id="thankYouMessageSaveBtn">Save</button>
+            <button type="button" class="secondary" id="thankYouMessageCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="thankYouMessageStatus"></div>
+        </div>
+      </div>
+
       <div class="fixed-block">
         <textarea id="staticFeedbackInput" rows="3" disabled></textarea>
       </div>
@@ -688,6 +708,7 @@
 
     <div id="step-done" class="hidden">
       <p>Thanks, <span id="doneName"></span>! Your ranking has been saved.</p>
+      <div class="sub rich" id="thankYouText"></div>
       <button id="editAgainBtn" class="secondary">Re-rank</button>
     </div>
 
@@ -1997,6 +2018,7 @@
     wireSimpleField('footer', 'adminSaveFooter', setRich_);
     wireSimpleField('contact', 'adminSaveContact', setRich_);
     wireSimpleField('feedbackPrompt', 'adminSaveFeedbackPrompt', function (el, v) { setRich_(el, v || fieldData.defaultFeedbackPrompt || '', false, true); });
+    wireSimpleField('thankYouMessage', 'adminSaveThankYouMessage', function (el, v) { setRich_(el, v || fieldData.defaultThankYouMessage || '', false, true); });
 
     // Details Preview toggle (Show-Details-Preview): same pencil/panel pattern as the other fields.
     var detailsPreviewDisplay = document.getElementById('detailsPreviewDisplay');
@@ -2050,6 +2072,7 @@
         setRich_(footerDisplay, data.footer);
         setRich_(contactDisplay, data.contact);
         setRich_(document.getElementById('feedbackPromptDisplay'), data.feedbackPrompt || data.defaultFeedbackPrompt, false, true);
+        setRich_(document.getElementById('thankYouMessageDisplay'), data.thankYouMessage || data.defaultThankYouMessage || '', false, true);
         renderDetailsPreviewDisplay();
         adminOnlyNotesDisplay.textContent = data.adminOnlyNotes;
         renderAddSettingsDisplay();
@@ -2349,6 +2372,8 @@
     function showStep(el) {
       [stepNoBallot, stepName, stepRank, stepDone].forEach(function (s) { s.classList.add('hidden'); });
       el.classList.remove('hidden');
+      // Thank-you view: the Description is not repeated; the Thank You message replaces it (rcballot-o3i).
+      pageDescription.classList.toggle('hidden', el === stepDone);
       // The Description link belongs to the Description only, not the rank-step Instructions.
       if (el === stepRank) setRich_(pageDescription, ballotInstructions, false, true);
       else setRichWithLink_(pageDescription, ballotDescription, ballotDescriptionLinkText, ballotDescriptionLinkUrl, true);
@@ -2504,6 +2529,7 @@
       setRich_(pageContact, config.contact ? 'Contact: ' + config.contact : '');
       // Rendered like the editor preview (rcballot-sqi formatting was showing raw markers here).
       setRich_(feedbackPromptLabel, config.feedbackPrompt || "Any feedback you'd like to add?", false, true);
+      setRich_(document.getElementById('thankYouText'), config.thankYouMessage || '', false, true);
       showDetailsPreview = !!config.showDetailsPreview;
       setAppVersionFooter_(config.appVersion, config.appDeployTarget);
       itemDetailsByName = config.itemDetails || {};

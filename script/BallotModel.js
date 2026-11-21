@@ -83,7 +83,7 @@ var _BALLOT_RESPONSES_MARKER = '[Responses]';
 // Bare words (lowercase, brackets stripped) a candidate may not be named: the marker
 // words plus the former "Items" section name. See the file header's column-A rule.
 var _BALLOT_RESERVED_NAMES_ = ['results', 'candidates', 'responses', 'items'];
-var _BALLOT_CONFIG_ROWS = ['Title', 'Description', 'Instructions', 'Footer', 'Contact', 'Accept-New', 'Add-Instructions', 'Admin-Only-Notes', 'Feedback-Prompt', 'Show-Details-Preview', 'Description-Link-Text', 'Description-Link-URL'];
+var _BALLOT_CONFIG_ROWS = ['Title', 'Description', 'Instructions', 'Footer', 'Contact', 'Accept-New', 'Add-Instructions', 'Admin-Only-Notes', 'Feedback-Prompt', 'Show-Details-Preview', 'Description-Link-Text', 'Description-Link-URL', 'Thank-You-Message'];
 // Legacy config key recognized by readBallotConfig_ purely to migrate older sheets in
 // place (the cell is rewritten to the current key name the first time it is read).
 var _BALLOT_LEGACY_CONFIG_KEYS_ = { 'Admin-Only-Notes': ['Info'] };
@@ -170,7 +170,7 @@ function createBallotSheet_(ss, id) {
   _writeBallotInfoSection_(sheet, 1, id, _ballotStaticBase_());
   var top = infoRows; // rows above [Config]
   sheet.getRange(top + 1, 1).setValue(_BALLOT_CONFIG_MARKER);
-  sheet.getRange(top + 2, _BALLOT_CONFIG_KEY_COL, 12, 2).setValues([
+  sheet.getRange(top + 2, _BALLOT_CONFIG_KEY_COL, 13, 2).setValues([
     // Each placeholder is "[TODO: what to enter — delete this bracket] <example>": the
     // bracketed lead-in says what the field is for, and the text after it is a working
     // example, so the admin deletes the bracket and edits the example rather than writing
@@ -191,13 +191,15 @@ function createBallotSheet_(ss, id) {
     ['Show-Details-Preview', 'FALSE'],
     // Optional labelled link shown at the end of the Description (blank = no link).
     ['Description-Link-Text', ''],
-    ['Description-Link-URL', '']
+    ['Description-Link-URL', ''],
+    // Text on the thank-you view after Submit (blank = built-in default; rcballot-o3i).
+    ['Thank-You-Message', '']
   ]);
-  sheet.getRange(top + 14, 1).setValue(_BALLOT_RESULTS_MARKER);
-  sheet.getRange(top + 15, 1).setValue(_BALLOT_CANDIDATES_MARKER);
-  sheet.getRange(top + 16, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).setValues([_BALLOT_CANDIDATES_HEADER]);
-  sheet.getRange(top + 17, 1).setValue(_BALLOT_RESPONSES_MARKER);
-  sheet.getRange(top + 18, 1, 1, _BALLOT_RESPONSE_FIXED_COLS.length).setValues([_BALLOT_RESPONSE_FIXED_COLS]);
+  sheet.getRange(top + 15, 1).setValue(_BALLOT_RESULTS_MARKER);
+  sheet.getRange(top + 16, 1).setValue(_BALLOT_CANDIDATES_MARKER);
+  sheet.getRange(top + 17, _BALLOT_CANDIDATES_FIRST_COL, 1, _BALLOT_CANDIDATES_HEADER.length).setValues([_BALLOT_CANDIDATES_HEADER]);
+  sheet.getRange(top + 18, 1).setValue(_BALLOT_RESPONSES_MARKER);
+  sheet.getRange(top + 19, 1, 1, _BALLOT_RESPONSE_FIXED_COLS.length).setValues([_BALLOT_RESPONSE_FIXED_COLS]);
   _highlightSectionMarkers_(sheet);
   return sheet;
 }
@@ -838,6 +840,20 @@ function _ballotFeedbackPrompt_(config) {
   return v || _DEFAULT_FEEDBACK_PROMPT_;
 }
 
+var _DEFAULT_THANK_YOU_MESSAGE_ = 'Want to change anything? Click Re-rank to update your rankings, or come back later and enter the same name.';
+
+/**
+ * The text shown on the thank-you view after Submit: the admin's Thank-You-Message, or the
+ * built-in default when it is blank or the row is missing (rcballot-o3i).
+ *
+ * @param {Object} config as returned by readBallotConfig_
+ * @return {string}
+ */
+function _ballotThankYouMessage_(config) {
+  var v = String((config || {})['Thank-You-Message'] || '').trim();
+  return v || _DEFAULT_THANK_YOU_MESSAGE_;
+}
+
 /**
  * Candidate names, in Candidates-table order (the table is the source of candidate
  * identity). Snapshot-backed: one read, no write. A candidate with no Responses rank
@@ -1141,6 +1157,7 @@ function _buildRespondentBranding_(id, config, candidateRows) {
     acceptNew: _ballotAcceptsNew_(config),
     addInstructions: config['Add-Instructions'] || '',
     feedbackPrompt: _ballotFeedbackPrompt_(config),
+    thankYouMessage: _ballotThankYouMessage_(config),
     showDetailsPreview: _ballotFlag_(config, 'Show-Details-Preview'),
     descriptionLinkText: String(config['Description-Link-Text'] || '').trim(),
     descriptionLinkUrl: _ballotDescriptionLink_(config) ? _ballotDescriptionLink_(config).url : '',

@@ -282,6 +282,7 @@ function gatedCalls(id) {
     ['adminSaveAdminOnlyNotes', [id, 'N']],
     ['adminSaveDescriptionLink', [id, 'L', 'https://example.com']],
     ['adminSaveFeedbackPrompt', [id, 'P']],
+    ['adminSaveThankYouMessage', [id, 'T']],
     ['adminSaveShowDetailsPreview', [id, true]],
     ['adminSaveAddSettings', [id, true, 'x']],
     ['adminAddCandidate', [id, 'Gamma' + Math.random().toString(36).slice(2, 6)]],

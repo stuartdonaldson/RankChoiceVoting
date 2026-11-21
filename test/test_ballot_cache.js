@@ -132,6 +132,26 @@ function testDetailsPreviewAndFeedbackPromptConfig() {
   assert.equal(cfg.feedbackPrompt, "Any feedback you'd like to add?");
 }
 
+/** rcballot-o3i: Thank-You-Message round-trips through admin save, cache and respondent payload; blank/missing = default. */
+function testThankYouMessageConfig() {
+  const { app, ss } = loadApp();
+  const DEFAULT = 'Want to change anything? Click Re-rank to update your rankings, or come back later and enter the same name.';
+  app.createNewBallot_(ss, 'Ty');
+  let cfg = app.getBallotForRespondent_('Ty', '');
+  assert.equal(cfg.thankYouMessage, DEFAULT);
+  let edit = app.getAdminEditData('Ty');
+  assert.equal(edit.thankYouMessage, '');
+  assert.equal(edit.defaultThankYouMessage, DEFAULT);
+
+  app.adminSaveThankYouMessage('Ty', '  Thanks for voting! **Results** on Sunday.  ');
+  cfg = app.getBallotForRespondent_('Ty', '');
+  assert.equal(cfg.thankYouMessage, 'Thanks for voting! **Results** on Sunday.');
+  assert.equal(app.getAdminEditData('Ty').thankYouMessage, 'Thanks for voting! **Results** on Sunday.');
+
+  app.adminSaveThankYouMessage('Ty', '   ');
+  assert.equal(app.getBallotForRespondent_('Ty', '').thankYouMessage, DEFAULT);
+}
+
 /** rcballot-9rc: Description link round-trips (admin save, edit data, respondent payload); URL falls back for label; non-http(s) rejected; missing rows = no link. */
 function testDescriptionLinkConfig() {
   const { app, ss } = loadApp();
@@ -424,14 +444,14 @@ function testOnEditNeverWrites() {
 function testAdminEditLoadRepairsMissingResponses() {
   const { app, ss } = loadApp();
   const sheet = app.createNewBallot_(ss, 'NoResp');
-  sheet.deleteRows(20, 2); // [Responses] marker + header lost
-  sheet.getRange(20, 2, 2, 2).setValues([['Alice', 'a'], ['Bob', 'b']]); // hand-pasted candidates
+  sheet.deleteRows(21, 2); // [Responses] marker + header lost
+  sheet.getRange(21, 2, 2, 2).setValues([['Alice', 'a'], ['Bob', 'b']]); // hand-pasted candidates
 
   assert.deepEqual(app.getCachedBallotData_('NoResp').candidates.length, 0); // reads: nothing, and no repair
-  assert.equal(app.findBallotSheet_(ss, 'NoResp').getRange(22, 1).getValue(), '');
+  assert.equal(app.findBallotSheet_(ss, 'NoResp').getRange(23, 1).getValue(), '');
 
   const edit = app.getAdminEditData('NoResp');
-  assert.equal(sheet.getRange(22, 1).getValue(), '[Responses]');
+  assert.equal(sheet.getRange(23, 1).getValue(), '[Responses]');
   assert.deepEqual(edit.candidates.map(function (c) { return c.name; }), ['Alice', 'Bob']);
   assert.equal(logLines(app, 'ballot.repair.responsesSection').length, 1);
   assert.equal(logLines(app, 'ballot.repair.rankColumns').length, 1);
@@ -528,6 +548,7 @@ function run() {
   testLegacyResponsesLayoutRefusedThenRepairedOnAdminLoad();
   testOnEditNeverWrites();
   testDetailsPreviewAndFeedbackPromptConfig();
+  testThankYouMessageConfig();
   testDescriptionLinkConfig();
   testLegacyBallotWithoutNewConfigRowsBehavesAsDefaults();
   testAdminEditLoadRepairsMissingResponses();
