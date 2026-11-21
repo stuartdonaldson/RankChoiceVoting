@@ -38,8 +38,9 @@
  * distinguishable in one shared Axiom dataset without depending on every call site
  * to add it.
  *
- * PII rule: never pass a raw voter name or email address in the data object — use
- * maskPiiForLog_() / maskRecipientListForLog_() below when one must be logged.
+ * PII rule (rcballot-1j4): voter names and caller emails are logged as-is — the Axiom dataset
+ * keeps 30 days, and an unmasked name is what lets a usage report say who voted. Secrets are
+ * still redacted by scrubForLog_().
  */
 
 /**
@@ -94,70 +95,6 @@ function scrubForLog_(value, depth) {
   return out;
 }
 
-/**
- * Masks a name or email so it is safe to include in a GasLogger entry (data passed to
- * GasLogger.log() must never contain a raw voter name or email address). Keeps the first
- * and last character — an email's domain stays fully visible — replacing everything between
- * with '...'. E.g. 'Little John' -> 'L...n', 'stuart.donaldson@gmail.com' -> 's...n@gmail.com'.
- * @param {string} value
- * @returns {string}
- */
-function maskPiiForLog_(value) {
-  var text = String(value || '').trim();
-  if (!text) return '';
-
-  var atIndex = text.indexOf('@');
-  if (atIndex > 0) {
-    return maskMiddleChars_(text.slice(0, atIndex)) + text.slice(atIndex);
-  }
-  return maskMiddleChars_(text);
-}
-
-function maskMiddleChars_(s) {
-  if (s.length <= 1) return s;
-  return s[0] + '...' + s[s.length - 1];
-}
-
-/**
- * Masks a person's name word-by-word so a masked log entry still hints at who it was
- * (useful for spotting a specific respondent in a bug report) without logging the raw
- * name. Each word keeps its first and last letter; everything between becomes '..'.
- * Words of two letters or fewer are left as-is (nothing left to mask).
- * E.g. 'Stuart Donaldson' -> 'S..t D..n'.
- * @param {string} value
- * @returns {string}
- */
-function maskNameForLog_(value) {
-  var text = String(value || '').trim();
-  if (!text) return '';
-  return text.split(/\s+/).map(function(word) {
-    if (word.length <= 2) return word;
-    return word[0] + '..' + word[word.length - 1];
-  }).join(' ');
-}
-
-/**
- * Masks each address in a comma-separated recipient list, handling the optional
- * 'Display Name <email>' form.
- * @param {string} recipientList
- * @returns {string}
- */
-function maskRecipientListForLog_(recipientList) {
-  return String(recipientList || '').split(',').map(function(entry) {
-    var trimmed = entry.trim();
-    if (!trimmed) return '';
-    var match = trimmed.match(/^(.*)<(.+)>$/);
-    if (match) {
-      var name = match[1].trim();
-      var email = match[2].trim();
-      return (name ? maskPiiForLog_(name) + ' ' : '') + '<' + maskPiiForLog_(email) + '>';
-    }
-    return maskPiiForLog_(trimmed);
-  }).filter(function(entry) {
-    return !!entry;
-  }).join(',');
-}
-
 var GasLogger = {
   _folder: null,
   _entries: [],
@@ -172,8 +109,8 @@ var GasLogger = {
   /**
    * Stamps the caller's email (rcballot-8un: owner policy — every log carries the user's email
    * when known) on every later entry of this execution AND back-fills entries already buffered,
-   * so the request line logged before identity verification is attributed too. Voter names
-   * stay masked; this is the verified Google email (or the Apps Script session user).
+   * so the request line logged before identity verification is attributed too. This is the
+   * verified Google email (or the Apps Script session user).
    * @param {string} email
    */
   setEmail: function(email) {
@@ -184,7 +121,7 @@ var GasLogger = {
   },
 
   /**
-   * Stamps `actor` (an already-masked identity, e.g. a masked voter name or 'admin') on every
+   * Stamps `actor` (an identity, e.g. the entered voter name or 'admin') on every
    * later entry of this execution, so one person's calls can be tied together.
    * @param {string} actor
    */
@@ -402,9 +339,6 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     GasLogger: GasLogger,
     buildAxiomRows_: buildAxiomRows_,
-    scrubForLog_: scrubForLog_,
-    maskPiiForLog_: maskPiiForLog_,
-    maskNameForLog_: maskNameForLog_,
-    maskRecipientListForLog_: maskRecipientListForLog_
+    scrubForLog_: scrubForLog_
   };
 }

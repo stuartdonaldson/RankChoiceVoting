@@ -4,9 +4,6 @@ const assert = require('node:assert/strict');
 
 const {
   buildAxiomRows_,
-  maskPiiForLog_,
-  maskNameForLog_,
-  maskRecipientListForLog_,
 } = require('../script/GasLogger.js');
 
 const entries = [
@@ -42,40 +39,6 @@ const stampedRows = buildAxiomRows_(
 );
 assert.equal(stampedRows[0].version, '0.0.2');
 assert.equal(stampedRows[0].target, 'SIT');
-
-// maskPiiForLog_ — names: first/last character kept, middle collapsed to '...'.
-assert.equal(maskPiiForLog_('Little John'), 'L...n');
-assert.equal(maskPiiForLog_('Jo'), 'J...o');
-assert.equal(maskPiiForLog_('J'), 'J');
-assert.equal(maskPiiForLog_(''), '');
-assert.equal(maskPiiForLog_(null), '');
-
-// maskPiiForLog_ — emails: only the local part is masked, domain stays fully visible.
-assert.equal(maskPiiForLog_('stuart.donaldson@gmail.com'), 's...n@gmail.com');
-assert.equal(maskPiiForLog_('a@b.com'), 'a@b.com');
-
-// maskRecipientListForLog_ — plain comma-separated addresses.
-assert.equal(
-  maskRecipientListForLog_('stuart.donaldson@gmail.com,a@b.com'),
-  's...n@gmail.com,a@b.com'
-);
-
-// maskRecipientListForLog_ — 'Display Name <email>' form, both parts masked.
-assert.equal(
-  maskRecipientListForLog_('Little John <stuart.donaldson@gmail.com>'),
-  'L...n <s...n@gmail.com>'
-);
-
-assert.equal(maskRecipientListForLog_(''), '');
-assert.equal(maskRecipientListForLog_(null), '');
-
-// maskNameForLog_ — per-word first/last letter, middle collapsed to '..'; used where a
-// masked-but-recognizable hint (e.g. in ballot action logs) is more useful than a single blob.
-assert.equal(maskNameForLog_('Stuart Donaldson'), 'S..t D..n');
-assert.equal(maskNameForLog_('Jo'), 'Jo');
-assert.equal(maskNameForLog_('J'), 'J');
-assert.equal(maskNameForLog_(''), '');
-assert.equal(maskNameForLog_(null), '');
 
 // scrubForLog_ / actor: request payloads are logged, so secrets must not survive and identity rides along.
 const { scrubForLog_ } = require('../script/GasLogger.js');

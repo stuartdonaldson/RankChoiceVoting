@@ -38,7 +38,7 @@ function _handleBallot(e) {
   var action = params.action || 'page';
   var id = params.id || '';
 
-  GasLogger.log('webapp.ballot', { action: action, id: id, name: maskNameForLog_(params.name) });
+  GasLogger.log('webapp.ballot', { action: action, id: id, name: params.name || '' });
   GasLogger.flush();
 
   if (action === 'page') {

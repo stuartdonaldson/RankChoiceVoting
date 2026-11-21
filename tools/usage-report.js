@@ -10,10 +10,10 @@
  *   pnpm run usage -- --days 3 --env nuuc
  *   node tools/usage-report.js --file dump.json   # summarise a query-axiom.js --raw dump
  *
- * Identity per event: the logged email when there is one, otherwise the entered (masked)
+ * Identity per event: the logged email when there is one, otherwise the entered
  * voter name, otherwise 'admin (no email)' or 'anonymous'. A name ever logged alongside an
  * email is reported under that email. Smoke-test ballots are attributed to 'smoke test'.
- * Names are masked by GasLogger before they reach Axiom, so full names are not recoverable.
+ * Events logged before rcballot-1j4 carry masked names ("S..t"); later ones carry names as entered.
  */
 
 'use strict';
