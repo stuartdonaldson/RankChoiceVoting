@@ -237,9 +237,9 @@
   ul#orphanList { list-style: none; padding: 0; margin: 12px 0; }
   ul#orphanList li { background: var(--surface-secondary); border: 1px solid var(--border); border-radius: var(--radius-button); padding: 8px 10px; margin-bottom: 6px; }
   ul#candidateList, ul#topicList { list-style: none; padding: 0; margin: 12px 0; }
-  ul#candidateList li, ul#topicList li { background: var(--surface-secondary); border: 1px solid var(--border); border-radius: var(--radius-button); padding: 8px 10px; margin-bottom: 6px; }
+  ul#candidateList > li, ul#topicList > li { background: var(--surface-secondary); border: 1px solid var(--border); border-radius: var(--radius-button); padding: 8px 10px; margin-bottom: 6px; }
   /* Admin candidate rows: tight spacing (control sizes unchanged), details clamped to two lines (click to expand). */
-  ul#candidateList li { padding: 0 8px; margin-bottom: 2px; }
+  ul#candidateList > li { padding: 0 8px; margin-bottom: 2px; }
   #candidateList .topic-row { gap: 4px; grid-template-columns: auto 1fr auto auto auto auto; }
   #candidateList .topic-info-content { margin-top: 0; padding-left: 34px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
   #candidateList .topic-info-content.expanded { display: block; }
@@ -247,11 +247,11 @@
   #candidateList button.topic-info-content { background: none; border: none; text-align: left; font: inherit; color: inherit; width: 100%; }
   #candidateList .topic-info-link { margin-top: 0; padding-left: 34px; }
   /* Respondent ranking rows: tight spacing only; handle/ℹ️ sizes unchanged. */
-  ul#topicList li { padding: 6px 10px; margin-bottom: 6px; }
+  ul#topicList > li { padding: 6px 10px; margin-bottom: 6px; }
   #topicList .topic-row { gap: 8px; }
   #topicList .topic-info-content { margin-top: 0; padding-bottom: 4px; }
-  ul#topicList li { display: flex; flex-direction: column; user-select: none; }
-  ul#topicList li.dragging { position: relative; z-index: 10; background: var(--info-bg); box-shadow: 0 4px 10px var(--dragging-shadow); }
+  ul#topicList > li { display: flex; flex-direction: column; user-select: none; }
+  ul#topicList > li.dragging { position: relative; z-index: 10; background: var(--info-bg); box-shadow: 0 4px 10px var(--dragging-shadow); }
   .topic-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
   .handle { font-size: 1.1rem; color: var(--text-secondary); padding: 10px 4px; min-height: 44px; display: flex; align-items: center; }
   #topicList .handle { cursor: grab; touch-action: none; }
@@ -259,6 +259,7 @@
   .rich a { overflow-wrap: anywhere; }
   ul.rich-list { margin: 4px 0; padding-left: 22px; white-space: normal; }
   ul.rich-list li { white-space: pre-wrap; margin-bottom: 2px; }
+  .rich-inert-link { color: var(--link); text-decoration: underline; }
   .rich-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 6px; }
   .rich-toolbar button.rich-btn { width: auto; margin: 0; min-height: 40px; min-width: 44px; padding: 4px 12px; font-size: 0.9rem; background: var(--surface-secondary); color: var(--text-primary); border: 1px solid var(--border); }
   .rich-toolbar .rich-bold { font-weight: bold; }
@@ -1098,12 +1099,22 @@
     return out;
   }
 
-  function richAppendInline_(el, nodes, flat) {
+  // mode: 'full' (clickable links), 'inert' (link styling, not clickable — inside a clickable row),
+  // 'flat' (link text only).
+  function richAppendInline_(el, nodes, mode) {
     nodes.forEach(function (n) {
       if (n.type === 'text') {
         el.appendChild(document.createTextNode(n.value));
       } else if (n.type === 'link') {
-        if (flat) { el.appendChild(document.createTextNode(n.text)); return; }
+        if (mode === 'flat') { el.appendChild(document.createTextNode(n.text)); return; }
+        if (mode === 'inert') {
+          var sp = document.createElement('span');
+          sp.className = 'rich-inert-link';
+          sp.title = n.href;
+          sp.textContent = n.text;
+          el.appendChild(sp);
+          return;
+        }
         var a = document.createElement('a');
         a.href = n.href;
         a.target = '_blank';
@@ -1112,22 +1123,26 @@
         el.appendChild(a);
       } else {
         var t = document.createElement(n.type === 'bold' ? 'strong' : 'em');
-        richAppendInline_(t, n.children, flat);
+        richAppendInline_(t, n.children, mode);
         el.appendChild(t);
       }
     });
   }
 
-  /** Replaces el's content with formatted admin text: line breaks (CSS pre-wrap), bold, italic, links, bullet lists. */
-  function setRich_(el, text) {
+  /**
+   * Replaces el's content with formatted admin text: line breaks (CSS pre-wrap), bold, italic,
+   * links, bullet lists. inertLinks: style links without making them clickable (admin item rows).
+   */
+  function setRich_(el, text, inertLinks) {
+    var mode = inertLinks ? 'inert' : 'full';
     el.textContent = '';
     parseRichBlocks_(text).blocks.forEach(function (b) {
-      if (b.type === 'para') { richAppendInline_(el, b.inline, false); return; }
+      if (b.type === 'para') { richAppendInline_(el, b.inline, mode); return; }
       var ul = document.createElement('ul');
       ul.className = 'rich-list';
       b.items.forEach(function (item) {
         var li = document.createElement('li');
-        richAppendInline_(li, item, false);
+        richAppendInline_(li, item, mode);
         ul.appendChild(li);
       });
       el.appendChild(ul);
@@ -1142,10 +1157,10 @@
     el.textContent = '';
     parseRichBlocks_(text).blocks.forEach(function (b, bi) {
       if (bi > 0) el.appendChild(document.createTextNode(' '));
-      if (b.type === 'para') { richAppendInline_(el, b.inline, true); return; }
+      if (b.type === 'para') { richAppendInline_(el, b.inline, 'flat'); return; }
       b.items.forEach(function (item, ii) {
         el.appendChild(document.createTextNode((ii > 0 ? '  ' : '') + '• '));
-        richAppendInline_(el, item, true);
+        richAppendInline_(el, item, 'flat');
       });
     });
   }
@@ -1560,17 +1575,22 @@
     function renderCandidateDetails_(el, detailsText) {
       el.textContent = '';
       if (!detailsText) { el.textContent = 'No details yet.'; return; }
+      // Rendered formatted (links styled but inert inside the clickable row) so admins see the
+      // formatting without opening the ballot (rcballot-sqi).
       var first = document.createElement('span');
       first.className = 'details-first';
       first.title = 'First paragraph — the summary shown under the name when Details Preview is on';
-      first.textContent = firstParagraph_(detailsText);
+      setRich_(first, firstParagraph_(detailsText), true);
       el.appendChild(first);
       var rest = remainingParagraphs_(detailsText);
       if (rest) {
         var r = document.createElement('span');
         r.className = 'details-rest';
         r.title = 'Later paragraphs — shown only when the item is expanded';
-        r.textContent = '\n\n' + rest;
+        r.appendChild(document.createTextNode('\n\n'));
+        var restBody = document.createElement('span');
+        setRich_(restBody, rest, true);
+        r.appendChild(restBody);
         el.appendChild(r);
       }
     }

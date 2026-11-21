@@ -231,6 +231,17 @@ function testVoterTextLinksOnly() {
   assert.equal(el.children.map(shape).join(''), '**not bold** <a https://x.com>https://x.com</a>\n- not a list');
 }
 
+function testInertLinksForAdminRows() {
+  const el = fakeNode('span');
+  setRich_(el, 'See [doc](https://x.com) and https://y.com\n- **b**', true);
+  assert.equal(el.children.filter((c) => c.tag === 'a').length, 0);
+  const spans = el.children.filter((c) => c.tag === 'span');
+  assert.deepEqual(spans.map((c) => [c.className, c.title, c.textContent]),
+    [['rich-inert-link', 'https://x.com', 'doc'], ['rich-inert-link', 'https://y.com', 'https://y.com']]);
+  assert.equal(shape(el.children[el.children.length - 1]), '<ul><li><strong>b</strong></li></ul>');
+}
+
+testInertLinksForAdminRows();
 testBoldItalicNesting();
 testLiteralAsterisksAreNotFormattingOrErrors();
 testMarkdownLinks();
