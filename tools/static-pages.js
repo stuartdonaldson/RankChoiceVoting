@@ -46,12 +46,32 @@ const project = JSON.parse(fs.readFileSync(path.join(ROOT, 'gas-project.json'), 
 // declared deployTarget disagrees with what is currently stamped.
 const DEPLOY_TARGET = { sit: 'SIT', prod: 'PROD', nuuc: 'NUUC' };
 
-// env -> design language (CSS custom-property theme; see static-pages/src/index.html's :root /
-// html[data-theme] blocks). sit and prod carry the F3 tactical design language (docs/f3-dl-idea.md);
-// nuuc carries the Northlake UU design language (docs/nuuc-dl-idea.md). A page-content choice, so it
-// stays here rather than in gas-project.json, and is expressed through gas-static's generic
+// env -> design language. Each design language is its own CSS module,
+// static-pages/src/themes/<theme>.css, copied to every env's dist/ as an asset; the stamped page
+// links only its env's module and sets data-theme to match. prod carries the F3 tactical language
+// (docs/f3-dl-idea.md), nuuc the Northlake UU language (docs/nuuc-dl-idea.md), and sit previews
+// the Northlake Digital Design System Option A (docs/nuuc-ui-design.md). A page-content choice, so
+// it stays here rather than in gas-project.json, and is expressed through gas-static's generic
 // `placeholders` map — the package deliberately does not know about themes.
-const THEME = { sit: 'f3', prod: 'f3', nuuc: 'nuuc' };
+const THEME = { sit: 'northlake', prod: 'f3', nuuc: 'nuuc' };
+const THEMES_DIR = 'static-pages/src/themes';
+
+/**
+ * The <link> to env's theme module. `?v=<version>` makes each release fetch its own stylesheet
+ * rather than a cached one from the previous publish, since assertPublishedBuild only verifies
+ * index.html. Throws when the env has no theme or its module is missing, so a typo fails the
+ * build instead of publishing an unstyled page.
+ *
+ * @param {{env:string, version:string}} ctx
+ * @return {string}
+ */
+function themeCssLink_(ctx) {
+  const theme = THEME[ctx.env];
+  if (!theme) throw new Error(`tools/static-pages.js: no THEME entry for env '${ctx.env}'`);
+  const file = path.join(ROOT, THEMES_DIR, `${theme}.css`);
+  if (!fs.existsSync(file)) throw new Error(`${THEMES_DIR}/${theme}.css not found (THEME.${ctx.env})`);
+  return `<link rel="stylesheet" href="themes/${theme}.css?v=${encodeURIComponent(ctx.version)}">`;
+}
 
 // Google Fonts stylesheet for themes needing webfonts beyond system defaults. A theme not listed
 // here gets no font <link> stamped.
@@ -59,6 +79,9 @@ const THEME_FONTS_HTML = {
   f3: '<link rel="preconnect" href="https://fonts.googleapis.com">\n' +
     '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' +
     '<link href="https://fonts.googleapis.com/css2?family=Saira+Stencil+One&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">',
+  northlake: '<link rel="preconnect" href="https://fonts.googleapis.com">\n' +
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' +
+    '<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">',
   nuuc: '<link rel="preconnect" href="https://fonts.googleapis.com">\n' +
     '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' +
     '<link href="https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">',
@@ -150,6 +173,7 @@ module.exports = runStatic({
       `var STATIC_DEV_CONTACT_ = ${JSON.stringify(devContact_())};`,
     'data-theme="STATIC_THEME_"': (ctx) => `data-theme="${THEME[ctx.env] || ''}"`,
     '<!-- STATIC_THEME_FONTS_ -->': (ctx) => THEME_FONTS_HTML[THEME[ctx.env]] || '',
+    '<!-- STATIC_THEME_CSS_ -->': themeCssLink_,
     'var STATIC_DISPATCH_ = null;': (ctx) => `var STATIC_DISPATCH_ = ${JSON.stringify(dispatchFor_(ctx.env))};`,
   },
 
@@ -161,3 +185,5 @@ module.exports = runStatic({
 module.exports.liveUrl_ = liveUrl_;
 module.exports.envsFromProject_ = envsFromProject_;
 module.exports.dispatchFor_ = dispatchFor_;
+module.exports.themeCssLink_ = themeCssLink_;
+module.exports.THEME = THEME;

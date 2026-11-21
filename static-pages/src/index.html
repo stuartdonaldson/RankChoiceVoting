@@ -7,12 +7,12 @@
 <!-- STATIC_THEME_FONTS_ -->
 <style>
   /* Combined styles for all four views (list/edit/analyze/ballot). Colors, fonts, and radii are
-     CSS custom properties so a per-environment "design language" can be swapped by toggling
-     data-theme on <html> (stamped by tools/build-static-pages.js) without duplicating markup or
-     rules. Three themes exist today:
-       - (no data-theme / "legacy") the original Material-ish look this app has always had.
-       - "f3" — the F3 tactical design language from docs/f3-dl-idea.md, used for sit/prod.
-       - "nuuc" — the Northlake UU design language from docs/nuuc-dl-idea.md, used for nuuc. */
+     CSS custom properties so a per-environment "design language" can be swapped without
+     duplicating markup or rules. The tokens below are the legacy (no-theme) Material-ish look.
+     Each design language is its own CSS module under themes/<name>.css, linked after this block
+     by the STATIC_THEME_CSS_ placeholder; tools/static-pages.js's THEME map picks the module per
+     env and stamps data-theme on <html> to match. A module overrides these tokens under
+     html[data-theme="<name>"] and may add component rules of its own (see themes/northlake.css). */
   :root {
     --bg-page: #ffffff;
     --text-primary: #202124;
@@ -45,90 +45,6 @@
     --radius-button: 6px;
     --radius-badge: 10px;
   }
-  html[data-theme="f3"] {
-    /* F3 tactical design language (docs/f3-dl-idea.md §6 token reference, refined palette). */
-    --bg-page: #1B1E21;
-    --text-primary: #FFFFFF;
-    --text-secondary: #9DA5B4;
-    --text-muted: #9DA5B4;
-    --text-body: #C7CDD3;
-    --border: #383D43;
-    --surface-secondary: #24282D;
-    --link: #C83737;
-    --accent: #C83737;
-    --accent-text: #FFFFFF;
-    --disabled-bg: #4A5257;
-    --success-bg: rgba(46, 139, 87, 0.16);
-    --success-text: #2E8B57;
-    --info-bg: rgba(74, 134, 232, 0.16);
-    --info-text: #4A86E8;
-    --error: #C83737;
-    --warning-border: #E6A23C;
-    --warning-bg: rgba(230, 162, 60, 0.16);
-    --warning-badge-bg: #E6A23C;
-    --warning-badge-text: #1B1E21;
-    --dragging-shadow: rgba(0, 0, 0, 0.4);
-    /* The 3 Fs' accent colors (docs/f3-dl-idea.md §2) — not wired into any component yet since
-       this app has no per-F sections, but declared here so a future one can use them without
-       reaching for a raw hex. */
-    --f1-blue: #4A86E8;
-    --f2-amber: #E6A23C;
-    --f3-green: #2E8B57;
-    --font-display: 'Saira Stencil One', sans-serif;
-    --font-body: 'Inter', Arial, sans-serif;
-    --font-mono: 'JetBrains Mono', 'Roboto Mono', monospace;
-    --tracking-display: 0.03em;
-    --transform-display: uppercase;
-    /* Saira Stencil One ships one weight (400) only — asking for bold makes the browser
-       synthesize a faux-bold by fattening the stencil glyphs, blurring out the cutouts into a
-       distracting fat sans-serif look (see h1/h2/h3 rule below). normal keeps the real stencil
-       face. */
-    --weight-display: normal;
-    --radius-card: 8px;
-    --radius-button: 4px;
-    --radius-badge: 12px;
-  }
-  html[data-theme="nuuc"] {
-    /* Northlake UU design language (docs/nuuc-dl-idea.md §2/§6) — warm Pacific Northwest
-       palette built on the Flaming Chalice identity: Parchment surfaces, Deep Chalice Teal
-       links/accents, Warm Gold for warnings/highlights, Evergreen/Lake Blue held in reserve
-       (see :root's --f1/--f2/--f3 comment above for the same "declared, not yet wired into a
-       component" pattern). */
-    --bg-page: #FBF9F5;
-    --text-primary: #2D3748;
-    --text-secondary: #5A6B7A;
-    --text-muted: #64748B;
-    --text-body: #3C4A57;
-    --border: #E2DDD3;
-    --surface-secondary: #F0F4F6;
-    --link: #007791;
-    --accent: #007791;
-    --accent-text: #ffffff;
-    --disabled-bg: #C7C7C7;
-    --success-bg: rgba(42, 77, 56, 0.1);
-    --success-text: #2A4D38;
-    --info-bg: #F0F4F6;
-    --info-text: #4B7B94;
-    --error: #C0392B;
-    --warning-border: #D97706;
-    --warning-bg: rgba(217, 119, 6, 0.12);
-    --warning-badge-bg: #D97706;
-    --warning-badge-text: #2D3748;
-    --dragging-shadow: rgba(0, 0, 0, 0.15);
-    /* Reserve colors from docs/nuuc-dl-idea.md §2 not wired into any component yet, following
-       the f3 theme's --f1/--f2/--f3 precedent above. */
-    --nuuc-evergreen: #2A4D38;
-    --nuuc-lake-blue: #4B7B94;
-    --font-display: 'Lora', Georgia, serif;
-    --font-body: 'Plus Jakarta Sans', Arial, sans-serif;
-    --font-mono: 'Plus Jakarta Sans', 'Courier New', monospace;
-    --tracking-display: normal;
-    --transform-display: none;
-    --weight-display: bold;
-    --radius-card: 12px;
-    --radius-button: 8px;
-    --radius-badge: 9999px;
-  }
   *, *::before, *::after { box-sizing: border-box; }
   html { background: var(--bg-page); }
   body {
@@ -139,7 +55,7 @@
     color: var(--text-primary);
     background: var(--bg-page);
   }
-  /* font-weight is themed (--weight-display, see :root / html[data-theme="f3"] above) rather
+  /* font-weight is themed (--weight-display, see :root above and themes/f3.css) rather
      than left to the browser UA default (bold) — the f3 theme's Black Ops One face has no bold
      weight to give it, and asking anyway makes the browser synthesize a faux-bold that fattens
      the stencil glyphs into a blurry, distracting look. font-synthesis: none is belt-and-braces
@@ -182,6 +98,8 @@
   button:disabled { background: var(--disabled-bg); cursor: default; }
   button.secondary, a.btn.secondary { background: var(--surface-secondary); color: var(--text-primary); }
   .hidden { display: none !important; }
+  /* Brand header: hidden unless the env's theme module shows it (themes/northlake.css). */
+  .app-brand { display: none; }
   /* Optional Google sign-in (rcballot-dx3) — only rendered on Dispatch-enabled builds. */
   .signin-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 16px; font-size: 0.9em; color: var(--text-secondary); }
   .signin-bar img.avatar { width: 28px; height: 28px; border-radius: 50%; }
@@ -309,8 +227,14 @@
   table.results-table th { background: var(--surface-secondary); text-align: left; }
   table.results-table td.center { text-align: center; }
 </style>
+<!-- STATIC_THEME_CSS_ -->
 </head>
 <body>
+  <!-- Theme-neutral brand header; display, logo and styling come from the theme module. -->
+  <header class="app-brand">
+    <span class="app-brand-logo" role="img" aria-label="Northlake Unitarian Universalist Church logo"></span>
+    <span class="app-brand-name">Ranked-choice ballots</span>
+  </header>
   <!-- Admin-view sign-in (rcballot-dx3.3): filled by renderSignIn_ on Dispatch-enabled builds only. -->
   <div id="adminSigninBar" class="signin-bar hidden"></div>
 

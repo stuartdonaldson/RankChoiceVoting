@@ -1,0 +1,198 @@
+/* Northlake Digital Design System, Option A "Lake & Evergreen" (docs/nuuc-ui-design.md, draft 0.1).
+   Loaded only by the envs tools/static-pages.js's THEME map assigns to 'northlake'.
+
+   Two layers:
+     1. The spec's own --nl-* tokens (§3.1, §9), verbatim, plus semantic state colors (§3.2).
+     2. A mapping of those tokens onto the app tokens index.html's rules consume, followed by
+        component rules the token swap alone cannot express (white cards on canvas, outlined
+        secondary buttons, brand header, focus ring).
+   Every rule is scoped to html[data-theme="northlake"] so it outranks index.html's base rules
+   regardless of load order, and cannot leak into another env's page.
+
+   State colors were chosen to pass WCAG 2.2 AA (4.5:1) as text on their own tinted background
+   and on white; the spec leaves final state colors to contrast testing (§3.2). */
+
+html[data-theme="northlake"] {
+  /* --- §3.1 / §9 spec tokens --- */
+  --nl-primary: #1663a5;
+  --nl-primary-hover: #104e81;
+  --nl-primary-active: #0c3d66;
+  --nl-primary-soft: #e9f3fb;
+  --nl-brand-blue: #1e88e5;
+  --nl-brand-green: #7cb342;
+  --nl-brand-orange: #fb8c00;
+  --nl-brand-yellow: #fdd835;
+  --nl-brand-red: #e53935;
+  --nl-text: #24313b;
+  --nl-text-muted: #63717a;
+  --nl-heading: #212121;
+  --nl-background: #f4f7f6;
+  --nl-surface: #ffffff;
+  --nl-border: #dce4e5;
+  --nl-font-body: "Open Sans", Arial, system-ui, sans-serif;
+  --nl-font-display: Georgia, "Times New Roman", serif;
+  --nl-radius-control: 8px;
+  --nl-radius-card: 12px;
+  --nl-radius-dialog: 16px;
+  --nl-space-1: 4px;
+  --nl-space-2: 8px;
+  --nl-space-3: 12px;
+  --nl-space-4: 16px;
+  --nl-space-6: 24px;
+  --nl-space-8: 32px;
+  --nl-shadow-card: 0 1px 2px rgba(36, 49, 59, 0.06);
+
+  /* --- §3.2 semantic states (meaning, not brand) --- */
+  --nl-success-text: #2e6b1f;
+  --nl-success-bg: #edf6e6;
+  --nl-warning-text: #8a4b00;
+  --nl-warning-bg: #fff4e0;
+  --nl-warning-border: #fb8c00;
+  --nl-error-text: #b3261e;
+  --nl-error-bg: #fdecea;
+  --nl-info-text: #1663a5;
+  --nl-info-bg: #e9f3fb;
+
+  /* --- app tokens (index.html :root) --- */
+  --bg-page: var(--nl-background);
+  --text-primary: var(--nl-text);
+  --text-secondary: var(--nl-text-muted);
+  --text-muted: var(--nl-text-muted);
+  --text-body: var(--nl-text);
+  --border: var(--nl-border);
+  --surface-secondary: var(--nl-surface);
+  --link: var(--nl-primary);
+  --accent: var(--nl-primary);
+  --accent-text: #ffffff;
+  --disabled-bg: #d5dde0;
+  --success-bg: var(--nl-success-bg);
+  --success-text: var(--nl-success-text);
+  --info-bg: var(--nl-info-bg);
+  --info-text: var(--nl-info-text);
+  --error: var(--nl-error-text);
+  --error-text: var(--nl-error-text);
+  --warning-border: var(--nl-warning-border);
+  --warning-bg: var(--nl-warning-bg);
+  --warning-badge-bg: var(--nl-warning-border);
+  --warning-badge-text: var(--nl-heading);
+  --dragging-shadow: rgba(22, 99, 165, 0.18);
+  --font-display: var(--nl-font-display);
+  --font-body: var(--nl-font-body);
+  --font-mono: var(--nl-font-body); /* no monospace in the spec; metadata uses the body face */
+  --tracking-display: normal;
+  --transform-display: none;
+  --weight-display: 400;
+  --radius-card: var(--nl-radius-card);
+  --radius-button: var(--nl-radius-control);
+  --radius-badge: 9999px;
+}
+
+/* --- Base typography (§3.3) --- */
+html[data-theme="northlake"] body {
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--nl-text);
+}
+html[data-theme="northlake"] :is(h1, h2) { color: var(--nl-heading); }
+html[data-theme="northlake"] h1 { font-size: clamp(1.75rem, 1.4rem + 1.6vw, 2.125rem); line-height: 1.2; margin: 8px 0 12px; }
+html[data-theme="northlake"] h2 { font-size: 1.5rem; line-height: 1.25; }
+/* Card headings are sans-serif (§3.3), so h3 leaves the display face. */
+html[data-theme="northlake"] h3 { font-family: var(--nl-font-body); font-weight: 600; color: var(--nl-heading); }
+html[data-theme="northlake"] label,
+html[data-theme="northlake"] .subsection-header,
+html[data-theme="northlake"] .field-name-tag { font-weight: 600; }
+/* Sentence case, not all-caps, for labels (§3.3). */
+html[data-theme="northlake"] :is(.section-divider, .field-name-tag) { text-transform: none; letter-spacing: normal; }
+html[data-theme="northlake"] .section-divider { font-size: 0.875rem; color: var(--nl-text-muted); }
+html[data-theme="northlake"] .field-name-tag { font-size: 0.8125rem; }
+
+/* --- Brand header (§2, §4) — unmodified square logo plus the application name --- */
+html[data-theme="northlake"] .app-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--nl-space-3);
+  padding: 0 0 var(--nl-space-4);
+  margin-bottom: var(--nl-space-4);
+  border-bottom: 1px solid var(--nl-border);
+}
+html[data-theme="northlake"] .app-brand-logo {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  background: url("../assets/northlake-logo-square.png") center / contain no-repeat;
+}
+html[data-theme="northlake"] .app-brand-name {
+  font: 600 1.125rem/1.3 var(--nl-font-body);
+  color: var(--nl-heading);
+}
+
+/* --- Form controls (§5 Forms): white fields, 8px radius --- */
+html[data-theme="northlake"] :is(input[type="text"], input[type="url"], textarea) {
+  background: var(--nl-surface);
+  border-color: #869398; /* 3:1 against white for the field boundary (§8 non-text contrast) */
+}
+
+/* --- Buttons (§5 Buttons) --- */
+html[data-theme="northlake"] :is(button, a.btn) { font-family: inherit; font-weight: 600; border: 1px solid transparent; }
+/* Solid primary = every button the base rules paint with --accent. */
+html[data-theme="northlake"] :is(button, a.btn):not(.secondary, .pencil-btn, .info-toggle, .rich-btn, .topic-info-content, :disabled) {
+  border-color: var(--nl-primary);
+}
+html[data-theme="northlake"] :is(button, a.btn):not(.secondary, .pencil-btn, .info-toggle, .rich-btn, .topic-info-content, :disabled):hover {
+  background: var(--nl-primary-hover);
+  border-color: var(--nl-primary-hover);
+}
+html[data-theme="northlake"] :is(button, a.btn):not(.secondary, .pencil-btn, .info-toggle, .rich-btn, .topic-info-content, :disabled):active {
+  background: var(--nl-primary-active);
+}
+/* Secondary: white, primary border and text. */
+html[data-theme="northlake"] :is(button.secondary, a.btn.secondary) {
+  background: var(--nl-surface);
+  color: var(--nl-primary);
+  border-color: var(--nl-primary);
+}
+html[data-theme="northlake"] :is(button.secondary, a.btn.secondary):not(:disabled):hover { background: var(--nl-primary-soft); }
+html[data-theme="northlake"] button:disabled { background: var(--disabled-bg); color: #4a565e; border-color: var(--disabled-bg); }
+/* Tertiary/icon controls: text-only with a soft hover. */
+html[data-theme="northlake"] :is(.pencil-btn, .info-toggle) { border-color: transparent; border-radius: var(--nl-radius-control); }
+html[data-theme="northlake"] :is(.pencil-btn, .info-toggle):hover { background: var(--nl-primary-soft); }
+html[data-theme="northlake"] .rich-toolbar button.rich-btn { background: var(--nl-surface); border-color: var(--nl-border); }
+html[data-theme="northlake"] .rich-toolbar button.rich-btn:hover { background: var(--nl-primary-soft); }
+
+/* Visible keyboard focus (§5, §8). */
+html[data-theme="northlake"] :where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid var(--nl-primary);
+  outline-offset: 3px;
+}
+
+/* --- Cards and panels (§5 Cards): white surfaces, light border, restrained shadow --- */
+html[data-theme="northlake"] .ballot-card {
+  padding: var(--nl-space-4) var(--nl-space-6);
+  box-shadow: var(--nl-shadow-card);
+}
+html[data-theme="northlake"] :is(.field-panel, .add-panel) { border-radius: var(--nl-radius-card); box-shadow: var(--nl-shadow-card); }
+html[data-theme="northlake"] :is(ul#candidateList > li, ul#topicList > li, ul#orphanList li) { box-shadow: var(--nl-shadow-card); }
+html[data-theme="northlake"] ul#topicList > li.dragging { background: var(--nl-primary-soft); border-color: var(--nl-primary); }
+
+/* --- Alerts (§5 Alerts): tinted background plus a leading rule, never color alone --- */
+html[data-theme="northlake"] #createdBanner { border-left: 4px solid var(--nl-success-text); }
+html[data-theme="northlake"] :is(.edit-instructions, .method-note) { border-left: 4px solid var(--nl-primary); }
+html[data-theme="northlake"] .admin-only-section { background: var(--nl-warning-bg); }
+html[data-theme="northlake"] .admin-only-section .subsection-header { color: var(--nl-warning-text); }
+
+/* --- Tables (§5 Tables): horizontal separators, numeric cells right-aligned --- */
+html[data-theme="northlake"] table.results-table { background: var(--nl-surface); border-radius: var(--nl-radius-card); }
+html[data-theme="northlake"] table.results-table :is(th, td) { border-width: 0 0 1px; }
+html[data-theme="northlake"] table.results-table th { background: var(--nl-primary-soft); color: var(--nl-heading); }
+
+/* --- Footer --- */
+html[data-theme="northlake"] .app-version-footer { color: var(--nl-text-muted); }
+
+/* Respect reduced-motion preferences (§8). */
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="northlake"] *, html[data-theme="northlake"] *::before, html[data-theme="northlake"] *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,45 @@
+/* f3 design language (docs/f3-dl-idea.md). Loaded only by the envs tools/static-pages.js's THEME map
+   assigns to 'f3'; overrides the legacy tokens declared in index.html's :root. */
+html[data-theme="f3"] {
+  /* F3 tactical design language (docs/f3-dl-idea.md §6 token reference, refined palette). */
+  --bg-page: #1B1E21;
+  --text-primary: #FFFFFF;
+  --text-secondary: #9DA5B4;
+  --text-muted: #9DA5B4;
+  --text-body: #C7CDD3;
+  --border: #383D43;
+  --surface-secondary: #24282D;
+  --link: #C83737;
+  --accent: #C83737;
+  --accent-text: #FFFFFF;
+  --disabled-bg: #4A5257;
+  --success-bg: rgba(46, 139, 87, 0.16);
+  --success-text: #2E8B57;
+  --info-bg: rgba(74, 134, 232, 0.16);
+  --info-text: #4A86E8;
+  --error: #C83737;
+  --warning-border: #E6A23C;
+  --warning-bg: rgba(230, 162, 60, 0.16);
+  --warning-badge-bg: #E6A23C;
+  --warning-badge-text: #1B1E21;
+  --dragging-shadow: rgba(0, 0, 0, 0.4);
+  /* The 3 Fs' accent colors (docs/f3-dl-idea.md §2) — not wired into any component yet since
+     this app has no per-F sections, but declared here so a future one can use them without
+     reaching for a raw hex. */
+  --f1-blue: #4A86E8;
+  --f2-amber: #E6A23C;
+  --f3-green: #2E8B57;
+  --font-display: 'Saira Stencil One', sans-serif;
+  --font-body: 'Inter', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Roboto Mono', monospace;
+  --tracking-display: 0.03em;
+  --transform-display: uppercase;
+  /* Saira Stencil One ships one weight (400) only — asking for bold makes the browser
+     synthesize a faux-bold by fattening the stencil glyphs, blurring out the cutouts into a
+     distracting fat sans-serif look (see h1/h2/h3 rule below). normal keeps the real stencil
+     face. */
+  --weight-display: normal;
+  --radius-card: 8px;
+  --radius-button: 4px;
+  --radius-badge: 12px;
+}
