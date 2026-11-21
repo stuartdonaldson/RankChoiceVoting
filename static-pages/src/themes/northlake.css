@@ -106,7 +106,8 @@ html[data-theme="northlake"] :is(.section-divider, .field-name-tag) { text-trans
 html[data-theme="northlake"] .section-divider { font-size: 0.875rem; color: var(--nl-text-muted); }
 html[data-theme="northlake"] .field-name-tag { font-size: 0.8125rem; }
 
-/* --- Brand header (§2, §4) — unmodified square logo plus the application name --- */
+/* --- Brand header (§2, §4) — transparent compact mark (§2.1) plus the application name, or the
+       ballot title on the ballot view (index.html applyBranding sets body[data-view="ballot"]) --- */
 html[data-theme="northlake"] .app-brand {
   display: flex;
   align-items: center;
@@ -116,14 +117,34 @@ html[data-theme="northlake"] .app-brand {
   border-bottom: 1px solid var(--nl-border);
 }
 html[data-theme="northlake"] .app-brand-logo {
+  display: block;
   flex: 0 0 auto;
-  width: 48px;
+  width: auto;
   height: 48px;
-  background: url("../assets/northlake-logo-square.png") center / contain no-repeat;
+  max-width: 100%;
+  object-fit: contain;
 }
 html[data-theme="northlake"] .app-brand-name {
   font: 600 1.125rem/1.3 var(--nl-font-body);
   color: var(--nl-heading);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* Ballot view: the header carries the title as the page heading; h1#pageTitle stays in the DOM for
+   screen readers (the header copy is aria-hidden) but is not shown twice. */
+html[data-theme="northlake"] body[data-view="ballot"] .app-brand-name {
+  font: 400 clamp(1.5rem, 1.2rem + 1.4vw, 2rem)/1.2 var(--nl-font-display);
+}
+html[data-theme="northlake"] body[data-view="ballot"] #pageTitle {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* --- Form controls (§5 Forms): white fields, 8px radius --- */
