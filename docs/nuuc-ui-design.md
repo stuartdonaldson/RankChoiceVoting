@@ -110,24 +110,61 @@ The system should communicate Northlake's existing identity while remaining prac
 
 Northlake's existing logos and flame artwork are authoritative.
 
-**Requirements:**
+This section has two separate concerns. **Logo variant selection** (§2.1) decides which approved asset to place. **Surrounding UI** (§2.3) decides how the container around it is styled. Choosing a variant never permits changing the logo itself.
+
+### 2.1 Logo variant selection
+
+1. **Default:** use an approved transparent-background Northlake logo for application headers and branding.
+2. **White-background variants:** use only on pure white (`#FFFFFF`) surfaces, where the background blends seamlessly. Never place one on the canvas (`--nl-background`) or on any other nonwhite surface.
+3. **Dark backgrounds:** use an approved variant designed for dark backgrounds, such as the white-on-transparent version.
+
+| Context | Approved asset | Background |
+| ------- | -------------- | ---------- |
+| Wide header (default) | `Northlake-logo-1024x3031 transparent.png` (horizontal lockup, 1024×303) | Transparent |
+| Compact header, mark only | `Logo-color-flame-transparent.png` (182×234) | Transparent |
+| Dark surface | `Northlake-white-on-transparent.png` | Transparent |
+| Pure white surface only | `NorthlakeLogoOriginalSquare.png` (250×250) | **Opaque white** |
+
+`NorthlakeLogoOriginalSquare.png` has a baked-in white background. It shows as a white box on the canvas color, so it is not a default.
+
+### 2.2 Logo preservation
 
 - Use approved, unmodified Northlake logo assets.
 - Do not redraw, recolor, simplify, or reinterpret the flame.
 - Preserve original proportions and transparent backgrounds.
 - Never stretch, crop, or overlay other graphic elements on logos.
-- Use the original square logo for compact application branding where appropriate.
-- Use an existing horizontal logo variant when the header requires a wide format.
 - Keep sufficient clear space around the logo.
 - Do not create new flame-themed icons to replace standard application icons.
+
+### 2.3 Surrounding UI and deployment
+
+- Include the logo in the application's static assets. Do not load it from Google Drive at runtime, because Drive URLs require authentication.
+- Size the logo by height and keep its aspect ratio (`width: auto`, `object-fit: contain`).
+- Render the logo as an `<img>` with alt text naming the organization, not as a CSS background.
+
+```html
+<img
+  src="assets/northlake-logo-transparent.png"
+  alt="Northlake Unitarian Universalist Church"
+  class="northlake-logo"
+>
+```
+
+```css
+.northlake-logo {
+  display: block;
+  width: auto;
+  height: 56px;
+  max-width: 100%;
+  object-fit: contain;
+}
+```
+
+The paths assume the chosen transparent asset has been copied into the application under that filename.
 
 **Authoritative asset location:**
 
 [https://drive.google.com/drive/u/0/folders/1gF2pF8IIT3Y0mZUWtIY2tDRLUuOE-Z_A](https://drive.google.com/drive/u/0/folders/1gF2pF8IIT3Y0mZUWtIY2tDRLUuOE-Z_A)
-
-Recommended initial asset: `NorthlakeLogoOriginalSquare.png`.
-
-Obtain approved assets from the shared folder and include them in the application's static assets. Do not depend on an authenticated Google Drive URL for runtime rendering.
 
 ## 3. Design Tokens
 
@@ -473,7 +510,8 @@ Do not introduce a new UI framework solely to apply this design language.
 
 A Northlake application conforms to this draft when:
 
-- It uses an approved, unmodified Northlake logo.
+- It uses an approved, unmodified Northlake logo, selected per §2.1.
+- The logo's background blends with its container: no visible box or edge around the logo on any surface it appears on.
 - Its primary UI styling follows Option A.
 - Colors are implemented through centralized design tokens.
 - Typography follows the recommended hierarchy.
