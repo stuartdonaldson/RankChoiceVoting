@@ -35,8 +35,8 @@ const sandbox = {
   },
 };
 vm.createContext(sandbox);
-vm.runInContext(html.slice(start, end) + '\nthis.api = { parseRichText_, setRich_, setRichWithLink_, safeHttpUrl_, firstParagraph_, remainingParagraphs_ };', sandbox);
-const { parseRichText_, setRich_, setRichWithLink_, safeHttpUrl_, firstParagraph_, remainingParagraphs_ } = sandbox.api;
+vm.runInContext(html.slice(start, end) + '\nthis.api = { parseRichText_, setRich_, setRichWithLink_, safeHttpUrl_, firstParagraph_, remainingParagraphs_, parseRichBlocks_, validateRichText_, setRichInline_, setLinkified_ };', sandbox);
+const { parseRichText_, setRich_, setRichWithLink_, safeHttpUrl_, firstParagraph_, remainingParagraphs_, parseRichBlocks_, validateRichText_, setRichInline_, setLinkified_ } = sandbox.api;
 
 function plain(v) { return JSON.parse(JSON.stringify(v)); }
 
@@ -144,4 +144,99 @@ testCrlfNormalised();
 testSetRichBuildsNodesAndNeverInjectsHtml();
 testFirstParagraph();
 testRemainingParagraphs();
+
+// ---- rcballot-sqi: bold / italic / links / bullets, validation, preview, voter text ----
+
+/** Renders a fake-DOM tree to a compact tag string for assertions. */
+function shape(n) {
+  if (n.tag === '#text') return n.text;
+  const inner = n.children.length ? n.children.map(shape).join('') : n.text;
+  if (n.tag === 'a') return '<a ' + n.href + '>' + inner + '</a>';
+  return '<' + n.tag + '>' + inner + '</' + n.tag + '>';
+}
+function render(text) { const el = fakeNode('p'); setRich_(el, text); return el.children.map(shape).join(''); }
+
+function testBoldItalicNesting() {
+  assert.equal(render('a **b** c'), 'a <strong>b</strong> c');
+  assert.equal(render('a *b* c'), 'a <em>b</em> c');
+  assert.equal(render('**bold *and italic* here**'), '<strong>bold <em>and italic</em> here</strong>');
+  assert.equal(render('*it **b** it*'), '<em>it <strong>b</strong> it</em>');
+  assert.equal(render('(**x**).'), '(<strong>x</strong>).');
+}
+
+function testLiteralAsterisksAreNotFormattingOrErrors() {
+  ['5 * 3 = 15', 'file*name*x', 'a ** b', 'rate 4*', 'wild*card', '2*3*4'].forEach((t) => {
+    assert.equal(render(t), t, t);
+    assert.deepEqual(plain(validateRichText_(t)), [], t);
+  });
+  assert.equal(render('\\*Required\\* field'), '*Required* field');
+  assert.equal(render('C:\\dev\\x'), 'C:\\dev\\x'); // unrelated backslashes stay
+}
+
+function testMarkdownLinks() {
+  assert.equal(render('See [the doc](https://ex.com/d?a=1) now'), 'See <a https://ex.com/d?a=1>the doc</a> now');
+  assert.equal(render('**[bold link](https://ex.com)**'), '<strong><a https://ex.com>bold link</a></strong>');
+  assert.equal(render('bare https://ex.com/p and **https://ex.com/q**'),
+    'bare <a https://ex.com/p>https://ex.com/p</a> and <strong><a https://ex.com/q>https://ex.com/q</a></strong>');
+  const el = fakeNode('p');
+  setRich_(el, '[x](https://ex.com)');
+  assert.equal(el.children[0].target, '_blank');
+  assert.equal(el.children[0].rel, 'noopener noreferrer');
+  // Bad links render literally and are reported.
+  assert.equal(render('[x](javascript:alert(1))'), '[x](javascript:alert(1))');
+  assert.equal(render('[plain brackets] stay'), '[plain brackets] stay');
+}
+
+function testBullets() {
+  assert.equal(render('Intro\n- one\n* **two**\nAfter'),
+    'Intro<ul><li>one</li><li><strong>two</strong></li></ul>After');
+  assert.equal(render('  - indented'), '<ul><li>indented</li></ul>');
+  assert.equal(render('-5 degrees\n- \n*not a bullet*'), '-5 degrees\n- \n<em>not a bullet</em>');
+}
+
+function testPlainTextUnchanged() {
+  // AC 4: text without markers renders as it always has (one merged text node).
+  const el = fakeNode('p');
+  setRich_(el, 'Line one\n\nLine two (with parens) & <b>');
+  assert.equal(el.children.length, 1);
+  assert.equal(el.children[0].text, 'Line one\n\nLine two (with parens) & <b>');
+  assert.deepEqual(plain(parseRichBlocks_('')), { blocks: [], errors: [] });
+}
+
+function testValidation() {
+  assert.deepEqual(plain(validateRichText_('ok **b** *i* [t](https://x.com)\n- item')), []);
+  const v1 = validateRichText_('fine\n**never closed');
+  assert.equal(v1.length, 1);
+  assert.ok(/^Line 2: bold/.test(v1[0]), v1[0]);
+  assert.ok(/^Line 1: italic/.test(validateRichText_('*open only')[0]));
+  assert.ok(/^Line 1: the link "x" needs a web address/.test(validateRichText_('[x](www.x.com)')[0]));
+  assert.ok(/^Line 1: the link "x"/.test(validateRichText_('[x](https://a b.com)')[0]));
+  assert.ok(/missing its closing/.test(validateRichText_('[x](https://x.com')[0]));
+  // Markers must close on the same line.
+  assert.deepEqual(plain(validateRichText_('**starts here\nends here**')).map((m) => m.slice(0, 12)), ['Line 1: bold']);
+  // Duplicate messages on one line are reported once.
+  assert.equal(validateRichText_('*a *b').length, 1);
+}
+
+function testPreviewInline() {
+  const el = fakeNode('span');
+  setRichInline_(el, 'Has **bold** and [a link](https://x.com)\n- one\n- two');
+  assert.equal(el.children.map(shape).join(''), 'Has <strong>bold</strong> and a link • one  • two');
+  assert.equal(el.children.filter((c) => c.tag === 'a').length, 0);
+}
+
+function testVoterTextLinksOnly() {
+  const el = fakeNode('div');
+  setLinkified_(el, '**not bold** https://x.com\n- not a list');
+  assert.equal(el.children.map(shape).join(''), '**not bold** <a https://x.com>https://x.com</a>\n- not a list');
+}
+
+testBoldItalicNesting();
+testLiteralAsterisksAreNotFormattingOrErrors();
+testMarkdownLinks();
+testBullets();
+testPlainTextUnchanged();
+testValidation();
+testPreviewInline();
+testVoterTextLinksOnly();
 console.log('test_rich_text: all tests passed');

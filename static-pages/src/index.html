@@ -257,6 +257,13 @@
   #topicList .handle { cursor: grab; touch-action: none; }
   .rich { white-space: pre-wrap; overflow-wrap: anywhere; }
   .rich a { overflow-wrap: anywhere; }
+  ul.rich-list { margin: 4px 0; padding-left: 22px; white-space: normal; }
+  ul.rich-list li { white-space: pre-wrap; margin-bottom: 2px; }
+  .rich-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 6px; }
+  .rich-toolbar button.rich-btn { width: auto; margin: 0; min-height: 40px; min-width: 44px; padding: 4px 12px; font-size: 0.9rem; background: var(--surface-secondary); color: var(--text-primary); border: 1px solid var(--border); }
+  .rich-toolbar .rich-bold { font-weight: bold; }
+  .rich-toolbar .rich-italic { font-style: italic; }
+  .rich-toolbar .rich-hint { color: var(--text-muted); font-size: 0.8em; font-family: var(--font-mono); }
   /* Details preview (Show-Details-Preview on): bold name over a muted first-paragraph line clamped to 2 lines. */
   #topicList .topic-text.with-preview { white-space: normal; min-width: 0; }
   #topicList .topic-text.with-preview .topic-name { display: block; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -356,9 +363,9 @@
           <button type="button" class="pencil-btn" id="descriptionEditBtn" aria-label="Edit Description">✏️</button>
         </div>
         <div class="field-panel hidden" id="descriptionPanel">
-          <p class="field-help">Shown on the landing page, before a respondent enters their name. Include any "how to start" guidance here too — there's no separate fixed instruction text below it anymore. Line breaks are kept and bare http(s):// links become clickable.</p>
+          <p class="field-help">Shown on the landing page, before a respondent enters their name. Include any "how to start" guidance here too — there's no separate fixed instruction text below it anymore. Line breaks are kept and bare http(s):// links become clickable. Use the toolbar for **bold**, *italic*, [links](https://…) and - bullets; Save checks the formatting first.</p>
           <label for="descriptionInput">Description</label>
-          <textarea id="descriptionInput" rows="3"></textarea>
+          <textarea id="descriptionInput" data-rich rows="3"></textarea>
           <div class="field-panel-actions">
             <button type="button" id="descriptionSaveBtn">Save</button>
             <button type="button" class="secondary" id="descriptionCancelBtn">Cancel</button>
@@ -402,9 +409,9 @@
           <button type="button" class="pencil-btn" id="instructionsEditBtn" aria-label="Edit Ballot Instructions">✏️</button>
         </div>
         <div class="field-panel hidden" id="instructionsPanel">
-          <p class="field-help">Shown above the ranking list on the ballot page — replaces the landing description above once a respondent starts ranking. Include the drag/reorder guidance here too — there's no separate fixed instruction text below it anymore. Line breaks are kept and bare http(s):// links become clickable.</p>
+          <p class="field-help">Shown above the ranking list on the ballot page — replaces the landing description above once a respondent starts ranking. Include the drag/reorder guidance here too — there's no separate fixed instruction text below it anymore. Line breaks are kept and bare http(s):// links become clickable. Use the toolbar for **bold**, *italic*, [links](https://…) and - bullets; Save checks the formatting first.</p>
           <label for="instructionsInput">Ballot Instructions</label>
-          <textarea id="instructionsInput" rows="3"></textarea>
+          <textarea id="instructionsInput" data-rich rows="3"></textarea>
           <div class="field-panel-actions">
             <button type="button" id="instructionsSaveBtn">Save</button>
             <button type="button" class="secondary" id="instructionsCancelBtn">Cancel</button>
@@ -449,8 +456,8 @@
           <label for="newCandidateNameInput">Name</label>
           <input type="text" id="newCandidateNameInput">
           <label for="newCandidateDetailsInput">Details (optional)</label>
-          <textarea id="newCandidateDetailsInput" rows="4" placeholder="First paragraph = summary shown under the name when Details Preview is on. Leave a blank line, then add longer text that appears only when the item is expanded."></textarea>
-          <p class="field-help">Candidate Details: the first paragraph (text before the first blank line) is the summary shown under the name when Details Preview is on; later paragraphs (after a blank line) appear only when the item is expanded. Line breaks are kept and bare http(s):// links become clickable.</p>
+          <textarea id="newCandidateDetailsInput" data-rich rows="4" placeholder="First paragraph = summary shown under the name when Details Preview is on. Leave a blank line, then add longer text that appears only when the item is expanded."></textarea>
+          <p class="field-help">Candidate Details: the first paragraph (text before the first blank line) is the summary shown under the name when Details Preview is on; later paragraphs (after a blank line) appear only when the item is expanded. Line breaks are kept and bare http(s):// links become clickable. Use the toolbar for **bold**, *italic*, [links](https://…) and - bullets; Save checks the formatting first.</p>
           <label for="newCandidateLinkTextInput">Link Text (optional)</label>
           <input type="text" id="newCandidateLinkTextInput">
           <label for="newCandidateLinkUrlInput">Link URL (optional)</label>
@@ -472,10 +479,10 @@
         </div>
         <p class="sub rich" id="addInstructionsDisplay"></p>
         <div class="field-panel hidden" id="addSettingsPanel">
-          <p class="field-help">Controls whether respondents can add their own candidate from the ballot page, and what instructions they see above the "+ Add New" button. Line breaks are kept and bare http(s):// links become clickable.</p>
+          <p class="field-help">Controls whether respondents can add their own candidate from the ballot page, and what instructions they see above the "+ Add New" button. Line breaks are kept and bare http(s):// links become clickable. Use the toolbar for **bold**, *italic*, [links](https://…) and - bullets; Save checks the formatting first.</p>
           <label><input type="checkbox" id="acceptNewInput"> Accept new candidates from respondents</label>
           <label for="addInstructionsInput">Instructions to Add</label>
-          <textarea id="addInstructionsInput" rows="2"></textarea>
+          <textarea id="addInstructionsInput" data-rich rows="2"></textarea>
           <div class="field-panel-actions">
             <button type="button" id="addSettingsSaveBtn">Save</button>
             <button type="button" class="secondary" id="addSettingsCancelBtn">Cancel</button>
@@ -499,7 +506,7 @@
         <div class="field-panel hidden" id="feedbackPromptPanel">
           <p class="field-help">The question shown above the always-visible feedback box on the ballot page, just above Submit. Leave it blank to use the default, "Any feedback you'd like to add?".</p>
           <label for="feedbackPromptInput">Feedback Prompt</label>
-          <textarea id="feedbackPromptInput" rows="2"></textarea>
+          <textarea id="feedbackPromptInput" data-rich rows="2"></textarea>
           <div class="field-panel-actions">
             <button type="button" id="feedbackPromptSaveBtn">Save</button>
             <button type="button" class="secondary" id="feedbackPromptCancelBtn">Cancel</button>
@@ -524,9 +531,9 @@
           <button type="button" class="pencil-btn" id="footerEditBtn" aria-label="Edit Footer">✏️</button>
         </div>
         <div class="field-panel hidden" id="footerPanel">
-          <p class="field-help">Shown at the bottom of the ballot page. Line breaks are kept and bare http(s):// links become clickable.</p>
+          <p class="field-help">Shown at the bottom of the ballot page. Line breaks are kept and bare http(s):// links become clickable. Use the toolbar for **bold**, *italic*, [links](https://…) and - bullets; Save checks the formatting first.</p>
           <label for="footerInput">Footer</label>
-          <textarea id="footerInput" rows="2"></textarea>
+          <textarea id="footerInput" data-rich rows="2"></textarea>
           <div class="field-panel-actions">
             <button type="button" id="footerSaveBtn">Save</button>
             <button type="button" class="secondary" id="footerCancelBtn">Cancel</button>
@@ -542,9 +549,9 @@
           <button type="button" class="pencil-btn" id="contactEditBtn" aria-label="Edit Contact">✏️</button>
         </div>
         <div class="field-panel hidden" id="contactPanel">
-          <p class="field-help">Shown at the bottom of the ballot page, below the footer, as "Contact: ...". Line breaks are kept and bare http(s):// links become clickable.</p>
+          <p class="field-help">Shown at the bottom of the ballot page, below the footer, as "Contact: ...". Line breaks are kept and bare http(s):// links become clickable. Use the toolbar for **bold**, *italic*, [links](https://…) and - bullets; Save checks the formatting first.</p>
           <label for="contactInput">Contact</label>
-          <textarea id="contactInput" rows="2"></textarea>
+          <textarea id="contactInput" data-rich rows="2"></textarea>
           <div class="field-panel-actions">
             <button type="button" id="contactSaveBtn">Save</button>
             <button type="button" class="secondary" id="contactCancelBtn">Cancel</button>
@@ -937,8 +944,8 @@
     return out;
   }
 
-  /** Replaces el's content with text (line breaks via CSS pre-wrap) plus clickable bare URLs. */
-  function setRich_(el, text) {
+  /** Linkify only (no formatting): line breaks via CSS pre-wrap plus clickable bare URLs. Used for voter text. */
+  function setLinkified_(el, text) {
     el.textContent = '';
     parseRichText_(text).forEach(function (seg) {
       if (seg.type === 'link') {
@@ -951,6 +958,195 @@
       } else {
         el.appendChild(document.createTextNode(seg.value));
       }
+    });
+  }
+
+  // Lightweight formatting (rcballot-sqi), stored as plain text in the sheet:
+  //   **bold**   *italic*   [link text](https://url)   lines starting "- " or "* " are bullets
+  //   \* \[ \] \\ give a literal character. A marker only counts when the opener is followed by
+  //   non-space and not preceded by a letter/digit, and the closer is preceded by non-space and
+  //   not followed by a letter/digit ("5 * 3", "file*name" stay literal). Anything that does not
+  //   parse renders literally; validateRichText_ reports it so admin Save can refuse it.
+  var RICH_ESCAPABLE_ = '*[]\\';
+  var RICH_BULLET_RE_ = /^[ \t]*[-*][ \t]+(\S.*)$/;
+  var RICH_LINK_RE_ = /^\[([^\]\n]+)\]\(([^)\n]*)\)/;
+  var RICH_LINK_START_RE_ = /^\[[^\]\n]+\]\(/;
+
+  function richIsWord_(c) { return !!c && /[A-Za-z0-9]/.test(c); }
+  function richIsSpace_(c) { return !c || /\s/.test(c); }
+  function richCanOpen_(s, i, len) { return !richIsSpace_(s.charAt(i + len)) && !richIsWord_(s.charAt(i - 1)); }
+  function richCanClose_(s, j, len) { return j > 0 && !richIsSpace_(s.charAt(j - 1)) && !richIsWord_(s.charAt(j + len)); }
+
+  /** The bare http(s) URL starting at s[i] (trailing punctuation and * dropped), or ''. */
+  function richUrlAt_(s, i) {
+    var m = /^https?:\/\/[^\s<>"']+/i.exec(s.slice(i));
+    if (!m) return '';
+    var url = m[0];
+    var trail = url.match(/[.,;:!?)\]}*]+$/);
+    if (trail) url = url.slice(0, url.length - trail[0].length);
+    return /^https?:\/\/[^\s]+/i.test(url) ? url : '';
+  }
+
+  /** Index of the closing marker ('**' or '*') at or after from, skipping escapes, links and URLs; -1 for none. */
+  function richFindCloser_(s, from, marker) {
+    for (var j = from; j < s.length; j++) {
+      var ch = s.charAt(j);
+      if (ch === '\\' && s.charAt(j + 1) && RICH_ESCAPABLE_.indexOf(s.charAt(j + 1)) !== -1) { j++; continue; }
+      if (ch === '[') { var lm = RICH_LINK_RE_.exec(s.slice(j)); if (lm) { j += lm[0].length - 1; continue; } }
+      if (ch === 'h' || ch === 'H') { var u = richUrlAt_(s, j); if (u) { j += u.length - 1; continue; } }
+      if (ch !== '*') continue;
+      var dbl = s.charAt(j + 1) === '*';
+      if (marker === '**') {
+        if (dbl && richCanClose_(s, j, 2)) return j;
+        if (dbl) j++;
+      } else {
+        if (dbl) { j++; continue; }
+        if (richCanClose_(s, j, 1)) return j;
+      }
+    }
+    return -1;
+  }
+
+  /** Parses one line into [{type:'text',value}|{type:'link',href,text}|{type:'bold'|'italic',children}]. */
+  function richParseInline_(s, line, errors) {
+    var out = [];
+    var buf = '';
+    var i = 0;
+    function flush() { if (buf) { out.push({ type: 'text', value: buf }); buf = ''; } }
+    while (i < s.length) {
+      var c = s.charAt(i);
+      if (c === '\\' && s.charAt(i + 1) && RICH_ESCAPABLE_.indexOf(s.charAt(i + 1)) !== -1) {
+        buf += s.charAt(i + 1); i += 2; continue;
+      }
+      if (c === '[') {
+        var rest = s.slice(i);
+        var lm = RICH_LINK_RE_.exec(rest);
+        if (lm) {
+          var href = safeHttpUrl_(lm[2]);
+          if (href) { flush(); out.push({ type: 'link', href: href, text: lm[1] }); i += lm[0].length; continue; }
+          errors.push({ line: line, message: 'the link "' + lm[1] + '" needs a web address that starts with http:// or https:// and has no spaces.' });
+        } else if (RICH_LINK_START_RE_.test(rest)) {
+          errors.push({ line: line, message: 'a link is missing its closing ")".' });
+        }
+        buf += c; i++; continue;
+      }
+      if (c === 'h' || c === 'H') {
+        var u = richUrlAt_(s, i);
+        if (u) { flush(); out.push({ type: 'link', href: u, text: u }); i += u.length; continue; }
+      }
+      if (c === '*') {
+        var dbl = s.charAt(i + 1) === '*';
+        var len = dbl ? 2 : 1;
+        if (richCanOpen_(s, i, len)) {
+          var j = richFindCloser_(s, i + len, dbl ? '**' : '*');
+          if (j !== -1) {
+            flush();
+            out.push({ type: dbl ? 'bold' : 'italic', children: richParseInline_(s.slice(i + len, j), line, errors) });
+            i = j + len;
+            continue;
+          }
+          errors.push({ line: line, message: dbl
+            ? 'bold text started with ** is never closed. Put ** after the last bold word, or type \\*\\* for literal asterisks.'
+            : 'italic text started with * is never closed. Put * after the last italic word, or type \\* for a literal asterisk.' });
+        }
+        buf += s.slice(i, i + len); i += len; continue;
+      }
+      buf += c; i++;
+    }
+    flush();
+    return out;
+  }
+
+  /** Appends adjacent-text-merged inline nodes. */
+  function richPushInline_(arr, nodes) {
+    nodes.forEach(function (n) {
+      var last = arr[arr.length - 1];
+      if (n.type === 'text' && last && last.type === 'text') last.value += n.value;
+      else arr.push(n.type === 'text' ? { type: 'text', value: n.value } : n);
+    });
+  }
+
+  /** {blocks:[{type:'para',inline}|{type:'list',items:[inline]}], errors:[{line,message}]}. */
+  function parseRichBlocks_(text) {
+    var src = String(text == null ? '' : text).replace(/\r\n?/g, '\n');
+    var blocks = [];
+    var errors = [];
+    var cur = null;
+    if (src === '') return { blocks: blocks, errors: errors };
+    src.split('\n').forEach(function (ln, idx) {
+      var m = RICH_BULLET_RE_.exec(ln);
+      if (m) {
+        if (!cur || cur.type !== 'list') { cur = { type: 'list', items: [] }; blocks.push(cur); }
+        cur.items.push(richParseInline_(m[1], idx + 1, errors));
+      } else {
+        if (!cur || cur.type !== 'para') { cur = { type: 'para', inline: [] }; blocks.push(cur); }
+        else richPushInline_(cur.inline, [{ type: 'text', value: '\n' }]);
+        richPushInline_(cur.inline, richParseInline_(ln, idx + 1, errors));
+      }
+    });
+    return { blocks: blocks, errors: errors };
+  }
+
+  /** Human-readable formatting problems ("Line 2: ..."), de-duplicated; [] when the text is fine. */
+  function validateRichText_(text) {
+    var seen = {};
+    var out = [];
+    parseRichBlocks_(text).errors.forEach(function (e) {
+      var msg = 'Line ' + e.line + ': ' + e.message;
+      if (!seen[msg]) { seen[msg] = true; out.push(msg); }
+    });
+    return out;
+  }
+
+  function richAppendInline_(el, nodes, flat) {
+    nodes.forEach(function (n) {
+      if (n.type === 'text') {
+        el.appendChild(document.createTextNode(n.value));
+      } else if (n.type === 'link') {
+        if (flat) { el.appendChild(document.createTextNode(n.text)); return; }
+        var a = document.createElement('a');
+        a.href = n.href;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = n.text;
+        el.appendChild(a);
+      } else {
+        var t = document.createElement(n.type === 'bold' ? 'strong' : 'em');
+        richAppendInline_(t, n.children, flat);
+        el.appendChild(t);
+      }
+    });
+  }
+
+  /** Replaces el's content with formatted admin text: line breaks (CSS pre-wrap), bold, italic, links, bullet lists. */
+  function setRich_(el, text) {
+    el.textContent = '';
+    parseRichBlocks_(text).blocks.forEach(function (b) {
+      if (b.type === 'para') { richAppendInline_(el, b.inline, false); return; }
+      var ul = document.createElement('ul');
+      ul.className = 'rich-list';
+      b.items.forEach(function (item) {
+        var li = document.createElement('li');
+        richAppendInline_(li, item, false);
+        ul.appendChild(li);
+      });
+      el.appendChild(ul);
+    });
+  }
+
+  /**
+   * One-line rendering for the Details Preview inside a draggable row: bold/italic kept, links
+   * shown as their text (not clickable), bullets flattened to "• a  • b".
+   */
+  function setRichInline_(el, text) {
+    el.textContent = '';
+    parseRichBlocks_(text).blocks.forEach(function (b, bi) {
+      if (bi > 0) el.appendChild(document.createTextNode(' '));
+      if (b.type === 'para') { richAppendInline_(el, b.inline, true); return; }
+      b.items.forEach(function (item, ii) {
+        el.appendChild(document.createTextNode((ii > 0 ? '  ' : '') + '• '));
+        richAppendInline_(el, item, true);
+      });
     });
   }
 
@@ -1131,6 +1327,89 @@
       el.style.height = 'auto';
       el.style.height = el.scrollHeight + 'px';
     }
+
+    // Formatting toolbar + save-time validation for admin textareas marked data-rich (rcballot-sqi).
+    function richRequireValid_(input, statusEl) {
+      var errs = validateRichText_(input.value);
+      if (!errs.length) return true;
+      setStatus(statusEl, 'Fix the formatting before saving. ' + errs.join(' '), true);
+      input.focus();
+      return false;
+    }
+    function attachRichToolbar_(ta) {
+      if (!ta || ta.getAttribute('data-rich-toolbar')) return;
+      ta.setAttribute('data-rich-toolbar', '1');
+      var bar = document.createElement('div');
+      bar.className = 'rich-toolbar';
+      function changed() { ta.focus(); ta.dispatchEvent(new Event('input', { bubbles: true })); }
+      function addBtn(label, title, fn, cls) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'rich-btn' + (cls ? ' ' + cls : '');
+        b.textContent = label;
+        b.title = title;
+        b.setAttribute('aria-label', title);
+        b.addEventListener('mousedown', function (e) { e.preventDefault(); }); // keep the selection
+        b.addEventListener('click', function () { fn(); changed(); });
+        bar.appendChild(b);
+      }
+      function wrap(marker, placeholder) {
+        var s0 = ta.selectionStart, e0 = ta.selectionEnd;
+        var sel = ta.value.slice(s0, e0);
+        if (!sel.trim()) {
+          ta.setRangeText(marker + placeholder + marker, s0, e0, 'end');
+          ta.setSelectionRange(s0 + marker.length, s0 + marker.length + placeholder.length);
+          return;
+        }
+        // Markers go around each line's words (inside any bullet prefix) so every line stays valid.
+        var out = sel.split('\n').map(function (ln) {
+          return ln.replace(/^([ \t]*(?:[-*][ \t]+)?)(.*?)(\s*)$/, function (m, pre, core, post) {
+            return core ? pre + marker + core + marker + post : m;
+          });
+        }).join('\n');
+        ta.setRangeText(out, s0, e0, 'select');
+      }
+      function link() {
+        var s0 = ta.selectionStart, e0 = ta.selectionEnd;
+        var label = ta.value.slice(s0, e0).replace(/\s+/g, ' ').trim().replace(/[\[\]]/g, '');
+        var url = window.prompt('Web address for the link (starts with https://):', 'https://');
+        if (url === null) return;
+        url = safeHttpUrl_(url);
+        if (!url || /^https?:\/\/$/i.test(url)) {
+          window.alert('The link needs a web address that starts with http:// or https:// and has no spaces.');
+          return;
+        }
+        url = url.replace(/\(/g, '%28').replace(/\)/g, '%29');
+        var text = label || 'link text';
+        ta.setRangeText('[' + text + '](' + url + ')', s0, e0, 'end');
+        if (!label) ta.setSelectionRange(s0 + 1, s0 + 1 + text.length);
+      }
+      function bullets() {
+        var v = ta.value, s0 = ta.selectionStart, e0 = ta.selectionEnd;
+        var ls = v.lastIndexOf('\n', s0 - 1) + 1;
+        var le = v.indexOf('\n', (e0 > s0 && v.charAt(e0 - 1) === '\n') ? e0 - 1 : e0);
+        if (le === -1) le = v.length;
+        var lines = v.slice(ls, le).split('\n');
+        if (lines.length === 1 && !lines[0].trim()) { ta.setRangeText('- ', ls, le, 'end'); return; }
+        var allBulleted = lines.every(function (l) { return !l.trim() || RICH_BULLET_RE_.test(l); });
+        var out = lines.map(function (l) {
+          if (!l.trim()) return l;
+          if (allBulleted) return l.replace(/^[ \t]*[-*][ \t]+/, '');
+          return RICH_BULLET_RE_.test(l) ? l : '- ' + l.replace(/^[ \t]+/, '');
+        }).join('\n');
+        ta.setRangeText(out, ls, le, 'select');
+      }
+      addBtn('B', 'Bold: wraps the selection in **', function () { wrap('**', 'bold text'); }, 'rich-bold');
+      addBtn('I', 'Italic: wraps the selection in *', function () { wrap('*', 'italic text'); }, 'rich-italic');
+      addBtn('Link', 'Link: turns the selection into [text](https://…)', link);
+      addBtn('• List', 'Bullets: starts each selected line with "- " (click again to remove)', bullets);
+      var hint = document.createElement('span');
+      hint.className = 'rich-hint';
+      hint.textContent = '**bold**  *italic*  [text](https://…)  - bullet';
+      bar.appendChild(hint);
+      ta.parentNode.insertBefore(bar, ta);
+    }
+    document.querySelectorAll('textarea[data-rich]').forEach(attachRichToolbar_);
     document.querySelectorAll('textarea.single-line').forEach(function (el) {
       el.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
       el.addEventListener('input', function () {
@@ -1158,6 +1437,7 @@
       cancelBtn.addEventListener('click', function () { panel.classList.add('hidden'); });
 
       saveBtn.addEventListener('click', function () {
+        if (input.hasAttribute('data-rich') && !richRequireValid_(input, status)) return;
         var value = input.classList.contains('single-line') ? input.value.replace(/\s*[\r\n]+\s*/g, ' ').trim() : input.value.trim();
         saveBtn.disabled = true;
         setStatus(status, 'Saving…', false);
@@ -1393,8 +1673,8 @@
       panel.innerHTML =
         '<p class="field-help">What respondents drag-order to rank. Edit this candidate’s name, details, and link below.</p>' +
         '<label>Name</label><input type="text" class="cand-name-input">' +
-        '<label>Details (optional)</label><textarea rows="4" class="cand-details-input" placeholder="First paragraph = summary shown under the name when Details Preview is on. Leave a blank line, then add longer text that appears only when the item is expanded."></textarea>' +
-        '<p class="field-help">Candidate Details: the first paragraph (text before the first blank line) is the summary shown under the name when Details Preview is on; later paragraphs (after a blank line) appear only when the item is expanded. Line breaks are kept and bare http(s):// links become clickable.</p>' +
+        '<label>Details (optional)</label><textarea rows="4" data-rich class="cand-details-input" placeholder="First paragraph = summary shown under the name when Details Preview is on. Leave a blank line, then add longer text that appears only when the item is expanded."></textarea>' +
+        '<p class="field-help">Candidate Details: the first paragraph (text before the first blank line) is the summary shown under the name when Details Preview is on; later paragraphs (after a blank line) appear only when the item is expanded. Line breaks are kept and bare http(s):// links become clickable. Use the toolbar for **bold**, *italic*, [links](https://…) and - bullets; Save checks the formatting first.</p>' +
         '<label>Link Text (optional)</label><input type="text" class="cand-link-text-input">' +
         '<label>Link URL (optional)</label><input type="url" class="cand-link-url-input" placeholder="https://…">' +
         '<div class="field-panel-actions">' +
@@ -1402,6 +1682,7 @@
         '<button type="button" class="secondary cand-cancel-btn">Cancel</button>' +
         '</div>' +
         '<div class="field-status cand-status"></div>';
+      attachRichToolbar_(panel.querySelector('.cand-details-input'));
 
       li.appendChild(row);
       li.appendChild(details);
@@ -1454,6 +1735,7 @@
           setStatus(statusEl, 'Name cannot be empty.', true);
           return;
         }
+        if (!richRequireValid_(detailsInput, statusEl)) return;
         var newDetails = detailsInput.value.trim();
         var newLinkText = linkTextInput.value.trim();
         var newLinkUrl = linkUrlInput.value.trim();
@@ -1513,6 +1795,7 @@
         setStatus(addCandidateStatus, 'Name cannot be empty.', true);
         return;
       }
+      if (!richRequireValid_(newCandidateDetailsInput, addCandidateStatus)) return;
       var details = newCandidateDetailsInput.value.trim();
       var linkText = newCandidateLinkTextInput.value.trim();
       var linkUrl = newCandidateLinkUrlInput.value.trim();
@@ -1561,6 +1844,7 @@
 
     addSettingsSaveBtn.addEventListener('click', function () {
       var accept = acceptNewInput.checked;
+      if (!richRequireValid_(addInstructionsInput, addSettingsStatus)) return;
       var instructions = addInstructionsInput.value.trim();
       addSettingsSaveBtn.disabled = true;
       setStatus(addSettingsStatus, 'Saving…', false);
@@ -1865,7 +2149,7 @@
         item.style.marginBottom = '14px';
         var body = document.createElement('div');
         body.style.whiteSpace = 'pre-wrap';
-        setRich_(body, c.comment);
+        setLinkified_(body, c.comment); // voter text: links only, no formatting
         var meta = document.createElement('div');
         meta.style.color = 'var(--text-muted)';
         meta.style.fontSize = '0.85em';
@@ -2024,7 +2308,7 @@
         nameEl.textContent = topic;
         var previewEl = document.createElement('span');
         previewEl.className = 'topic-preview';
-        previewEl.textContent = previewText;
+        setRichInline_(previewEl, previewText);
         text.appendChild(nameEl);
         text.appendChild(previewEl);
       } else {
