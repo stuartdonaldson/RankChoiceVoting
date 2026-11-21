@@ -64,6 +64,7 @@ function buildAxiomRows_(entries, fallbackVersion) {
     }, e.data || {});
     if (e.execId) row.execId = e.execId;
     if (e.actor) row.actor = e.actor;
+    if (e.email) row.email = e.email;
     if (e.runId) row.runId = e.runId;
     return row;
   });
@@ -166,6 +167,21 @@ var GasLogger = {
   _fileId: null,
   _axiomConfig: null,
   _actor: null,
+  _email: null,
+
+  /**
+   * Stamps the caller's email (rcballot-8un: owner policy — every log carries the user's email
+   * when known) on every later entry of this execution AND back-fills entries already buffered,
+   * so the request line logged before identity verification is attributed too. Voter names
+   * stay masked; this is the verified Google email (or the Apps Script session user).
+   * @param {string} email
+   */
+  setEmail: function(email) {
+    var e = email ? String(email).trim().toLowerCase() : '';
+    this._email = e || null;
+    if (!e) return;
+    this._entries.forEach(function(entry) { if (!entry.email) entry.email = e; });
+  },
 
   /**
    * Stamps `actor` (an already-masked identity, e.g. a masked voter name or 'admin') on every
@@ -187,6 +203,13 @@ var GasLogger = {
     this._entries = [];
     this._fileId = null;
     this._actor = null;
+    this._email = null;
+    // Fallback identity: the Apps Script session user (sheet menus/triggers, the deployer).
+    // Anonymous web-app callers give ''. A Dispatch-verified email replaces it (Identity.js).
+    try {
+      var sessionEmail = typeof Session !== 'undefined' ? Session.getActiveUser().getEmail() : '';
+      if (sessionEmail) this._email = String(sessionEmail).trim().toLowerCase();
+    } catch (err) { /* no session user available */ }
     Logger.log('[GasLogger] init — trigger=' + triggerName +
       ' execId=' + this._execId + (this._runId ? ' runId=' + this._runId : ''));
     return this._execId;
@@ -247,7 +270,8 @@ var GasLogger = {
   /**
    * Accumulate a structured log entry. Also writes to Logger.log().
    * @param {string}  tag    - Entry type (e.g. 'webapp.ballot', 'handleAdminPost_.error').
-   * @param {Object}  data   - Payload. Must not contain email addresses or voter names.
+   * @param {Object}  data   - Payload. Must not contain voter names or secrets. The caller's
+   *                           email is added at entry level via setEmail()/init(), not in data.
    * @param {boolean} flush  - If true, flush accumulated entries to Drive/Axiom immediately.
    * @param {boolean} newLog - If true, reset the file reference after flushing so the
    *                           next flush() creates a new file for subsequent entries.
@@ -262,6 +286,7 @@ var GasLogger = {
     var entry = { ts: new Date().toISOString(), tag: tag, data: data, execId: this._execId, version: version, target: target };
     if (this._runId) entry.runId = this._runId;
     if (this._actor) entry.actor = this._actor;
+    if (this._email) entry.email = this._email;
     Logger.log('[GasLogger] ' + JSON.stringify(entry));
     if (this._enabled) this._entries.push(entry);
     if (flush) this.flush();
@@ -375,6 +400,7 @@ function authorizeExternalRequestScope() {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    GasLogger: GasLogger,
     buildAxiomRows_: buildAxiomRows_,
     scrubForLog_: scrubForLog_,
     maskPiiForLog_: maskPiiForLog_,

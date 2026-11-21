@@ -118,6 +118,7 @@ function rcvBeginRequest_(envelope) {
     return { status: 'rejected', reason: v.reason };
   }
   var profile = (envelope && envelope.profile) || {};
+  if (typeof GasLogger !== 'undefined' && GasLogger.setEmail) GasLogger.setEmail(v.email); // rcballot-8un
   rcvRequest_.identity = {
     email: v.email,
     sub: v.sub,

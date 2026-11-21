@@ -84,4 +84,34 @@ assert.deepEqual(scrubForLog_({ adminSecret: 's', properties: { A: '1' }, n: 1, 
 assert.equal(buildAxiomRows_([{ ts: 't', tag: 'x', data: {}, actor: 'L..e J..n' }])[0].actor, 'L..e J..n');
 assert.equal('actor' in buildAxiomRows_([{ ts: 't', tag: 'x', data: {} }])[0], false);
 
+// rcballot-8un: the caller's email rides on every entry when known, back-filled at verification.
+{
+  const { GasLogger } = require('../script/GasLogger.js');
+  global.Logger = { log() {} };
+  global.Utilities = { getUuid: () => 'u-1' };
+  global.PropertiesService = { getScriptProperties: () => ({ getProperty: () => null }) };
+  GasLogger.disable(); GasLogger.enable();
+  GasLogger.init('t');
+  GasLogger.log('doPost', { n: 1 });
+  assert.equal('email' in GasLogger._entries[0], false); // AC 4: none known yet
+  GasLogger.setEmail(' Someone@Example.org ');
+  GasLogger.log('after', {});
+  assert.equal(GasLogger._entries[0].email, 'someone@example.org'); // back-filled
+  assert.equal(GasLogger._entries[1].email, 'someone@example.org');
+  const r = buildAxiomRows_(GasLogger._entries);
+  assert.equal(r[0].email, 'someone@example.org');
+  assert.equal('email' in buildAxiomRows_([{ ts: 't', tag: 'x', data: {} }])[0], false);
+  // Session fallback, and a throwing Session never breaks init.
+  global.Session = { getActiveUser: () => ({ getEmail: () => 'Deployer@Example.org' }) };
+  GasLogger.init('t2');
+  GasLogger.log('x', {});
+  assert.equal(GasLogger._entries[0].email, 'deployer@example.org');
+  global.Session = { getActiveUser: () => { throw new Error('no'); } };
+  GasLogger.init('t3');
+  GasLogger.log('x', {});
+  assert.equal('email' in GasLogger._entries[0], false);
+  delete global.Session;
+  GasLogger._entries = [];
+}
+
 console.log('test_gas_logger.js: PASS');
