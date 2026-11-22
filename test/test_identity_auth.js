@@ -470,9 +470,14 @@ test('analysis: anonymous refused with sign-in message; any signed-in caller all
       assert.equal(outcome(call(t.app, 'getAdminAnalysisData_', ['b1'], who)), 'allowed', `${claimed} ${who.email}`);
     });
   });
+  // rcballot-goe: sign-in off refuses results too (respondent names); the operator is allowed everywhere.
   const off = loadApp({ target: 'PROD' });
   newBallot(off, 'b1');
-  assert.equal(outcome(call(off.app, 'getAdminAnalysisData_', ['b1'])), 'allowed'); // prod unchanged
+  assert.match(call(off.app, 'getAdminAnalysisData_', ['b1']).error, /^Not authorized: viewing results needs Google sign-in/);
+  assert.equal(outcome(call(off.app, 'getAdminAnalysisData_', ['b1'], null, null, OP_SECRET)), 'allowed');
+  const on = loadApp();
+  newBallot(on, 'b1');
+  assert.equal(outcome(call(on.app, 'getAdminAnalysisData_', ['b1'], null, null, OP_SECRET)), 'allowed');
 });
 
 test('admin list: claimed ballot hides notes and respondent names from non-admins', () => {

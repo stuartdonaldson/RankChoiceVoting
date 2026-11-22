@@ -26,12 +26,14 @@
  *     listed ballot admin or super-admin even on an unclaimed ballot — claim it first.
  *   - Sign-in not enabled on this deployment: refused.
  *   - Operator override: the ?cmd=api envelope's adminSecret matching the ADMIN_SHARED_SECRET
- *     Script Property (rcvNoteOperator_) allows every admin RPC. CLI / live smoke tests only — the
- *     public static page never holds it.
+ *     Script Property (rcvNoteOperator_) allows every admin RPC and results, except the
+ *     identity-bound adminSaveAdmins (non-blank list) / adminClaimBallot, which need a verified
+ *     email (repair admins via a super-admin). CLI / live smoke tests only — the public static
+ *     page never holds it.
  * A refusal throws 'Not authorized …'. Fails closed: a read error while checking refuses.
  *
  * RESULTS (AC rev 2): getAdminAnalysisData_ needs a verified signed-in caller (rcvRequireSignedIn_)
- * but not an admin.
+ * but not an admin; refused where sign-in is off, operator excepted (rcballot-goe).
  *
  * PII: never log an email, name, picture URL or assertion. Logs carry reason codes only.
  *
@@ -294,14 +296,22 @@ function rcvRequireBallotAdmin_(id, opts) {
   return access;
 }
 
+var RCV_RESULTS_DISABLED_ = 'Not authorized: viewing results needs Google sign-in, which is not enabled on this deployment.';
+
 /**
- * Throws message unless this request has a verified signed-in caller. Open (no-op) on a
- * deployment without sign-in, like the admin rule.
+ * Throws message unless this request has a verified signed-in caller or the operator secret.
+ * rcballot-goe: refused (RCV_RESULTS_DISABLED_) on a deployment without sign-in, like the admin
+ * rule — results carry respondent names and comments.
  *
  * @param {string} message refusal text (starts 'Not authorized')
  */
 function rcvRequireSignedIn_(message) {
-  if (!rcvRequestEnabled_() || rcvRequestIdentity_()) return;
+  if (rcvRequestIsOperator_()) return;
+  if (!rcvRequestEnabled_()) {
+    GasLogger.log('identity.signin.required', { reason: 'disabled' });
+    throw new Error(RCV_RESULTS_DISABLED_);
+  }
+  if (rcvRequestIdentity_()) return;
   GasLogger.log('identity.signin.required', { reason: 'anonymous' });
   throw new Error(message);
 }

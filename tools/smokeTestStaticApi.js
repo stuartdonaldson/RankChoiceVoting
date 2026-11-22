@@ -25,9 +25,9 @@
  *   7. getBallotConfig / getBallotForName — the voting page's own two initial calls.
  *   8. submitBallotRanking x3 — three ballots with different orderings.
  *   9. addBallotTopic — a respondent-added candidate mid-race.
- *  10. getAdminAnalysisData_ — sign-in enabled (getDiagnostics.identityEnabled): assert the anonymous
- *      call is refused with the sign-in message; otherwise assert RCV + all four Condorcet methods
- *      return a sane shape.
+ *  10. getAdminAnalysisData_ — assert the anonymous call is refused (sign-in message when
+ *      getDiagnostics.identityEnabled), then, as the operator, that RCV + all four Condorcet
+ *      methods return a sane shape.
  *  11. Cleanup: deleteSheet via the existing secret-gated cmd=admin ops API (best-effort).
  *
  * Requires a live SIT deployment (sitDeploymentId in local.settings.json — see
@@ -194,8 +194,9 @@ async function main() {
     // 10. Analysis. rcballot-dx3.3 AC rev 2: with sign-in enabled (getDiagnostics.identityEnabled)
     // results need a verified signed-in caller, which this anonymous script cannot be — so the
     // positive check is that the call is REFUSED with the sign-in message (signed-in coverage
-    // stays manual: it needs a browser GIS token). With sign-in off, assert the data shape.
-    // The other admin RPCs above ran with the operator secret (rcballot-goe).
+    // stays manual: it needs a browser GIS token). rcballot-goe: with sign-in off it is refused
+    // too; either way the data shape is asserted through the operator secret, as are the other
+    // admin RPCs above.
     const analysis = await callApi_(deploymentId, 'getAdminAnalysisData_', id);
     if (identityEnabled === null) {
       record_('getAdminAnalysisData_', false, 'could not read getDiagnostics.identityEnabled (no admin secret locally) — cannot pick the expected outcome');
@@ -203,11 +204,17 @@ async function main() {
       const refused = !!(analysis && typeof analysis.error === 'string' && analysis.error.indexOf(SIGNIN_REFUSAL_) === 0 && !analysis.result);
       record_('getAdminAnalysisData_ refused anonymously (identityEnabled)', refused, refused ? '' : JSON.stringify(analysis));
     } else {
-      const a = analysis && analysis.result;
+      const refused = !!(analysis && typeof analysis.error === 'string' && /^Not authorized/.test(analysis.error) && !analysis.result);
+      record_('getAdminAnalysisData_ refused anonymously (sign-in off)', refused, refused ? '' : JSON.stringify(analysis));
+    }
+    if (identityEnabled !== null) {
+      // Result shape via the operator secret (rcballot-goe), with sign-in on or off.
+      const opAnalysis = await callAdmin_(deploymentId, 'getAdminAnalysisData_', id);
+      const a = opAnalysis && opAnalysis.result;
       const analysisOk = !!(a && !a.error && a.rcv && (a.rcv.winner || a.rcv.tie) &&
         a.condorcet && a.condorcet.condorcet && a.condorcet.schulze && a.condorcet.rankedPairs && a.condorcet.minimax &&
         a.finishOrders && a.finishOrders.condorcet);
-      record_('getAdminAnalysisData_ returns full result shape', analysisOk, analysisOk ? ('winner=' + (a.rcv.winner || 'tie:' + a.rcv.tie)) : JSON.stringify(analysis));
+      record_('getAdminAnalysisData_ (operator) returns full result shape', analysisOk, analysisOk ? ('winner=' + (a.rcv.winner || 'tie:' + a.rcv.tie)) : JSON.stringify(opAnalysis));
     }
 
     // Step 11 — the live static page check — was REMOVED when this project moved onto gas-static.
