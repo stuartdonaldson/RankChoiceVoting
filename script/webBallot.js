@@ -15,7 +15,7 @@
  * Entry point: _handleBallot(e), wired from WebApp.js doGet (cmd === 'ballot').
  * All other functions here are either internal helpers or RPCs.
  *
- * STATIC-PAGES MIGRATION: doGet no longer renders webBallotPage.html for a plain page request
+ * STATIC-PAGES MIGRATION: doGet renders no page here (webBallotPage.html was retired, rcballot-719)
  * — cmd=ballot now redirects to the static front end (static-pages/src/index.html, see
  * ApiBridge.js's _renderStaticRedirect_), which calls getBallotConfig/getBallotForName/
  * addBallotTopic/submitBallotRanking below via doPost ?cmd=api (ApiBridge.js's whitelist)
@@ -25,32 +25,20 @@
  */
 
 /**
- * ?cmd=ballot&id=<id>                                        — render the page
  * ?cmd=ballot&id=<id>&action=data&name=<name>                — read ranking/candidates
  * ?cmd=ballot&id=<id>&action=add&phrase=<phrase>              — append a candidate
  * ?cmd=ballot&id=<id>&action=submit&name=<name>&order=<json>  — save a ranking
  *
  * @param {Object} e doGet event.
- * @return {HtmlOutput|TextOutput}
+ * @return {TextOutput}
  */
 function _handleBallot(e) {
   var params = (e && e.parameter) || {};
-  var action = params.action || 'page';
+  var action = params.action || '';
   var id = params.id || '';
 
   GasLogger.log('webapp.ballot', { action: action, id: id, name: params.name || '' });
   GasLogger.flush();
-
-  if (action === 'page') {
-    // GAS wraps webapp output in an outer frame that only reliably honors a
-    // mobile viewport when set via addMetaTag — a plain <meta viewport> tag
-    // inside the page's own HTML is not enough; without this, phones render
-    // the page as a zoomed-out desktop layout.
-    var title = id ? _ballotTitleOrDefault_(id) : 'RankChoiceVoting Ballot';
-    return HtmlService.createHtmlOutputFromFile('webBallotPage')
-      .setTitle(title)
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1');
-  }
 
   try {
     switch (action) {
@@ -72,15 +60,6 @@ function _handleBallot(e) {
 }
 
 /**
- * @param {string} id
- * @return {string}
- */
-function _ballotTitleOrDefault_(id) {
-  var config = getBallotForRespondent_(id, '');
-  return (config && config.title) || 'RankChoiceVoting Ballot';
-}
-
-/**
  * Wraps a plain object as a JSON TextOutput.
  *
  * @param {Object} obj
@@ -92,7 +71,7 @@ function _ballotJsonResponse(obj) {
 }
 
 /**
- * RPC: called from webBallotPage.html once with no name to fetch branding
+ * RPC: called from the static page once with no name to fetch branding
  * for the current id before the respondent has typed their name.
  *
  * @param {string} id

@@ -87,9 +87,9 @@ Each run also overwrites the ballot sheet's own `[Results]` section with the sam
 
 - `script/WebApp.js` — `doGet`/`doPost` router (`cmd=ballot`, `cmd=admin`, `cmd=api`, `cmd=version`).
 - `script/BallotModel.js` — the sheet-layout model described above; every other file reads/writes ballots through this module.
-- `script/webAdmin.js` — admin ballot list, create-ballot form, and analysis view.
-- `script/webAdminEditPage.html` — the live-preview ballot editor.
-- `script/webBallot.js` / `script/webBallotPage.html` — the respondent-facing ballot page and its RPCs.
+- `script/webAdmin.js` — admin RPCs (list, create, analysis, edit) for the static front end.
+- `script/webBallot.js` — respondent-facing ballot RPCs and the JSON `action=` routes.
+- `static-pages/src/index.html` — the UI (voter and admin); the legacy HtmlService pages were retired (rcballot-719).
 - `script/processRCV.js` — RCV elimination logic and tie-breakers.
 - `script/processCondorcet.js` — the four Condorcet methods.
 - `script/onOpen.js` — the spreadsheet's custom menu and About dialog.
