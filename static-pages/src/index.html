@@ -2271,6 +2271,11 @@
         editRoot.classList.remove('hidden');
         renderAdmins(data);
       }, function (err) {
+        if (/^Not authorized: ballot admin needs Google sign-in/.test(err.message || '')) {
+          // rcballot-goe: sign-in is off on this deployment, so there is no control to point at.
+          loadStatus.textContent = err.message;
+          return;
+        }
         if (/^Not authorized/.test(err.message || '')) {
           // AC rev 2: a claimed ballot's edit page is for its admins only — say so plainly and
           // point at the sign-in control at the top, rather than show an empty form.

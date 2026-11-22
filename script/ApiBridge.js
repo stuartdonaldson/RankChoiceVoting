@@ -11,9 +11,9 @@
  * — see static-pages/src/index.html's callApi_ — without rewriting any of the underlying
  * admin/ballot RPC functions below (webAdmin.js, webBallot.js).
  *
- * Same trust boundary as the pages it replaces: this deployment is ANYONE_ANONYMOUS, so anyone
- * with the ballot/admin link could already reach these through the old server-rendered pages —
- * exposing them as a JSON endpoint doesn't grant access anyone didn't already have.
+ * This deployment is ANYONE_ANONYMOUS and its URL is public (BUILD_INFO), so the whitelist is not
+ * an access control: every admin RPC gates itself server-side (rcvRequireBallotAdmin_,
+ * Identity.js — rcballot-goe).
  *
  * Add to this whitelist only when the static client needs a new RPC — do not widen it to "any
  * global function", which would turn every helper in the project into an accidental public API.
@@ -73,7 +73,8 @@ var _API_WHITELIST_ = {
  * carries `auth: {status:'rejected', reason}` so the page can sign out; an accepted one carries
  * `auth: {status:'ok', email}`. On a deployment without sign-in both fields are ignored and no
  * `auth` is returned. Admin authorization itself is enforced inside each admin RPC
- * (rcvRequireBallotAdmin_), not here, so every route to those functions is covered.
+ * (rcvRequireBallotAdmin_), not here, so every route to those functions is covered. The envelope
+ * may also carry `adminSecret` (CLI / live smoke tests only), checked by rcvNoteOperator_.
  *
  * @param {Object} e doPost event.
  * @return {TextOutput}
@@ -94,6 +95,7 @@ function handleApiPost_(e) {
   var auth = null;
   try {
     auth = rcvBeginRequest_(payload);
+    rcvNoteOperator_(payload.adminSecret); // rcballot-goe: CLI operator override (Identity.js)
     var result = fn.apply(null, payload.args || []);
     var out = { result: result };
     if (auth) out.auth = auth;

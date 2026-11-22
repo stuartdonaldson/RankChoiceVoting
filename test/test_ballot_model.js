@@ -2254,6 +2254,9 @@ function loadBallotModelWithAdmin() {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'script', file), 'utf8'), m.sandbox, { filename: file });
   });
   m.sandbox.module = saved;
+  // rcballot-goe: admin RPCs refuse a call with no request context. These tests exercise the RPCs'
+  // sheet behaviour, not the gate (test_identity_auth.js), so run them as the operator.
+  m.sandbox.rcvRequest_ = { enabled: false, identity: null, operator: true };
   return m;
 }
 

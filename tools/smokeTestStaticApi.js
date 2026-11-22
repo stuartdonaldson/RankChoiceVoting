@@ -9,8 +9,12 @@
  * that, as a required step of every deploy. See the note where step 11 used to be.
  *
  * Unlike tools/smokeTest.js (which drives the secret-gated cmd=admin ops API), everything here
- * goes through cmd=api — unauthenticated, same as a real browser hitting the static page would
- * use — covering the full ballot lifecycle a respondent + admin would actually exercise:
+ * goes through cmd=api. Voting calls are anonymous, as a real voter's are. Admin RPCs are gated
+ * server-side (rcballot-goe): this script cannot sign in with Google, so it sends the operator
+ * secret (sitAdminSecret) in the envelope (callAdmin_), and first proves that the same admin
+ * RPCs are REFUSED without it. Covers the ballot lifecycle a respondent + admin would exercise:
+ *   0. anonymous createBallotForAdmin_ / getAdminEditData / adminSaveTitle /
+ *      adminDiscardOrphanColumn / adminClearResponses are refused 'Not authorized'.
  *   1. createBallotForAdmin_ a uniquely-named test ballot.
  *   2. getAdminListData_ — assert the new ballot appears.
  *   3. getAdminEditData — assert the default field skeleton.
@@ -48,9 +52,14 @@ function adminUrl_(deploymentId) {
   return `https://script.google.com/macros/s/${deploymentId}/exec?cmd=admin`;
 }
 
-/** Calls a whitelisted RPC (script/ApiBridge.js's _API_WHITELIST_) via cmd=api. */
+/** Calls a whitelisted RPC (script/ApiBridge.js's _API_WHITELIST_) via cmd=api, anonymously. */
 function callApi_(deploymentId, name, ...args) {
   return post(apiUrl_(deploymentId), { name, args });
+}
+
+/** Same, carrying the operator secret in the envelope (rcballot-goe; never sent by the page). */
+function callAdminAs_(adminSecret) {
+  return (deploymentId, name, ...args) => post(apiUrl_(deploymentId), { name, args, adminSecret });
 }
 
 const results = [];
@@ -98,44 +107,66 @@ async function main() {
     record_('getDiagnostics reports identityEnabled', identityEnabled !== null, 'identityEnabled=' + identityEnabled);
   }
 
+  if (!secret0) {
+    record_('operator secret available', false, 'no sitAdminSecret locally — admin RPCs are gated (rcballot-goe) and cannot be exercised');
+    process.exitCode = 1;
+    return;
+  }
+  const callAdmin_ = callAdminAs_(secret0);
+
+  // 0. rcballot-goe: anonymous admin calls are refused — on an existing ballot id (created below
+  // first, so the refusal is the gate and not a missing ballot) and on a fresh id.
+  const refusedAnon = async (name, ...args) => {
+    const r = await callApi_(deploymentId, name, ...args);
+    const ok = !!(r && typeof r.error === 'string' && /^Not authorized/.test(r.error) && !r.result);
+    record_('anonymous ' + name + ' refused', ok, ok ? '' : JSON.stringify(r));
+  };
+  await refusedAnon('createBallotForAdmin_', id + 'Anon');
+
   try {
     // 1. createBallotForAdmin_
-    const created = await callApi_(deploymentId, 'createBallotForAdmin_', id);
+    const created = await callAdmin_(deploymentId, 'createBallotForAdmin_', id);
     record_('createBallotForAdmin_', !!(created && created.result && created.result.ok), JSON.stringify(created));
     if (!created || !created.result || !created.result.ok) throw new Error('create failed: ' + JSON.stringify(created));
 
+    // 0 (cont.). Anonymous admin calls on the now-existing (unclaimed) ballot are refused.
+    await refusedAnon('getAdminEditData', id);
+    await refusedAnon('adminSaveTitle', id, 'anonymous edit');
+    await refusedAnon('adminDiscardOrphanColumn', id, 'NoSuchColumn');
+    await refusedAnon('adminClearResponses', id, id);
+
     // 2. getAdminListData_
-    const listed = await callApi_(deploymentId, 'getAdminListData_');
+    const listed = await callAdmin_(deploymentId, 'getAdminListData_');
     const found = !!(listed && listed.result && listed.result.some(b => b.id === id));
     record_('getAdminListData_ finds ' + id, found, found ? '' : JSON.stringify(listed));
     if (!found) throw new Error(id + ' not found in getAdminListData_ result');
 
     // 3. getAdminEditData default skeleton
-    const editData1 = await callApi_(deploymentId, 'getAdminEditData', id);
+    const editData1 = await callAdmin_(deploymentId, 'getAdminEditData', id);
     const skeletonOk = !!(editData1 && editData1.result && !editData1.result.error && Array.isArray(editData1.result.candidates));
     record_('getAdminEditData returns skeleton', skeletonOk, skeletonOk ? '' : JSON.stringify(editData1));
     if (!skeletonOk) throw new Error('getAdminEditData did not return a usable skeleton');
 
     // 4. Landing-page field edits
-    const titleSave = await callApi_(deploymentId, 'adminSaveTitle', id, 'API Smoke Test Ballot');
+    const titleSave = await callAdmin_(deploymentId, 'adminSaveTitle', id, 'API Smoke Test Ballot');
     record_('adminSaveTitle', !!(titleSave && titleSave.result && titleSave.result.ok), JSON.stringify(titleSave));
 
-    const descSave = await callApi_(deploymentId, 'adminSaveDescription', id, 'Seeded by smokeTestStaticApi.js');
+    const descSave = await callAdmin_(deploymentId, 'adminSaveDescription', id, 'Seeded by smokeTestStaticApi.js');
     record_('adminSaveDescription', !!(descSave && descSave.result && descSave.result.ok), JSON.stringify(descSave));
 
-    const addSettingsSave = await callApi_(deploymentId, 'adminSaveAddSettings', id, true, 'Add your own option!');
+    const addSettingsSave = await callAdmin_(deploymentId, 'adminSaveAddSettings', id, true, 'Add your own option!');
     record_('adminSaveAddSettings', !!(addSettingsSave && addSettingsSave.result && addSettingsSave.result.ok), JSON.stringify(addSettingsSave));
 
     // 5. Candidates
-    const addA = await callApi_(deploymentId, 'adminAddCandidate', id, candidateA, 'First candidate', '', '');
+    const addA = await callAdmin_(deploymentId, 'adminAddCandidate', id, candidateA, 'First candidate', '', '');
     record_('adminAddCandidate ' + candidateA, !!(addA && addA.result && addA.result.candidate === candidateA), JSON.stringify(addA));
-    const addB = await callApi_(deploymentId, 'adminAddCandidate', id, candidateB, 'Second candidate', '', '');
+    const addB = await callAdmin_(deploymentId, 'adminAddCandidate', id, candidateB, 'Second candidate', '', '');
     record_('adminAddCandidate ' + candidateB, !!(addB && addB.result && addB.result.candidate === candidateB), JSON.stringify(addB));
-    const addC = await callApi_(deploymentId, 'adminAddCandidate', id, candidateC, 'Third candidate', '', '');
+    const addC = await callAdmin_(deploymentId, 'adminAddCandidate', id, candidateC, 'Third candidate', '', '');
     record_('adminAddCandidate ' + candidateC, !!(addC && addC.result && addC.result.candidate === candidateC), JSON.stringify(addC));
 
     // 6. Edit one candidate (index 0 = Alpha)
-    const editCand = await callApi_(deploymentId, 'adminSaveCandidate', id, 0, candidateA, 'Edited details', 'More info', 'https://example.com/alpha');
+    const editCand = await callAdmin_(deploymentId, 'adminSaveCandidate', id, 0, candidateA, 'Edited details', 'More info', 'https://example.com/alpha');
     const editCandOk = !!(editCand && editCand.result && editCand.result.ok && editCand.result.details === 'Edited details');
     record_('adminSaveCandidate edits ' + candidateA, editCandOk, JSON.stringify(editCand));
 
@@ -164,7 +195,7 @@ async function main() {
     // results need a verified signed-in caller, which this anonymous script cannot be — so the
     // positive check is that the call is REFUSED with the sign-in message (signed-in coverage
     // stays manual: it needs a browser GIS token). With sign-in off, assert the data shape.
-    // A ballot created above is unclaimed (no Admins row), so every other admin RPC here stays open.
+    // The other admin RPCs above ran with the operator secret (rcballot-goe).
     const analysis = await callApi_(deploymentId, 'getAdminAnalysisData_', id);
     if (identityEnabled === null) {
       record_('getAdminAnalysisData_', false, 'could not read getDiagnostics.identityEnabled (no admin secret locally) — cannot pick the expected outcome');
@@ -214,4 +245,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { apiUrl_, adminUrl_, callApi_ };
+module.exports = { apiUrl_, adminUrl_, callApi_, callAdminAs_ };

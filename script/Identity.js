@@ -11,15 +11,24 @@
  *
  * ENABLEMENT: a deployment is Dispatch-enabled only when its stamped target maps to an audience
  * (SIT -> rcballot-test, NUUC -> rcballot; PROD -> none) AND that audience's key Script Property
- * exists. Not enabled: assertions are ignored, nobody is signed in, and every admin RPC stays open
- * exactly as before. Enabled but no/invalid assertion: the caller is anonymous.
+ * exists. Not enabled: assertions are ignored, nobody is signed in, and every admin RPC is refused
+ * (rcballot-goe: fail closed). Enabled but no/invalid assertion: the caller is anonymous.
  *
  * ADMIN RULE (rcvRequireBallotAdmin_, called at the top of every admin RPC in webAdmin.js — at
  * the function, not only in the ApiBridge whitelist, so a google.script.run call from any
- * HtmlService page this deployment serves cannot skip it): a ballot whose [Config] 'Admins' row
- * is blank is open to anyone, anonymous included. Otherwise the caller's verified email must be
- * in that row or in the spreadsheet-level 'Config' tab's 'Admins' key (super-admins), else the
- * RPC throws 'Not authorized …'. Fails closed: a read error while checking refuses.
+ * HtmlService page this deployment serves cannot skip it; such a call has no request context and
+ * is anonymous). rcballot-goe:
+ *   - An anonymous caller is refused on every admin RPC, unclaimed ballots included.
+ *   - A ballot whose [Config] 'Admins' row is blank (unclaimed) is open to any SIGNED-IN caller.
+ *     Otherwise the caller's verified email must be in that row or in the spreadsheet-level
+ *     'Config' tab's 'Admins' key (super-admins).
+ *   - Destructive RPCs (opts.destructive: adminDiscardOrphanColumn, adminClearResponses) need a
+ *     listed ballot admin or super-admin even on an unclaimed ballot — claim it first.
+ *   - Sign-in not enabled on this deployment: refused.
+ *   - Operator override: the ?cmd=api envelope's adminSecret matching the ADMIN_SHARED_SECRET
+ *     Script Property (rcvNoteOperator_) allows every admin RPC. CLI / live smoke tests only — the
+ *     public static page never holds it.
+ * A refusal throws 'Not authorized …'. Fails closed: a read error while checking refuses.
  *
  * RESULTS (AC rev 2): getAdminAnalysisData_ needs a verified signed-in caller (rcvRequireSignedIn_)
  * but not an admin.
@@ -43,6 +52,11 @@ var RCV_ADMINS_KEY_ = 'Admins';
 
 var RCV_NOT_AUTHORIZED_ = 'Not authorized: this ballot is managed by its listed admins. ' +
   'Sign in with a Google account that is one of this ballot\'s admins.';
+var RCV_SIGNIN_TO_ADMIN_ = 'Not authorized: sign in with Google to administer ballots.';
+var RCV_DESTRUCTIVE_NOT_AUTHORIZED_ = 'Not authorized: only this ballot\'s listed admins can discard votes or clear responses. ' +
+  'Use "Make me an admin" first.';
+var RCV_ADMIN_DISABLED_ = 'Not authorized: ballot admin needs Google sign-in, which is not enabled on this deployment. ' +
+  'Edit the ballot sheet in the spreadsheet instead.';
 
 // Per-request auth state, set by rcvBeginRequest_. GAS runs one request per execution, so a
 // module-level var is request-scoped; rcvBeginRequest_ resets it first so nothing carries over.
@@ -178,30 +192,76 @@ function rcvBallotAdmins_(id) {
 }
 
 /**
- * The admin decision for ballot id and this request's caller. Pure over its inputs' reads.
+ * Records whether this ?cmd=api request carries the operator secret (rcballot-goe): the envelope's
+ * adminSecret equal to the ADMIN_SHARED_SECRET Script Property, compared in constant time. Called
+ * by handleApiPost_ right after rcvBeginRequest_. Never logs the value (scrubForLog_ redacts it).
+ *
+ * @param {*} secret envelope.adminSecret
+ * @return {boolean}
+ */
+function rcvNoteOperator_(secret) {
+  var ok = false;
+  try {
+    var stored = PropertiesService.getScriptProperties().getProperty('ADMIN_SHARED_SECRET');
+    ok = !!stored && typeof secret === 'string' && rcvSecretEquals_(secret, stored);
+  } catch (err) {
+    ok = false;
+  }
+  if (rcvRequest_) rcvRequest_.operator = ok;
+  if (secret && !ok) GasLogger.log('identity.operator.rejected', { reason: 'bad_secret' });
+  return ok;
+}
+
+/** Constant-time string equality (length leaks; content does not). */
+function rcvSecretEquals_(a, b) {
+  a = String(a);
+  b = String(b);
+  var diff = a.length ^ b.length;
+  for (var i = 0; i < Math.max(a.length, b.length); i++) {
+    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  }
+  return diff === 0;
+}
+
+/** @return {boolean} true when this request carried the operator secret (rcvNoteOperator_). */
+function rcvRequestIsOperator_() {
+  return !!(rcvRequest_ && rcvRequest_.operator);
+}
+
+/**
+ * The admin decision for ballot id and this request's caller (rule: file header). Pure over its
+ * inputs' reads.
  *
  * @param {string} id
- * @return {{enabled:boolean, claimed:boolean, allowed:boolean, isSuperAdmin:boolean,
- *   isBallotAdmin:boolean, admins:Array<string>, email:string}}
+ * @return {{enabled:boolean, claimed:boolean, allowed:boolean, canDestroy:boolean,
+ *   isSuperAdmin:boolean, isBallotAdmin:boolean, operator:boolean, admins:Array<string>,
+ *   email:string, reason:string}} reason: '' when allowed, else disabled | anonymous | not_admin.
  */
 function rcvBallotAccess_(id) {
   var who = rcvRequestIdentity_();
   var email = who ? who.email : '';
+  var operator = rcvRequestIsOperator_();
   if (!rcvRequestEnabled_()) {
-    return { enabled: false, claimed: false, allowed: true, isSuperAdmin: false, isBallotAdmin: false, admins: [], email: '' };
+    return { enabled: false, claimed: false, allowed: operator, canDestroy: operator, isSuperAdmin: false,
+      isBallotAdmin: false, operator: operator, admins: [], email: '', reason: operator ? '' : 'disabled' };
   }
   var admins = rcvBallotAdmins_(id);
   var supers = email ? rcvSuperAdmins_() : [];
   var isBallotAdmin = !!email && admins.indexOf(email) !== -1;
   var isSuperAdmin = !!email && supers.indexOf(email) !== -1;
+  var canDestroy = operator || isBallotAdmin || isSuperAdmin;
+  var allowed = canDestroy || (!!email && admins.length === 0);
   return {
     enabled: true,
     claimed: admins.length > 0,
-    allowed: admins.length === 0 || isBallotAdmin || isSuperAdmin,
+    allowed: allowed,
+    canDestroy: canDestroy,
     isSuperAdmin: isSuperAdmin,
     isBallotAdmin: isBallotAdmin,
+    operator: operator,
     admins: admins,
-    email: email
+    email: email,
+    reason: allowed ? '' : (email ? 'not_admin' : 'anonymous')
   };
 }
 
@@ -210,9 +270,10 @@ function rcvBallotAccess_(id) {
  * Fails closed: any error while deciding refuses.
  *
  * @param {string} id
+ * @param {{destructive:boolean}=} opts destructive: also require a listed admin / super-admin.
  * @return {Object} rcvBallotAccess_'s result when allowed.
  */
-function rcvRequireBallotAdmin_(id) {
+function rcvRequireBallotAdmin_(id, opts) {
   var access;
   try {
     access = rcvBallotAccess_(id);
@@ -221,8 +282,14 @@ function rcvRequireBallotAdmin_(id) {
     throw new Error(RCV_NOT_AUTHORIZED_);
   }
   if (!access.allowed) {
-    GasLogger.log('identity.admin.refused', { reason: rcvRequestIdentity_() ? 'not_admin' : 'anonymous' });
+    GasLogger.log('identity.admin.refused', { reason: access.reason });
+    if (access.reason === 'disabled') throw new Error(RCV_ADMIN_DISABLED_);
+    if (access.reason === 'anonymous' && !access.claimed) throw new Error(RCV_SIGNIN_TO_ADMIN_);
     throw new Error(RCV_NOT_AUTHORIZED_);
+  }
+  if (opts && opts.destructive && !access.canDestroy) {
+    GasLogger.log('identity.admin.refused', { reason: 'destructive_not_listed' });
+    throw new Error(RCV_DESTRUCTIVE_NOT_AUTHORIZED_);
   }
   return access;
 }

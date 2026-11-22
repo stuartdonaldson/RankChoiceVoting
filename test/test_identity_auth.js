@@ -13,7 +13,9 @@
  * disabled), Responses Email/Picture/Google-Sub columns + self-heal of an existing ballot,
  * resume by sub across a renamed typed name, Signins upsert, the admin rule matrix across every
  * gated RPC (unclaimed/claimed x anonymous/non-admin/ballot-admin/super-admin), add-myself, the
- * admins self-include rule, analysis sign-in rule, PROD staying open, and that no email/name/assertion reaches a log entry.
+ * admins self-include rule, analysis sign-in rule, rcballot-goe's closed gate (anonymous refused on
+ * unclaimed ballots, destructive RPCs listed-admins only, sign-in-off deployments refused, operator
+ * secret override, no request context refused), and that no email/name/assertion reaches a log entry.
  */
 
 const assert = require('assert');
@@ -68,6 +70,7 @@ function loadApp(opts) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'script', file), 'utf8'), sandbox, { filename: file });
   });
   if (opts.key !== false) g.PropertiesService.getScriptProperties().setProperty(opts.kid || KID, SECRET);
+  g.PropertiesService.getScriptProperties().setProperty('ADMIN_SHARED_SECRET', OP_SECRET);
   return { app: sandbox, ss, logs };
 }
 
@@ -86,12 +89,14 @@ function mint(claims, o) {
   return `${header}.${body}.${sig}`;
 }
 
+const OP_SECRET = 'operator-secret-0123456789abcdef';      // ADMIN_SHARED_SECRET (rcballot-goe)
 const ALICE = { sub: '1001', email: 'alice@example.com' };     // ballot admin
 const BOB = { sub: '1002', email: 'bob@example.com' };         // signed in, not an admin
 const ROOT = { sub: '1003', email: 'root@example.com' };       // super-admin (Config!Admins)
 
-function call(app, name, args, who, profile) {
+function call(app, name, args, who, profile, adminSecret) {
   const body = { name, args: args || [] };
+  if (adminSecret !== undefined) body.adminSecret = adminSecret;
   if (who) body.assertion = typeof who === 'string' ? who : mint(who);
   if (profile) body.profile = profile;
   return app.handleApiPost_({ postData: { contents: JSON.stringify(body) } })._json;
@@ -325,40 +330,85 @@ test('claimed ballot: anonymous and non-admin refused on every admin RPC; ballot
   });
 });
 
-test('unclaimed ballot: every admin RPC open to anonymous, non-admin and admins', () => {
-  [null, BOB, ROOT].forEach((who) => {
+const DESTRUCTIVE = ['adminDiscardOrphanColumn', 'adminClearResponses'];
+
+// rcballot-goe: an unclaimed ballot is open to any SIGNED-IN caller, never to anonymous; the
+// destructive RPCs need a listed admin or super-admin even there.
+test('unclaimed ballot: anonymous refused on every admin RPC; signed-in allowed except destructive', () => {
+  [[null, () => 'refused'], [BOB, (name) => (DESTRUCTIVE.includes(name) ? 'refused' : 'allowed')], [ROOT, () => 'allowed']].forEach(([who, expect]) => {
     gatedCalls('b1').forEach(([name, args]) => {
-      if (name === 'adminClaimBallot' && !who) return; // needs a signed-in caller (tested below)
       const t = loadApp();
       newBallot(t, 'b1');
       setSuperAdmins(t, ROOT.email);
       const res = call(t.app, name, args, who);
-      // Setting a non-empty Admins list always needs a verified caller (review fix, rcballot-dx3.3).
-      const expected = name === 'adminSaveAdmins' && !who ? 'refused' : 'allowed';
-      assert.equal(outcome(res), expected, `${who ? who.email : 'anonymous'} ${name}: ${res.error || 'ok'}`);
+      assert.equal(outcome(res), expect(name), `${who ? who.email : 'anonymous'} ${name}: ${res.error || 'ok'}`);
+      if (!who) assert.ok(!/^Not authorized: this ballot is managed/.test(res.error), 'unclaimed refusal asks for sign-in: ' + res.error);
     });
   });
 });
 
-test('not Dispatch-enabled (no key; PROD): claimed ballot stays open to anonymous', () => {
-  [{ key: false }, { target: 'PROD' }].forEach((opts) => {
-    gatedCalls('b1').forEach(([name, args]) => {
-      if (name === 'adminSaveAdmins' || name === 'adminClaimBallot') return; // refused: sign-in off
-      const t = loadApp(opts);
-      newBallot(t, 'b1');
-      t.app._adminWriteConfigUnchecked_('b1', { Admins: ALICE.email });
-      assert.equal(outcome(call(t.app, name, args, null)), 'allowed', name);
-    });
-    const t = loadApp(opts);
+test('destructive RPCs on an unclaimed ballot: signed-in non-admin told to claim first; allowed once claimed', () => {
+  DESTRUCTIVE.forEach((name) => {
+    const t = loadApp();
     newBallot(t, 'b1');
-    assert.match(call(t.app, 'adminSaveAdmins', ['b1', ALICE.email, true], ALICE).error, /not enabled/);
+    const args = gatedCalls('b1').find(([n]) => n === name)[1];
+    assert.match(call(t.app, name, args, BOB).error, /^Not authorized: only this ballot's listed admins.*Make me an admin/);
+    assert.equal(call(t.app, 'adminClaimBallot', ['b1'], BOB).result.ok, true);
+    assert.equal(outcome(call(t.app, name, args, BOB)), 'allowed', name);
+    assert.equal(outcome(call(t.app, name, args, ALICE)), 'refused', name + ' other signed-in after claim');
   });
+});
+
+test('not Dispatch-enabled (no key; PROD): every admin RPC refused for anonymous and signed-in callers', () => {
+  [{ key: false }, { target: 'PROD' }].forEach((opts) => {
+    [false, true].forEach((claimed) => {
+      gatedCalls('b1').forEach(([name, args]) => {
+        [null, ALICE].forEach((who) => {
+          const t = loadApp(opts);
+          newBallot(t, 'b1');
+          if (claimed) t.app._adminWriteConfigUnchecked_('b1', { Admins: ALICE.email });
+          const res = call(t.app, name, args, who);
+          assert.match(String(res.error), /^Not authorized: ballot admin needs Google sign-in, which is not enabled/, `${JSON.stringify(opts)} ${claimed} ${name}`);
+        });
+      });
+    });
+  });
+});
+
+test('operator secret in the envelope allows every admin RPC (claimed, unclaimed, sign-in off); a wrong one does not', () => {
+  // adminSaveAdmins/adminClaimBallot are identity-bound (need a verified email): not operator paths.
+  const identityBound = ['adminSaveAdmins', 'adminClaimBallot'];
+  [{}, { target: 'PROD' }].forEach((opts) => {
+    [false, true].forEach((claimed) => {
+      gatedCalls('b1').forEach(([name, args]) => {
+        if (identityBound.includes(name)) return;
+        const t = loadApp(opts);
+        newBallot(t, 'b1');
+        if (claimed) t.app._adminWriteConfigUnchecked_('b1', { Admins: ALICE.email });
+        const ok = call(t.app, name, args, null, null, OP_SECRET);
+        assert.equal(outcome(ok), 'allowed', `${JSON.stringify(opts)} ${claimed} ${name}: ${ok.error || 'ok'}`);
+        const bad = call(t.app, name, args, null, null, OP_SECRET + 'x');
+        assert.equal(outcome(bad), 'refused', `wrong secret ${name}`);
+        assert.ok(!JSON.stringify(t.logs).includes(OP_SECRET), 'secret never logged');
+      });
+    });
+  });
+});
+
+test('no request context (e.g. google.script.run): admin RPCs refused', () => {
+  const t = loadApp();
+  newBallot(t, 'b1');
+  assert.throws(() => t.app.adminClearResponses('b1', 'b1'), /^Error: Not authorized/);
+  assert.throws(() => t.app.getAdminEditData('b1'), /^Error: Not authorized/);
+  const off = loadApp({ target: 'PROD' });
+  newBallot(off, 'b1');
+  assert.throws(() => off.app.adminSaveTitle('b1', 'x'), /^Error: Not authorized/);
 });
 
 test('Make me an admin: signed-in user claims an unclaimed ballot; anonymous cannot', () => {
   const t = loadApp();
   newBallot(t, 'b1');
-  assert.match(call(t.app, 'adminClaimBallot', ['b1']).error, /Sign in/);
+  assert.match(call(t.app, 'adminClaimBallot', ['b1']).error, /sign in/i);
   assert.deepEqual(call(t.app, 'adminClaimBallot', ['b1'], BOB).result, { ok: true, admins: [BOB.email] });
   assert.match(call(t.app, 'getAdminEditData', ['b1']).error, NOT_AUTH);
   const data = call(t.app, 'getAdminEditData', ['b1'], BOB).result;
@@ -374,7 +424,8 @@ test('unclaimed ballot: anonymous cannot set admins; a signed-in non-super-admin
   assert.match(call(t.app, 'adminSaveAdmins', ['b1', BOB.email, true]).error, NOT_AUTH);
   assert.match(call(t.app, 'adminSaveAdmins', ['b1', ALICE.email]).error, NOT_AUTH);
   assert.equal(t.app.rcvParseEmailList_(t.app._readBallotView_(t.ss.getSheetByName('Ballot-b1')).config.Admins).length, 0);
-  assert.equal(outcome(call(t.app, 'adminSaveTitle', ['b1', 'still open'])), 'allowed'); // other fields stay open
+  assert.equal(outcome(call(t.app, 'adminSaveTitle', ['b1', 'still open'], BOB)), 'allowed'); // other fields stay open to signed-in callers
+  assert.equal(outcome(call(t.app, 'adminSaveTitle', ['b1', 'not anon'])), 'refused'); // rcballot-goe
   // AC rev 2: no lockout confirm — the caller's own email is auto-added.
   assert.deepEqual(call(t.app, 'adminSaveAdmins', ['b1', ALICE.email], BOB).result.admins, [ALICE.email, BOB.email]);
   assert.equal(outcome(call(t.app, 'getAdminEditData', ['b1'], BOB)), 'allowed');
@@ -395,7 +446,7 @@ test('save admins: non-super-admin always includes self; super-admin exempt; bla
   assert.match(call(t.app, 'adminSaveTitle', ['b1', 'x'], ALICE).error, NOT_AUTH);
   assert.deepEqual(call(t.app, 'adminSaveAdmins', ['b1', ALICE.email], ROOT).result.admins, [ALICE.email]); // super-admin recovers
   assert.deepEqual(call(t.app, 'adminSaveAdmins', ['b1', ''], ROOT).result.admins, []);
-  assert.equal(outcome(call(t.app, 'adminSaveTitle', ['b1', 'x'])), 'allowed');
+  assert.equal(outcome(call(t.app, 'adminSaveTitle', ['b1', 'x'], BOB)), 'allowed'); // unclaimed again: any signed-in caller
 });
 
 test('edit data on a claimed ballot: anonymous/non-admin refused, admin/super-admin allowed', () => {
@@ -435,6 +486,24 @@ test('admin list: claimed ballot hides notes and respondent names from non-admin
   const mine = call(t.app, 'getAdminListData_', [], ALICE).result[0];
   assert.equal(mine.canAdmin, true);
   assert.equal(mine.adminNotes, 'secret notes');
+});
+
+test('admin list (rcballot-goe): unclaimed hidden from anonymous; sign-in off hides all but from the operator', () => {
+  const t = loadApp();
+  newBallot(t, 'b1');
+  t.app._adminWriteConfigUnchecked_('b1', { 'Admin-Only-Notes': 'notes' });
+  assert.equal(call(t.app, 'getAdminListData_', []).result[0].canAdmin, false);
+  assert.equal(call(t.app, 'getAdminListData_', []).result[0].adminNotes, '');
+  assert.equal(call(t.app, 'getAdminListData_', [], BOB).result[0].canAdmin, true);
+  const off = loadApp({ target: 'PROD' });
+  newBallot(off, 'b1');
+  off.app._adminWriteConfigUnchecked_('b1', { 'Admin-Only-Notes': 'notes' });
+  const anon = call(off.app, 'getAdminListData_', []).result[0];
+  assert.equal(anon.canAdmin, false);
+  assert.equal(anon.adminNotes, '');
+  const op = call(off.app, 'getAdminListData_', [], null, null, OP_SECRET).result[0];
+  assert.equal(op.canAdmin, true);
+  assert.equal(op.adminNotes, 'notes');
 });
 
 test('no email, name, picture or assertion reaches a log entry', () => {

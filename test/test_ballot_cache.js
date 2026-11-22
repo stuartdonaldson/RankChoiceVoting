@@ -40,6 +40,9 @@ function loadApp() {
     const src = fs.readFileSync(path.join(__dirname, '..', 'script', file), 'utf8');
     vm.runInContext(src, sandbox, { filename: file });
   });
+  // rcballot-goe: admin RPCs refuse a call with no request context; these tests cover caching,
+  // not the gate (test_identity_auth.js), so run them as the operator.
+  sandbox.rcvRequest_ = { enabled: false, identity: null, operator: true };
 
   return { app: sandbox, ss: ss };
 }

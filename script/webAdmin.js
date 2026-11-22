@@ -26,8 +26,11 @@ function getAdminListData_() {
   // rcballot-dx3.3: the list shows every ballot, but a claimed ballot's admin-only fields
   // (notes, respondent names) go only to its admins / super-admins. Edit and Analysis enforce
   // the rule server-side on their own RPCs.
+  // rcballot-goe: same rule as rcvBallotAccess_ — operator, or sign-in enabled and a signed-in
+  // caller who is listed / super-admin or the ballot is unclaimed.
   var enabled = rcvRequestEnabled_();
   var who = rcvRequestIdentity_();
+  var operator = rcvRequestIsOperator_();
   var supers = enabled && who ? rcvSuperAdmins_() : [];
   var isSuper = !!who && supers.indexOf(who.email) !== -1;
   return ids.map(function (id) {
@@ -35,7 +38,7 @@ function getAdminListData_() {
     var view = _readBallotView_(findBallotSheet_(ss, id));
     var latest = _latestResponseByRespondent_(view.rows);
     var admins = enabled ? rcvParseEmailList_(view.config.Admins) : [];
-    var allowed = !admins.length || isSuper || (!!who && admins.indexOf(who.email) !== -1);
+    var allowed = operator || (enabled && !!who && (!admins.length || isSuper || admins.indexOf(who.email) !== -1));
     return {
       id: id,
       title: view.config.Title || id,
@@ -528,7 +531,7 @@ function adminLinkOrphanColumn(id, label, candidateName) {
  * @return {{ok:boolean, label:string, votes:number}} votes = how many responses had a rank in it.
  */
 function adminDiscardOrphanColumn(id, label) {
-  rcvRequireBallotAdmin_(id); // rcballot-dx3.3: server-side admin rule (Identity.js)
+  rcvRequireBallotAdmin_(id, { destructive: true }); // rcballot-goe: listed admins only, even unclaimed
   label = String(label || '').trim();
   return _withBallotLock_(function () {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -562,7 +565,7 @@ function adminDiscardOrphanColumn(id, label) {
  * @return {{ok:boolean, backupSheet:string, responsesCleared:number, orphansDropped:number}}
  */
 function adminClearResponses(id, confirmId) {
-  rcvRequireBallotAdmin_(id); // rcballot-dx3.3: server-side admin rule (Identity.js)
+  rcvRequireBallotAdmin_(id, { destructive: true }); // rcballot-goe: listed admins only, even unclaimed
   return _withBallotLock_(function () {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = findBallotSheet_(ss, id);
