@@ -13,7 +13,8 @@ const project = JSON.parse(fs.readFileSync(path.join(ROOT, 'gas-project.json'), 
 const indexHtml = fs.readFileSync(path.join(ROOT, 'static-pages/src/index.html'), 'utf8');
 
 // AC 1 — the agreed env -> design language assignment.
-assert.deepEqual(THEME, { sit: 'northlake', prod: 'f3', nuuc: 'nuuc' });
+// rcballot-gk3: Communications approved the palette, so nuuc moved to northlake (themes/nuuc.css retired).
+assert.deepEqual(THEME, { sit: 'northlake', prod: 'f3', nuuc: 'northlake' });
 
 // AC 2, 6 — every declared env has a theme module, scoped to its own data-theme, and the stamped
 // link names exactly that module with a per-release cache-buster.
@@ -49,7 +50,7 @@ assert.doesNotMatch(indexHtml, /^\s*html\[data-theme="\w+"\]\s*\{/m);
 const themesDir = path.join(ROOT, 'static-pages/src/themes');
 const moduleCss = (name) => fs.readFileSync(path.join(themesDir, `${name}.css`), 'utf8');
 
-// Only the northlake module opts into the header tools / scheme switch; f3 and nuuc never do, so
+// Only the northlake module opts into the header tools / scheme switch; f3 never does, so
 // their pages get no data-scheme and no header JS.
 for (const f of fs.readdirSync(themesDir)) {
   const optedIn = /--app-shell:\s*1\s*;/.test(fs.readFileSync(path.join(themesDir, f), 'utf8'));
@@ -83,7 +84,7 @@ function runHead({ optIn, stored, storageThrows, systemDark }) {
   vm.runInNewContext(headScript[1], ctx);
   return { attrs, api: win.appScheme_, storage, media, listeners };
 }
-// No opt-in (f3, nuuc): nothing is set and no API is exposed.
+// No opt-in (f3): nothing is set and no API is exposed.
 {
   const r = runHead({ optIn: false, systemDark: true });
   assert.deepEqual(r.attrs, {});

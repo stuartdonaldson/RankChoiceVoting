@@ -49,11 +49,11 @@ const DEPLOY_TARGET = { sit: 'SIT', prod: 'PROD', nuuc: 'NUUC' };
 // env -> design language. Each design language is its own CSS module,
 // static-pages/src/themes/<theme>.css, copied to every env's dist/ as an asset; the stamped page
 // links only its env's module and sets data-theme to match. prod carries the F3 tactical language
-// (docs/f3-dl-idea.md), nuuc the Northlake UU language (docs/nuuc-dl-idea.md), and sit previews
-// the Northlake Digital Design System Option A (docs/nuuc-ui-design.md). A page-content choice, so
+// (docs/f3-dl-idea.md); sit and nuuc use the Northlake Digital Design System Option A (DevStandard
+// ui-framework/ 03; rcballot-gk3 moved nuuc off the retired nuuc theme). A page-content choice, so
 // it stays here rather than in gas-project.json, and is expressed through gas-static's generic
 // `placeholders` map — the package deliberately does not know about themes.
-const THEME = { sit: 'northlake', prod: 'f3', nuuc: 'nuuc' };
+const THEME = { sit: 'northlake', prod: 'f3', nuuc: 'northlake' };
 const THEMES_DIR = 'static-pages/src/themes';
 
 /**
@@ -82,9 +82,6 @@ const THEME_FONTS_HTML = {
   northlake: '<link rel="preconnect" href="https://fonts.googleapis.com">\n' +
     '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' +
     '<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">',
-  nuuc: '<link rel="preconnect" href="https://fonts.googleapis.com">\n' +
-    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' +
-    '<link href="https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">',
 };
 
 /**
