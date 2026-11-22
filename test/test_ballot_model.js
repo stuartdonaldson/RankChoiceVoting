@@ -1795,22 +1795,30 @@ function testWriteEntryRepairsHeaderOnMarkerRow() {
 // Reads never write; ranks by name (rcballot-8i5.3).
 // ---------------------------------------------------------------------------
 
-/** [Responses] marker with no header row (marker last, or next marker directly below): repair writes the fixed header; a vote then saves. */
+/**
+ * [Responses] marker with no header row (marker last, or next marker directly below) or an
+ * entirely blank header row over no data (rcballot-cna): repair writes the fixed header; a vote then saves.
+ */
 function testResponsesHeaderMissingIsRepaired() {
-  [false, true].forEach((markerLast) => {
+  [['absent', true], ['absent', false], ['blank', false]].forEach(([kind, markerLast]) => {
     const { SM, ss, sandbox } = loadBallotModel();
     const cands = [['[Candidates]'], ['', 'Name', 'Details', 'Link Text', 'Link URL'], ['', 'Alice'], ['', 'Bob']];
-    const rows = [['Title', 'T']].concat(markerLast ? [['[Results]']] : [], cands, [['[Responses]']], markerLast ? [] : [['[Results]']]);
+    const header = kind === 'blank' ? [['', '', '', '']] : [];
+    const rows = [['Title', 'T']].concat(markerLast ? [['[Results]']] : [], cands, [['[Responses]']], header, markerLast ? [] : [['[Results]']]);
     const sheet = writeGrid(ss.insertSheet('Ballot-NoHdr'), rows);
     const before = SM._readBallot_(sheet);
     assert.equal(SM._responsesMissingName_(before), true);
-    assert.notEqual(SM._planResponsesHeader_(rectGrid(rows), before), null);
+    const plan = SM._planResponsesHeader_(rectGrid(rows), before);
+    // Marker on the last row parses as a blank header just past the data range: also 'blank'.
+    assert.equal(plan.kind, kind === 'absent' && !markerLast ? 'insert' : 'blank');
 
     assert.equal(SM._repairBallotSheet_(sheet).repaired, true);
     assert.deepEqual(sheet.getRange(rowOf(sheet, '[Responses]') + 1, 1, 1, 4).getValues()[0], ['Date', 'Name', 'Weight', 'Comment']);
     assert.equal(logLinesWith(sandbox, 'ballot.repair.responsesHeader').length, 1);
     assert.equal(SM._responsesMissingName_(SM._readBallot_(sheet)), false);
     assert.equal(SM._repairBallotSheet_(sheet).repaired, false);
+    SM.submitBallotResponse_('NoHdr', 'Ann', ['Alice'], '');
+    assert.equal(SM._snapResponses_(SM._readBallot_(sheet)).length, 1);
   });
 }
 
@@ -1861,6 +1869,10 @@ function testAdminEditDataReportsUnrepairedLayout() {
   assert.match(sandbox.getAdminEditData('Odd').layoutError, /no "Name" column/);
   writeGrid(ss.insertSheet('Ballot-Ok'), [['[Results]'], ['[Candidates]'], ['', 'Name'], ['', 'Alice'], ['[Responses]']]);
   assert.equal(sandbox.getAdminEditData('Ok').layoutError, '');
+  // rcballot-cna AC2: the static edit view shows it (an alert, unhidden only when non-blank).
+  const page = fs.readFileSync(path.join(__dirname, '..', 'static-pages', 'src', 'index.html'), 'utf8');
+  assert.match(page, /<p id="layoutError" class="[^"]*hidden[^"]*" role="alert"><\/p>/);
+  assert.match(page, /layoutErrorEl\.textContent = data\.layoutError \|\| '';\s*layoutErrorEl\.classList\.toggle\('hidden', !data\.layoutError\);/);
 }
 
 // ---------------------------------------------------------------------------
