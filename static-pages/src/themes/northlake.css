@@ -216,6 +216,21 @@ html[data-theme="northlake"] .app-brand-name {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* rcballot-7uy: Lucide icons swapped in for emoji controls (index.html shellIconize_, northlake only).
+   Icon buttons take the action colour (>= 4.5:1 on surface and background, both schemes). */
+html[data-theme="northlake"] :is(.pencil-btn, .info-toggle) { color: var(--nl-primary); display: inline-flex; align-items: center; justify-content: center; }
+html[data-theme="northlake"] :is(.pencil-btn, .info-toggle, .ballot-info summary) .icon {
+  display: inline-block;
+  vertical-align: middle;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* --- Header tools (§7.2, §8): theme control and identity control, right-aligned. On a wide header
        each is a toggle with its own popover panel; below, a narrow header folds both into the
        Menu panel (§7.3, §7.4). --- */

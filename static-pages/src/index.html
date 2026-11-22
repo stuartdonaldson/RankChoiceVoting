@@ -873,13 +873,34 @@
 
   var SHELL_ICONS_ = {
     user: '<path d="M18 20a6 6 0 0 0-12 0"/><circle cx="12" cy="10" r="4"/><circle cx="12" cy="12" r="10"/>',
-    logOut: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>'
+    logOut: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>',
+    // rcballot-7uy: Lucide (ISC) outline icons, inline so nothing loads at runtime (02 §6).
+    pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
+    trash: '<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/>',
+    info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+    up: '<path d="m18 15-6-6-6 6"/>',
+    down: '<path d="m6 9 6 6 6-6"/>'
   };
   /** A decorative Lucide icon from the static SHELL_ICONS_ table (never user data). */
   function shellIcon_(name) {
     var span = document.createElement('span');
     span.innerHTML = '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24">' + SHELL_ICONS_[name] + '</svg>';
     return span.firstChild;
+  }
+
+  /** The same icon as markup, for HTML strings. */
+  function shellIconHtml_(name) {
+    return '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24">' + SHELL_ICONS_[name] + '</svg>';
+  }
+  /** rcballot-7uy: on a theme that opts into the app shell (northlake) the button's emoji becomes a
+      Lucide SVG; every other theme (f3, PROD) keeps its emoji text untouched. */
+  function shellIconize_(el, name) {
+    if (!APP_SHELL_) return;
+    el.textContent = '';
+    el.appendChild(shellIcon_(name));
+  }
+  if (APP_SHELL_) {
+    Array.prototype.forEach.call(document.querySelectorAll('button.pencil-btn'), function (b) { shellIconize_(b, 'pencil'); });
   }
 
   /** A toggle button disclosing panel: aria-expanded plus the .is-open class the theme styles. */
@@ -1474,7 +1495,7 @@
         '</div>';
 
       if (b.adminNotes) {
-        html += '<details class="ballot-info"><summary>ℹ️ More info</summary><p>' + escapeHtml_(b.adminNotes) + '</p></details>';
+        html += '<details class="ballot-info"><summary>' + (APP_SHELL_ ? shellIconHtml_('info') : 'ℹ️') + ' More info</summary><p>' + escapeHtml_(b.adminNotes) + '</p></details>';
       }
       if (b.staleRespondents && b.staleRespondents.length) {
         html += '<details class="ballot-info"><summary>⚠️ ' + b.staleRespondents.length +
@@ -1851,6 +1872,7 @@
       editBtn.type = 'button';
       editBtn.className = 'pencil-btn';
       editBtn.textContent = '✏️';
+      shellIconize_(editBtn, 'pencil');
       editBtn.setAttribute('aria-label', 'Edit ' + candidate.name);
 
       row.appendChild(handle);
@@ -1876,18 +1898,21 @@
       upBtn.type = 'button';
       upBtn.className = 'pencil-btn';
       upBtn.textContent = '▲';
+      shellIconize_(upBtn, 'up');
       upBtn.setAttribute('aria-label', 'Move ' + candidate.name + ' up');
       upBtn.addEventListener('click', function () { moveTo(fieldData.candidates.indexOf(candidate) - 1); });
       var downBtn = document.createElement('button');
       downBtn.type = 'button';
       downBtn.className = 'pencil-btn';
       downBtn.textContent = '▼';
+      shellIconize_(downBtn, 'down');
       downBtn.setAttribute('aria-label', 'Move ' + candidate.name + ' down');
       downBtn.addEventListener('click', function () { moveTo(fieldData.candidates.indexOf(candidate) + 1); });
       var delBtn = document.createElement('button');
       delBtn.type = 'button';
       delBtn.className = 'pencil-btn';
       delBtn.textContent = '🗑️';
+      shellIconize_(delBtn, 'trash');
       delBtn.setAttribute('aria-label', 'Delete ' + candidate.name);
       delBtn.addEventListener('click', function () {
         var votes = candidate.votes || 0;
@@ -2604,6 +2629,7 @@
         infoBtn.type = 'button';
         infoBtn.className = 'info-toggle';
         infoBtn.textContent = 'ℹ️';
+        shellIconize_(infoBtn, 'info');
         infoBtn.setAttribute('aria-label', 'Show details for ' + topic);
         infoBtn.setAttribute('aria-expanded', 'false');
 

@@ -198,4 +198,21 @@ assert.doesNotMatch(nlCss.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--nl-surface
 // The control-border token is what form fields actually use.
 assert.match(nlCss, /input\[type="text"\], input\[type="url"\], textarea\)\s*\{[^}]*border-color: var\(--nl-border-strong\)/);
 
+// --- rcballot-7uy / PROD isolation: the Lucide swap and every Northlake change are opt-in -------
+
+// Every icon swap goes through shellIconize_, which does nothing unless the theme opted in, and
+// the emoji stay in the shared markup/JS, so a theme without --app-shell (PROD f3) renders as before.
+assert.match(indexHtml, /function shellIconize_\(el, name\) \{\n\s*if \(!APP_SHELL_\) return;/);
+assert.match(indexHtml, /if \(APP_SHELL_\) \{\n\s*Array\.prototype\.forEach\.call\(document\.querySelectorAll\('button\.pencil-btn'\)/);
+assert.match(indexHtml, /\(APP_SHELL_ \? shellIconHtml_\('info'\) : 'ℹ️'\)/);
+for (const e of ["'✏️'", "'▲'", "'▼'", "'🗑️'", "'ℹ️'"]) assert.ok(indexHtml.includes(`textContent = ${e};`), `emoji ${e} must remain for non-shell themes`);
+assert.equal((indexHtml.match(/class="pencil-btn"[^>]*>✏️</g) || []).length, 12, 'static pencil buttons keep their emoji markup');
+// The f3 module (PROD) carries none of the Northlake tokens, fonts, icons or header shell.
+const f3 = moduleCss('f3');
+assert.doesNotMatch(f3, /--nl-|Open Sans|--app-shell|\.icon\b|\.app-(home|tools|menu|account)|northlake/i);
+assert.equal(THEME.prod, 'f3');
+// Northlake's icon rules are scoped to its own data-theme (the foreign-theme check above) and
+// PROD's stamped link names only f3.css.
+assert.equal(themeCssLink_({ env: 'prod', version: '1' }), '<link rel="stylesheet" href="themes/f3.css?v=1">');
+
 console.log('test_static_themes: OK');
