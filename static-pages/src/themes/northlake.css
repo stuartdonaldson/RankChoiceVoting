@@ -1,5 +1,20 @@
-/* Northlake Digital Design System, Option A "Lake & Evergreen" (docs/nuuc-ui-design.md, draft 0.3).
+/* Northlake Digital Design System, Option A "Lake & Evergreen". Normative spec: DevStandard
+   ui-framework/ 01 (principles), 02 (component standards, tokens §2.3), 03 (Northlake brand layer).
+   RankChoiceVoting-specific notes: docs/nuuc-ui-design.md.
    Loaded only by the envs tools/static-pages.js's THEME map assigns to 'northlake'.
+
+   nl token -> 02 ui token (this module keeps --nl-* names; 02/03 export the same values as --ui-*):
+     --nl-background -> --ui-bg              --nl-surface -> --ui-surface
+     --nl-surface-subtle -> --ui-surface-muted   --nl-text -> --ui-text
+     --nl-text-muted -> --ui-text-muted      --nl-heading -> --ui-heading
+     --nl-primary -> --ui-action (also --ui-link, --ui-focus)
+     --nl-on-primary -> --ui-on-action       --nl-primary-hover -> --ui-action-hover
+     --nl-border -> --ui-border (decorative)  --nl-border-strong -> --ui-border-strong
+     --nl-disabled-bg/-text -> --ui-disabled-bg/-text
+     --nl-success|warning|info -text/-bg -> --ui-success|warning|info-text/-bg
+     --nl-error-text/-bg -> --ui-danger-text/-bg
+     --nl-radius-control|card|dialog -> --ui-radius-control|card|dialog
+     --nl-space-N -> --ui-space-N  --nl-font-body|display -> --ui-font-body|display
 
    Layers:
      1. The spec's --nl-* tokens (§3, §13), light by default and dark under data-scheme="dark",
@@ -15,8 +30,9 @@
    page wires the theme and identity controls (§7, §8). A module without it gets neither.
 
    Contrast: every text pair below is >= 4.5:1 and every control boundary >= 3:1 in both schemes
-   (WCAG 2.2 AA; table on bead rcballot-71a). Spec caveat: light --nl-text-muted on
-   --nl-surface-subtle is 4.45:1, so muted text is never set on the subtle surface. */
+   (WCAG 2.2 AA; asserted in test/test_static_themes.js per 02 §2.3). Light --nl-text-muted on
+   --nl-surface-subtle is 4.45:1 and forbidden by 02 §2.3: --nl-surface-subtle is therefore never
+   consumed by any rule here (a test enforces it). */
 
 html[data-theme="northlake"] {
   --app-shell: 1;
@@ -44,9 +60,9 @@ html[data-theme="northlake"] {
   --nl-text-muted: #63717a;
   --nl-heading: #212121;
   --nl-border: #dce4e5;
-  /* Not in the spec: a field/control boundary that reaches 3:1 on the surface (--nl-border is
-     decorative at 1.2:1), and the disabled-control pair. */
-  --nl-border-strong: #869398;
+  /* Control boundary (02 §2.3 --ui-border-strong): >= 3:1 on both surface (3.46) and background
+     (3.21); --nl-border is decorative only (1.2:1). Then the disabled-control pair. */
+  --nl-border-strong: #7f8c92;
   --nl-disabled-bg: #d5dde0;
   --nl-disabled-text: #4a565e;
   --nl-shadow-card: 0 1px 2px rgba(36, 49, 59, 0.06);

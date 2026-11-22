@@ -128,4 +128,73 @@ for (const m of indexHtml.matchAll(/src="(assets\/[^"]+)"/g)) {
   assert.ok(fs.existsSync(path.join(ROOT, 'static-pages/src', m[1])), `${m[1]} referenced but not in static-pages/src`);
 }
 
+// --- rcballot-719: 02 §2.3 token values and contrast, both schemes ------------------------------
+
+const nlCss = moduleCss('northlake');
+const lightBlock = /html\[data-theme="northlake"\]\s*\{([\s\S]*?)\n\}/.exec(nlCss)[1];
+const darkBlock = /html\[data-theme="northlake"\]\[data-scheme="dark"\]\s*\{([\s\S]*?)\n\}/.exec(nlCss)[1];
+function tokens(block, base) {
+  const raw = { ...base };
+  for (const m of block.matchAll(/(--nl-[\w-]+):\s*([^;]+);/g)) raw[m[1]] = m[2].trim();
+  const t = {};
+  const res = (k) => { const v = /^var\((--nl-[\w-]+)\)$/.exec(raw[k]); return v ? res(v[1]) : raw[k]; };
+  for (const k of Object.keys(raw)) t[k] = res(k);
+  t.raw = raw;
+  return t;
+}
+const light = tokens(lightBlock, {});
+const dark = tokens(darkBlock, light.raw);
+const lum = (hex) => {
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+};
+const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+const atLeast = (scheme, t, fg, bg, min) => {
+  const r = ratio(t[fg], t[bg]);
+  assert.ok(r >= min, `${scheme}: ${fg} on ${bg} is ${r.toFixed(2)}:1, needs ${min}`);
+};
+
+// Exact 02 §2.3 values for the tokens this bead added or changed.
+const expected = {
+  light: {
+    '--nl-border-strong': '#7f8c92', '--nl-disabled-bg': '#d5dde0', '--nl-disabled-text': '#4a565e',
+    '--nl-success-bg': '#edf6e6', '--nl-success-text': '#2e6b1f', '--nl-warning-bg': '#fff4e0', '--nl-warning-text': '#8a4b00',
+    '--nl-error-bg': '#fdecea', '--nl-error-text': '#b3261e', '--nl-info-bg': '#e9f3fb', '--nl-info-text': '#1663a5',
+    '--nl-radius-control': '8px', '--nl-radius-card': '12px', '--nl-radius-dialog': '16px',
+  },
+  dark: {
+    '--nl-border-strong': '#7f939f', '--nl-disabled-bg': '#33444f', '--nl-disabled-text': '#b5c6d0',
+    '--nl-success-bg': '#1f3a27', '--nl-success-text': '#a5d68a', '--nl-warning-bg': '#3d2e14', '--nl-warning-text': '#ffc46b',
+    '--nl-error-bg': '#4a2220', '--nl-error-text': '#ffb4ab', '--nl-info-bg': '#183b53', '--nl-info-text': '#b9dfff',
+    '--nl-radius-control': '8px', '--nl-radius-card': '12px', '--nl-radius-dialog': '16px',
+  },
+};
+for (const [scheme, t] of [['light', light], ['dark', dark]]) {
+  for (const [k, v] of Object.entries(expected[scheme])) assert.equal(t[k], v, `${scheme} ${k}`);
+  // Control borders: >= 3:1 against both surface and page background (WCAG 1.4.11).
+  atLeast(scheme, t, '--nl-border-strong', '--nl-surface', 3);
+  atLeast(scheme, t, '--nl-border-strong', '--nl-background', 3);
+  // Disabled controls keep legible text; status text is legible on its own tint and on the surface.
+  atLeast(scheme, t, '--nl-disabled-text', '--nl-disabled-bg', 4.5);
+  for (const s of ['success', 'warning', 'error', 'info']) {
+    atLeast(scheme, t, `--nl-${s}-text`, `--nl-${s}-bg`, 4.5);
+    atLeast(scheme, t, `--nl-${s}-text`, '--nl-surface', 4.5);
+  }
+  // Core text pairs on every surface a rule actually uses (muted never on the subtle surface).
+  for (const bg of ['--nl-surface', '--nl-background']) {
+    for (const fg of ['--nl-text', '--nl-text-muted', '--nl-heading', '--nl-primary']) atLeast(scheme, t, fg, bg, 4.5);
+  }
+  atLeast(scheme, t, '--nl-on-primary', '--nl-primary', 4.5);
+  atLeast(scheme, t, '--nl-on-primary', '--nl-primary-hover', 4.5);
+  atLeast(scheme, t, '--nl-text', '--nl-surface-subtle', 4.5);
+  atLeast(scheme, t, '--nl-primary', '--nl-background', 3); // focus ring, non-text
+}
+// Spec's known failing pair: light muted text on the muted surface is below 4.5:1 ...
+assert.ok(ratio(light['--nl-text-muted'], light['--nl-surface-subtle']) < 4.5);
+// ... so no rule may consume --nl-surface-subtle (02 §2.3: never muted text on the muted surface).
+assert.doesNotMatch(nlCss.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--nl-surface-subtle:[^;]+;/g, ''), /surface-subtle/);
+// The control-border token is what form fields actually use.
+assert.match(nlCss, /input\[type="text"\], input\[type="url"\], textarea\)\s*\{[^}]*border-color: var\(--nl-border-strong\)/);
+
 console.log('test_static_themes: OK');
