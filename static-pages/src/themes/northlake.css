@@ -191,6 +191,16 @@ html[data-theme="northlake"] .app-brand {
   margin-bottom: var(--nl-space-4);
   border-bottom: 1px solid var(--nl-border);
 }
+html[data-theme="northlake"] .app-home {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--nl-space-3);
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--nl-radius-control);
+}
 html[data-theme="northlake"] .app-brand-logo {
   display: block;
   flex: 0 0 auto;
@@ -206,23 +216,6 @@ html[data-theme="northlake"] .app-brand-name {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-/* Ballot view: the header carries the title as the page heading; h1#pageTitle stays in the DOM for
-   screen readers (the header copy is aria-hidden) but is not shown twice. */
-html[data-theme="northlake"] body[data-view="ballot"] .app-brand-name {
-  font: 400 clamp(1.5rem, 1.2rem + 1.4vw, 2rem)/1.2 var(--nl-font-display);
-}
-html[data-theme="northlake"] body[data-view="ballot"] #pageTitle {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
-}
-
 /* --- Header tools (§7.2, §8): theme control and identity control, right-aligned. On a wide header
        each is a toggle with its own popover panel; below, a narrow header folds both into the
        Menu panel (§7.3, §7.4). --- */
@@ -237,8 +230,10 @@ html[data-theme="northlake"] .app-brand .icon {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-html[data-theme="northlake"] .app-tools { flex: 0 0 auto; margin-left: auto; }
+html[data-theme="northlake"] .app-tools { display: flex; align-items: center; gap: var(--nl-space-2); flex: 0 0 auto; margin-left: auto; }
 html[data-theme="northlake"] .app-menu { display: flex; align-items: center; gap: var(--nl-space-2); }
+html[data-theme="northlake"] .app-account { order: 2; }
+html[data-theme="northlake"] .app-menu-toggle { order: 3; }
 html[data-theme="northlake"] .app-tool { position: relative; }
 html[data-theme="northlake"] .app-brand :is(.app-menu-toggle, .app-tool-toggle) {
   width: auto;
@@ -285,16 +280,6 @@ html[data-theme="northlake"] .app-tool-panel {
   box-shadow: var(--nl-shadow-popover);
 }
 html[data-theme="northlake"] .app-tool-panel.is-open { display: block; }
-/* Signed out there is no toggle: Google's labelled Sign in button sits in the header itself. */
-html[data-theme="northlake"] .app-tool-panel.app-account-signin {
-  display: block;
-  position: static;
-  min-width: 0;
-  padding: 0;
-  background: none;
-  border: 0;
-  box-shadow: none;
-}
 
 /* Theme choice: native radios, so arrow keys move between the three options. */
 /* float keeps the legend inside the panel instead of notched into its border. */
@@ -333,6 +318,18 @@ html[data-theme="northlake"] .app-theme input[type="radio"] {
 /* Identity (§8.4, §8.5): avatar or account icon plus the display name; the panel names the
    signed-in email and offers a labelled Sign out. */
 html[data-theme="northlake"] .app-account-toggle img.avatar { width: 32px; height: 32px; border-radius: 50%; }
+html[data-theme="northlake"] .app-initials {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--nl-primary);
+  color: var(--nl-on-primary);
+  font: 600 0.8125rem var(--nl-font-body);
+}
 html[data-theme="northlake"] .app-account-name {
   max-width: 11em;
   overflow: hidden;
@@ -356,7 +353,13 @@ html[data-theme="northlake"] button.app-signout { gap: var(--nl-space-2); margin
    tools fold into one top-right Menu panel, preferences first, identity last behind a divider. */
 @container app-header (max-width: 519px) {
   html[data-theme="northlake"] .app-brand-logo { height: 40px; }
-  html[data-theme="northlake"] body[data-view="ballot"] .app-brand-name { font-size: 1.375rem; }
+  html[data-theme="northlake"] .app-brand-name { font-size: 1rem; }
+  /* ID-2: identity shows an avatar/initials (signed in) or "Sign in" (signed out) and the name
+     text yields space, never the identity control or the Menu button. */
+  html[data-theme="northlake"] .app-account-name { display: none; }
+  html[data-theme="northlake"] .app-brand .app-account-toggle { padding: 0 8px; }
+  html[data-theme="northlake"] .app-account { position: static; }
+  html[data-theme="northlake"] .app-account .app-tool-panel { width: min(20rem, 100%); }
   html[data-theme="northlake"] .app-menu-toggle { display: inline-flex; }
   html[data-theme="northlake"] .app-menu {
     display: none;
@@ -372,7 +375,7 @@ html[data-theme="northlake"] button.app-signout { gap: var(--nl-space-2); margin
     box-shadow: var(--nl-shadow-popover);
   }
   html[data-theme="northlake"] .app-menu.is-open { display: block; }
-  html[data-theme="northlake"] .app-brand .app-tool-toggle { display: none; }
+  html[data-theme="northlake"] .app-brand #appThemeToggle { display: none; }
   html[data-theme="northlake"] .app-menu .app-tool-panel {
     display: block;
     position: static;
@@ -380,11 +383,6 @@ html[data-theme="northlake"] button.app-signout { gap: var(--nl-space-2); margin
     padding: 0;
     border: 0;
     box-shadow: none;
-  }
-  html[data-theme="northlake"] .app-menu .app-account {
-    margin-top: var(--nl-space-3);
-    padding-top: var(--nl-space-3);
-    border-top: 1px solid var(--nl-border);
   }
 }
 

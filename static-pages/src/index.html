@@ -100,6 +100,7 @@
   .hidden { display: none !important; }
   /* Brand header: hidden unless the env's theme module shows it (themes/northlake.css). */
   .app-brand { display: none; }
+  .app-home { display: contents; }
   /* Optional Google sign-in (rcballot-dx3) — only rendered on Dispatch-enabled builds. */
   .signin-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 16px; font-size: 0.9em; color: var(--text-secondary); }
   .signin-bar img.avatar { width: 28px; height: 28px; border-radius: 50%; }
@@ -266,19 +267,18 @@
 <body>
   <!-- Theme-neutral brand header; display, logo and styling come from the theme module. -->
   <header class="app-brand">
-    <img class="app-brand-logo" loading="lazy" src="assets/northlake-flame-transparent.png" alt="Northlake Unitarian Universalist Church">
-    <!-- On the ballot view applyBranding mirrors the ballot title here (aria-hidden: h1#pageTitle
-         stays the accessible heading); a theme that shows the header hides that h1 visually. -->
-    <span class="app-brand-name" id="appBrandName">Ranked-choice ballots</span>
-    <!-- Header tools (docs/nuuc-ui-design.md §7-§8): theme preference and, on Dispatch-enabled
+    <!-- Application identity (02 BR-1, BR-6): icon and name link to the app home and are never
+         replaced by org or ballot content. Northlake affiliation is the flame mark itself
+         (decorative here; the page has no second org logo, BR-4). -->
+    <a class="app-home" id="appHome" href="./" aria-label="Ranked-choice ballots, home">
+      <img class="app-brand-logo" loading="lazy" src="assets/northlake-flame-transparent.png" alt="">
+      <span class="app-brand-name" id="appBrandName">Ranked-choice ballots</span>
+    </a>
+    <!-- Header tools (DevStandard ui-framework 02 §4.2): theme preference and, on Dispatch-enabled
          builds, the identity control. Inert unless the theme module opts in with --app-shell: 1
          (window.appScheme_ is then defined by the <head> script and initAppShell_ wires these);
          the theme module also decides when they collapse behind the Menu button. -->
     <div class="app-tools">
-      <button type="button" class="app-menu-toggle" id="appMenuToggle" aria-expanded="false" aria-controls="appMenu" aria-label="Menu">
-        <svg class="icon icon-open" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-        <svg class="icon icon-close" aria-hidden="true" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
-      </button>
       <div class="app-menu" id="appMenu">
         <div class="app-tool app-theme">
           <button type="button" class="app-tool-toggle" id="appThemeToggle" aria-expanded="false" aria-controls="appThemePanel" aria-label="Theme">
@@ -293,9 +293,14 @@
             <label><input type="radio" name="appTheme" value="dark"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>Dark</label>
           </fieldset>
         </div>
-        <!-- Identity control: filled by renderAccount_ (via renderSignIn_) on Dispatch-enabled builds. -->
-        <div class="app-tool app-account hidden" id="appAccount"></div>
       </div>
+      <!-- Identity control (02 §4.2, ID-6): its own header control, never inside the Menu panel. -->
+      <!-- Filled by renderAccount_ (via renderSignIn_) on Dispatch-enabled builds only (ID-8). -->
+      <div class="app-tool app-account hidden" id="appAccount"></div>
+      <button type="button" class="app-menu-toggle" id="appMenuToggle" aria-expanded="false" aria-controls="appMenu" aria-label="Menu">
+        <svg class="icon icon-open" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        <svg class="icon icon-close" aria-hidden="true" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
     </div>
   </header>
   <!-- Admin-view sign-in (rcballot-dx3.3): filled by renderSignIn_ on Dispatch-enabled builds only. -->
@@ -957,7 +962,12 @@
         img.src = auth_.picture;
         toggle.appendChild(img);
       } else {
-        toggle.appendChild(shellIcon_('user'));
+        // Initials avatar (02 ID-3): the full name and email stay in the panel only (ID-7).
+        var ini = document.createElement('span');
+        ini.className = 'app-initials';
+        ini.setAttribute('aria-hidden', 'true');
+        ini.textContent = who.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map(function (w) { return w.charAt(0).toUpperCase(); }).join('');
+        toggle.appendChild(ini);
       }
       var name = document.createElement('span');
       name.className = 'app-account-name';
@@ -982,11 +992,23 @@
       slot.appendChild(panel);
       shellDisclosure_(toggle, panel);
     } else {
-      // No toggle: signed out, Google's own labelled "Sign in" button sits in the header.
-      panel.classList.add('app-account-signin');
+      // Signed out (02 ID-4): a visible "Sign in" control in the header opens a panel holding
+      // Google's own button, which is too wide to sit in a 320 px header.
+      var inToggle = document.createElement('button');
+      inToggle.type = 'button';
+      inToggle.className = 'app-tool-toggle app-account-toggle';
+      inToggle.setAttribute('aria-expanded', 'false');
+      inToggle.setAttribute('aria-controls', panel.id);
+      inToggle.appendChild(shellIcon_('user'));
+      var inLabel = document.createElement('span');
+      inLabel.className = 'app-account-label';
+      inLabel.textContent = 'Sign in';
+      inToggle.appendChild(inLabel);
       var btn = document.createElement('div');
       panel.appendChild(btn);
+      slot.appendChild(inToggle);
       slot.appendChild(panel);
+      shellDisclosure_(inToggle, panel);
       withGis_(function () { google.accounts.id.renderButton(btn, { type: 'standard', shape: 'pill', text: 'signin', size: 'large', width: 200 }); });
     }
   }
@@ -997,7 +1019,7 @@
     container.textContent = '';
     if (!signedIn_() && intro) {
       var p = document.createElement('span');
-      p.textContent = intro.replace(/:\s*$/, '.') + ' Sign in is at the top of the page (in the menu on small screens).';
+      p.textContent = intro.replace(/:\s*$/, '.') + ' Sign in is at the top of the page.';
       container.appendChild(p);
     }
     if (signInError_) {
@@ -2659,9 +2681,6 @@
     function applyBranding(config) {
       pageTitle.textContent = config.title || 'RankChoiceVoting Ballot';
       document.title = config.title || 'RankChoiceVoting Ballot';
-      var brandName = document.getElementById('appBrandName');
-      brandName.textContent = pageTitle.textContent;
-      brandName.setAttribute('aria-hidden', 'true');
       document.body.setAttribute('data-view', 'ballot');
       ballotDescription = config.description || '';
       ballotDescriptionLinkText = config.descriptionLinkText || '';
