@@ -692,6 +692,31 @@ function testCondorcetFamilyFinishOrderReportsTieOnCycle() {
   assert.deepEqual(order[0].names.slice().sort(), ['A', 'B', 'C']);
 }
 
+// rcballot-4xf: an unresolved tie must not truncate the finish order. The tied group takes one
+// place and every other candidate is still ordered after it.
+function testFinishOrderContinuesPastTie() {
+  const { Condorcet, RCV } = loadVotingAlgorithms();
+  const names = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+  // A-E are perfectly symmetric across two opposite voters; F, G, H trail in a fixed order.
+  const ballots = [
+    { voterName: '1', ranks: [1, 2, 3, 4, 5, 6, 7, 8], weight: 1 },
+    { voterName: '2', ranks: [5, 4, 3, 2, 1, 6, 7, 8], weight: 1 },
+  ];
+  const rp = Condorcet.computeCondorcetFinishOrder(Condorcet.findRankedPairsWinner, ballots, names);
+  assert.deepEqual(rp[0].names.slice().sort(), ['A', 'B', 'C', 'D', 'E']);
+  assert.deepEqual(rp.slice(1).map((e) => e.names), [['F'], ['G'], ['H']]);
+  assert.deepEqual(rp.map((e) => e.place), [1, 2, 3, 4]);
+  assert.equal(rp.reduce((n, e) => n + e.names.length, 0), names.length);
+
+  // RCV: a dead-tie first round, then a clear order among the rest.
+  const rcvNames = ['A', 'B', 'C'];
+  const rcvBallots = makeBallots(rcvNames, [[1, 2, 3], [2, 1, 3]]);
+  const rcv = RCV.computeRCVFinishOrder(rcvNames, rcvBallots);
+  assert.deepEqual(rcv[0].names.slice().sort(), ['A', 'B']);
+  assert.deepEqual(rcv[1].names, ['C']);
+  assert.equal(rcv.reduce((n, e) => n + e.names.length, 0), rcvNames.length);
+}
+
 function run() {
   // RCV core outcomes
   testMajorityWinnerRound1();
@@ -735,6 +760,7 @@ function run() {
   testRCVFinishOrderReportsUnresolvedTie();
   testCondorcetFamilyFinishOrderUsesWinnerRemoval();
   testCondorcetFamilyFinishOrderReportsTieOnCycle();
+  testFinishOrderContinuesPastTie();
 
   console.log('test_voting_algorithms: all tests passed');
 }

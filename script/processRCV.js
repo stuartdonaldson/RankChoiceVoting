@@ -482,8 +482,8 @@ function _removeCandidateAt(candidateNames, ballots, index) {
  * re-run on what's left. The final round's runner-up is only a heuristic
  * (see rcballot-14e's center-squeeze example) and is not used here.
  *
- * Stops and reports all remaining candidates tied for the current place as
- * soon as a round can't resolve to a single winner, rather than guessing an
+ * Reports candidates tied in a round as sharing that place, removes them, and continues
+ * with the rest of the field, rather than guessing an
  * order among them.
  *
  * @param {Array<string>} candidateNames
@@ -505,8 +505,18 @@ function computeRCVFinishOrder(candidateNames, allBallots) {
     }
     var result = runRankedChoiceVoting(names, ballots, null);
     if (!result.winner) {
-      order.push({ place: place, names: result.tie.slice() });
-      break;
+      // The tied group shares this place; remove them and keep ordering the rest so a tie
+      // never drops the remainder of the field (rcballot-4xf).
+      var tieNames = result.tie.slice();
+      order.push({ place: place, names: tieNames });
+      tieNames.forEach(function (tn) {
+        var ti = names.indexOf(tn);
+        var rm = _removeCandidateAt(names, ballots, ti);
+        names = rm.candidateNames;
+        ballots = rm.ballots;
+      });
+      place++;
+      continue;
     }
     order.push({ place: place, names: [result.winner] });
     var idx = names.indexOf(result.winner);

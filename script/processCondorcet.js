@@ -287,10 +287,10 @@ function findMinimaxWinner(ballots, candidateNames) {
  * mirrors computeRCVFinishOrder (processRCV.js): repeatedly find the winner,
  * remove them via the shared _removeCandidateAt, and re-run on what's left.
  *
- * A finder result with no single winner (a cycle, or an explicit .tie from
- * Ranked Pairs) means the remaining candidates can't be ordered further -
- * stop and report them all tied for the current place instead of falling
- * back to the heuristic score.
+ * A finder result with no single winner: an explicit .tie (Ranked Pairs) shares one place,
+ * is removed, and ordering continues on the rest of the field (rcballot-4xf). A cycle or
+ * minimax tiedForMinScore carries no named tie, so the whole remainder shares the place -
+ * never the heuristic score.
  *
  * @param {function} finderFn one of the find*Winner functions above
  * @param {Array<Object>} ballots
@@ -312,9 +312,23 @@ function computeCondorcetFinishOrder(finderFn, ballots, candidateNames) {
     }
     var result = finderFn(currentBallots, names);
     if (!result.winner) {
-      var tieNames = (result.tie && result.tie.length) ? result.tie.slice() : names.slice();
+      if (!(result.tie && result.tie.length)) {
+        // No named tie (a cycle, minimax's tiedForMinScore): the whole remainder shares the place.
+        order.push({ place: place, names: names.slice() });
+        break;
+      }
+      // A named tie (Ranked Pairs sources): they share this place, then ordering continues on
+      // everyone else so the finish order always lists the whole field (rcballot-4xf).
+      var tieNames = result.tie.slice();
       order.push({ place: place, names: tieNames });
-      break;
+      tieNames.forEach(function (tn) {
+        var ti = names.indexOf(tn);
+        var rm = _removeCandidateAt(names, currentBallots, ti);
+        names = rm.candidateNames;
+        currentBallots = rm.ballots;
+      });
+      place++;
+      continue;
     }
     order.push({ place: place, names: [result.winner] });
     var idx = names.indexOf(result.winner);
